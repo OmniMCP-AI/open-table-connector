@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from hashlib import sha256
+import json
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -38,6 +39,7 @@ class DbtPreparedOperation:
     project_dir: Path
     compiled_artifacts: Mapping[str, bytes]
     manifest_ref: str | None = None
+    run_argv: tuple[str, ...] = ()
 
     @property
     def artifact_hash(self) -> str:
@@ -63,9 +65,20 @@ class DbtConnector:
         self._runner = runner
 
     def compile(self, request: DbtCompileRequest) -> DbtPreparedOperation:
-        invocation_id = "dbt_" + sha256(
-            (str(request.project_dir) + "\0" + "\0".join(request.select) + "\0" + "\0".join(request.exclude)).encode("utf-8")
-        ).hexdigest()[:24]
+        invocation_payload = json.dumps(
+            {
+                "project_dir": str(request.project_dir),
+                "select": request.select,
+                "exclude": request.exclude,
+                "vars": request.vars,
+                "target": request.target,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        invocation_id = "dbt_" + sha256(invocation_payload.encode("utf-8")).hexdigest()[:24]
         argv = ("dbt", "compile", "--project-dir", str(request.project_dir))
         if request.select:
             argv += ("--select", *request.select)
@@ -73,6 +86,17 @@ class DbtConnector:
             argv += ("--exclude", *request.exclude)
         if request.target:
             argv += ("--target", request.target)
+        if request.vars:
+            argv += ("--vars", json.dumps(request.vars, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+        run_argv = ("dbt", "run", "--project-dir", str(request.project_dir))
+        if request.select:
+            run_argv += ("--select", *request.select)
+        if request.exclude:
+            run_argv += ("--exclude", *request.exclude)
+        if request.target:
+            run_argv += ("--target", request.target)
+        if request.vars:
+            run_argv += ("--vars", json.dumps(request.vars, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
         artifacts: Mapping[str, bytes] = {}
         if self._runner is not None:
             try:
@@ -87,13 +111,14 @@ class DbtConnector:
             compiled = request.project_dir / "target" / "manifest.json"
             if compiled.is_file():
                 artifacts = {"manifest.json": compiled.read_bytes()}
-        return DbtPreparedOperation(invocation_id, argv, request.project_dir, artifacts, "manifest.json" if "manifest.json" in artifacts else None)
+        return DbtPreparedOperation(invocation_id, argv, request.project_dir, artifacts, "manifest.json" if "manifest.json" in artifacts else None, run_argv)
 
     def run(self, operation: DbtPreparedOperation) -> DbtRunResult:
         if self._runner is None:
             raise ConnectorError(ConnectorErrorCode.UNSUPPORTED_CAPABILITY, "dbt execution runner is not configured", {})
         try:
-            payload = self._runner(operation.argv[:-1] + ("run",) if operation.argv[1:2] == ("compile",) else operation.argv, operation.project_dir)
+            argv = operation.run_argv or ("dbt", "run", "--project-dir", str(operation.project_dir))
+            payload = self._runner(argv, operation.project_dir)
             run_results = payload.get("run_results")
             return DbtRunResult(operation.invocation_id, str(payload.get("status", "completed")), run_results if isinstance(run_results, bytes) else None, dict(payload.get("artifact_refs", {})))
         except Exception as exc:

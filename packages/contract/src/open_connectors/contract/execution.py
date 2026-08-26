@@ -51,6 +51,13 @@ class StepExecutor(Protocol):
     def run(self, operation: PreparedOperation) -> ExecutionResult: ...
 
 
+@runtime_checkable
+class SqlExecutor(Protocol):
+    """Execute one caller-prepared SQL statement against a physical target."""
+
+    def execute(self, request: ExecutionRequest) -> ExecutionResult: ...
+
+
 @dataclass(frozen=True)
 class CapabilityReference:
     capability: CapabilityIdentity

@@ -16,6 +16,7 @@ class TableWriteRequest:
     uri: TableURI
     frame: pl.DataFrame
     if_exists: str = "error"
+    table: str | None = None
 
 
 @dataclass(frozen=True)
@@ -31,7 +32,7 @@ class TableWriter(Protocol):
 
 @runtime_checkable
 class TransactionalStore(Protocol):
-    def begin(self) -> None: ...
+    def begin(self, uri: TableURI) -> None: ...
 
     def commit(self) -> None: ...
 

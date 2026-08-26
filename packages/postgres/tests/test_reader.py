@@ -3,7 +3,7 @@ from __future__ import annotations
 import polars as pl
 import pyarrow as pa
 
-from open_connectors.contract import ResourceLimits, TableURI
+from open_connectors.contract import ExecutionRequest, ResourceLimits, TableURI, TableWriteRequest
 from open_connectors.postgres.reader import PostgresConnector, PostgresReadOptions, PostgresTableReadRequest
 
 
@@ -17,11 +17,20 @@ class Cursor:
         rows, self.rows = getattr(self, "rows", [("a", "1.00"), ("b", None)]), []
         return rows[:size]
 
+    @property
+    def rowcount(self):
+        return 1
+
+    def executemany(self, statement, rows):
+        self.statement = statement
+
 
 class Connection:
     def __init__(self): self.cursor_value = Cursor()
     def cursor(self): return self.cursor_value
     def close(self): pass
+    def commit(self): pass
+    def rollback(self): pass
 
 
 def test_postgres_arrow_polars_parity_and_base_receipt() -> None:
@@ -41,3 +50,14 @@ def test_postgres_arrow_polars_parity_and_base_receipt() -> None:
     assert arrow.receipt.operation_id == polars.receipt.operation_id
     assert arrow.receipt.mode.value == "base"
     assert arrow.receipt.coordinate_convention.key_fields == ("id",)
+
+
+def test_postgres_write_and_execute_use_separate_neutral_roles() -> None:
+    connector = PostgresConnector(lambda **kwargs: Connection())
+    uri = TableURI("postgres://localhost/analytics")
+    frame = pl.DataFrame({"id": ["a"], "amount": ["1.00"]})
+
+    written = connector.write(TableWriteRequest(uri, frame, table="public.orders"))
+    assert written.receipt.capability.capability_id == "table.write"
+    result = connector.execute(ExecutionRequest(uri, "UPDATE public.orders SET amount = %s", ("2.00",)))
+    assert result.status == "completed"

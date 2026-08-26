@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from hashlib import sha256
 import re
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 from urllib.parse import urlsplit
 
 import polars as pl
@@ -17,22 +17,37 @@ from open_connectors.contract import (
     BaseConvention,
     ConnectorError,
     ConnectorErrorCode,
+    ExecutionRequest,
+    ExecutionResult,
     InspectRequest,
+    NeutralReceipt,
     PolarsReadResult,
     PolarsTableReader,
     ResourceLimits,
     ResolveContext,
     ResolvedTable,
+    SqlExecutor,
     TableInspection,
     TableInspector,
     TableMode,
     TableReadRequest,
     TableURI,
+    TableWriteRequest,
+    TableWriteResult,
+    TableWriter,
+    TransactionalStore,
     URIResolver,
 )
 from open_connectors.contract.fingerprints import arrow_content_fingerprint, arrow_schema_fingerprint, operation_identity
 
-from .identity import CONNECTOR_IDENTITY, TABLE_INSPECT_CAPABILITY, TABLE_READ_ARROW_CAPABILITY, TABLE_READ_POLARS_CAPABILITY
+from .identity import (
+    CONNECTOR_IDENTITY,
+    TABLE_EXECUTE_CAPABILITY,
+    TABLE_INSPECT_CAPABILITY,
+    TABLE_READ_ARROW_CAPABILITY,
+    TABLE_READ_POLARS_CAPABILITY,
+    TABLE_WRITE_CAPABILITY,
+)
 
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*(?:\.[A-Za-z_][A-Za-z0-9_$]*)?$")
 
@@ -59,6 +74,10 @@ class PostgresReadOptions:
 @dataclass(frozen=True)
 class PostgresTableReadRequest(TableReadRequest):
     options: PostgresReadOptions = field(default_factory=lambda: PostgresReadOptions(table="public.table"))
+    credentials: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "credentials", dict(self.credentials))
 
 
 @dataclass(frozen=True)
@@ -73,11 +92,41 @@ def _rows_to_arrow(description: Any, rows: list[tuple[Any, ...]]) -> pa.Table:
     return pa.Table.from_arrays(columns, names=names)
 
 
-class PostgresConnector(URIResolver, TableInspector, ArrowTableReader, PolarsTableReader):
+class PostgresConnector(
+    URIResolver,
+    TableInspector,
+    ArrowTableReader,
+    PolarsTableReader,
+    SqlExecutor,
+    TableWriter,
+    TransactionalStore,
+):
     identity = CONNECTOR_IDENTITY
 
     def __init__(self, connection_factory: Callable[..., Any] | None = None) -> None:
         self._connection_factory = connection_factory
+        self._transaction_connection: Any | None = None
+
+    @staticmethod
+    def _execution_id(request: ExecutionRequest) -> str:
+        payload = f"{request.uri.value}\0{request.statement}".encode("utf-8")
+        return "exec_" + sha256(payload).hexdigest()
+
+    @staticmethod
+    def _quote(identifier: str) -> str:
+        return ".".join('"' + part.replace('"', '""') + '"' for part in identifier.split("."))
+
+    @staticmethod
+    def _column_type(dtype: pl.DataType) -> str:
+        if dtype == pl.Boolean:
+            return "BOOLEAN"
+        if dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64):
+            return "BIGINT"
+        if dtype in (pl.Float32, pl.Float64):
+            return "DOUBLE PRECISION"
+        if dtype == pl.Binary:
+            return "BYTEA"
+        return "TEXT"
 
     def resolve(self, uri: TableURI, context: ResolveContext) -> ResolvedTable:
         if uri.scheme not in {"postgres", "postgresql"}:
@@ -109,9 +158,9 @@ class PostgresConnector(URIResolver, TableInspector, ArrowTableReader, PolarsTab
             raise ConnectorError(ConnectorErrorCode.AUTHENTICATION, "PostgreSQL connection failed", {"reason": str(exc)}) from None
 
     def _read(self, request: PostgresTableReadRequest) -> tuple[pa.Table, str, PostgresReadOptions]:
-        resolved = self.resolve(request.uri, ResolveContext(resource_limits=request.resource_limits))
+        resolved = self.resolve(request.uri, ResolveContext(resource_limits=request.resource_limits, credentials=request.credentials))
         resource: ResolvedPostgres = resolved.resource
-        connection = self._connect(resource)
+        connection = self._transaction_connection or self._connect(resource)
         try:
             cursor = connection.cursor()
             options = request.options
@@ -132,10 +181,11 @@ class PostgresConnector(URIResolver, TableInspector, ArrowTableReader, PolarsTab
         except Exception as exc:
             raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "PostgreSQL read failed", {"reason": str(exc)}) from None
         finally:
-            try:
-                connection.close()
-            except Exception:
-                pass
+            if connection is not self._transaction_connection:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
 
     def _receipt(self, request: PostgresTableReadRequest, table: pa.Table, revision: str, options: PostgresReadOptions, capability):
         schema = arrow_schema_fingerprint(table.schema)
@@ -155,3 +205,122 @@ class PostgresConnector(URIResolver, TableInspector, ArrowTableReader, PolarsTab
         read = PostgresTableReadRequest(request.uri, resource_limits=request.resource_limits)
         table, revision, options = self._read(read)
         return TableInspection(safe_uri=request.uri, mode=TableMode.BASE, columns=tuple(table.column_names), schema_fingerprint=arrow_schema_fingerprint(table.schema), row_count=table.num_rows, coordinate_convention=BaseConvention(record_id_field=options.record_id_field, key_fields=options.key_fields, ordinal_snapshot_id=revision), facts={"query": options.query, "table": options.table})
+
+    def execute(self, request: ExecutionRequest) -> ExecutionResult:
+        resolved = self.resolve(request.uri, ResolveContext(resource_limits=request.resource_limits))
+        connection = self._transaction_connection or self._connect(resolved.resource)
+        try:
+            cursor = connection.cursor()
+            cursor.execute(request.statement, request.parameters)
+            if connection is not self._transaction_connection:
+                connection.commit()
+            affected = cursor.rowcount if getattr(cursor, "rowcount", -1) >= 0 else None
+            return ExecutionResult(self._execution_id(request), "completed", affected)
+        except ConnectorError:
+            raise
+        except Exception as exc:
+            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "PostgreSQL statement failed", {"reason": str(exc)}) from None
+        finally:
+            if connection is not self._transaction_connection:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
+
+    def write(self, request: TableWriteRequest) -> TableWriteResult:
+        if request.if_exists not in {"error", "append", "replace"}:
+            raise ConnectorError(ConnectorErrorCode.INVALID_URI, "if_exists must be error, append, or replace", {})
+        if not request.table or not _IDENTIFIER.fullmatch(request.table):
+            raise ConnectorError(ConnectorErrorCode.INVALID_URI, "PostgreSQL table writes require a simple qualified table", {"table": request.table})
+        if not request.frame.columns:
+            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "cannot write a frame without columns", {})
+        resolved = self.resolve(request.uri, ResolveContext())
+        connection = self._transaction_connection or self._connect(resolved.resource)
+        quoted_table = self._quote(request.table)
+        columns = tuple(request.frame.columns)
+        quoted_columns = ", ".join(self._quote(column) for column in columns)
+        definitions = ", ".join(
+            f'{self._quote(column)} {self._column_type(dtype)}'
+            for column, dtype in request.frame.schema.items()
+        )
+        placeholders = ", ".join("%s" for _ in columns)
+        try:
+            if request.if_exists == "replace":
+                connection.cursor().execute(f"DROP TABLE IF EXISTS {quoted_table}", ())
+            if request.if_exists in {"append", "replace"}:
+                connection.cursor().execute(f"CREATE TABLE IF NOT EXISTS {quoted_table} ({definitions})", ())
+            else:
+                connection.cursor().execute(f"CREATE TABLE {quoted_table} ({definitions})", ())
+            rows = [tuple(value for value in row) for row in request.frame.rows()]
+            if rows:
+                connection.cursor().executemany(
+                    f"INSERT INTO {quoted_table} ({quoted_columns}) VALUES ({placeholders})",
+                    rows,
+                )
+            if connection is not self._transaction_connection:
+                connection.commit()
+            arrow = request.frame.to_arrow()
+            schema = arrow_schema_fingerprint(arrow.schema)
+            content = arrow_content_fingerprint(arrow)
+            revision = "write:" + content
+            operation = operation_identity(
+                connector=CONNECTOR_IDENTITY,
+                capability=TABLE_WRITE_CAPABILITY,
+                uri=request.uri,
+                source_revision=revision,
+                schema_fingerprint=schema,
+                content_fingerprint=content,
+                parameters={"table": request.table, "if_exists": request.if_exists},
+            )
+            receipt = NeutralReceipt(
+                CONNECTOR_IDENTITY,
+                TABLE_WRITE_CAPABILITY,
+                operation,
+                request.uri,
+                TableMode.BASE,
+                revision,
+                schema,
+                content,
+                BaseConvention(ordinal_snapshot_id=revision),
+                request.frame.height,
+                1,
+            )
+            return TableWriteResult(receipt, request.frame.height)
+        except ConnectorError:
+            raise
+        except Exception as exc:
+            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "PostgreSQL table write failed", {"reason": str(exc)}) from None
+        finally:
+            if connection is not self._transaction_connection:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
+
+    def begin(self, uri: TableURI | None = None) -> None:
+        if uri is None:
+            raise ConnectorError(ConnectorErrorCode.INVALID_URI, "PostgreSQL begin requires a database URI", {})
+        if self._transaction_connection is not None:
+            raise ConnectorError(ConnectorErrorCode.CONFLICT, "PostgreSQL transaction is already active", {})
+        resolved = self.resolve(uri, ResolveContext())
+        self._transaction_connection = self._connect(resolved.resource)
+
+    def commit(self) -> None:
+        if self._transaction_connection is None:
+            raise ConnectorError(ConnectorErrorCode.CONFLICT, "PostgreSQL transaction is not active", {})
+        connection = self._transaction_connection
+        try:
+            connection.commit()
+        finally:
+            connection.close()
+            self._transaction_connection = None
+
+    def abort(self) -> None:
+        if self._transaction_connection is None:
+            raise ConnectorError(ConnectorErrorCode.CONFLICT, "PostgreSQL transaction is not active", {})
+        connection = self._transaction_connection
+        try:
+            connection.rollback()
+        finally:
+            connection.close()
+            self._transaction_connection = None
