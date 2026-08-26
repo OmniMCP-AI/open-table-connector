@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "open-connectors-dbt"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["open-connectors-contract==0.1.0"]
+
+[tool.uv.sources]
+open-connectors-contract = { workspace = true }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["open_connectors.dbt*"]
+namespaces = true

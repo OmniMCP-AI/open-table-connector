@@ -1,0 +1,10 @@
+{
+  "connector_id": "feishu_bitable",
+  "connector_version": "0.1.0",
+  "contract_version": "1.0",
+  "status": "placeholder",
+  "intended_mode": "sheet",
+  "intended_capabilities": ["table.read.arrow", "table.read.polars", "table.inspect", "table.write"],
+  "available_capabilities": [],
+  "unsupported_reason": "placeholder_not_implemented"
+}

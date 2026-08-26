@@ -6,7 +6,13 @@ requires-python = ">=3.11"
 members = [
     "open-connectors-conformance",
     "open-connectors-contract",
+    "open-connectors-dbt",
+    "open-connectors-feishu-bitable",
+    "open-connectors-google-sheets",
     "open-connectors-local-files",
+    "open-connectors-maybesheet",
+    "open-connectors-postgres",
+    "open-connectors-sqlite",
     "open-connectors-workspace",
 ]
 
@@ -102,6 +108,27 @@ requires-dist = [
 ]
 
 [[package]]
+name = "open-connectors-dbt"
+version = "0.1.0"
+source = { editable = "packages/dbt" }
+dependencies = [
+    { name = "open-connectors-contract" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "open-connectors-contract", editable = "packages/contract" }]
+
+[[package]]
+name = "open-connectors-feishu-bitable"
+version = "0.1.0"
+source = { editable = "packages/feishu_bitable" }
+
+[[package]]
+name = "open-connectors-google-sheets"
+version = "0.1.0"
+source = { editable = "packages/google_sheets" }
+
+[[package]]
 name = "open-connectors-local-files"
 version = "0.1.0"
 source = { editable = "packages/local_files" }
@@ -116,6 +143,57 @@ dependencies = [
 requires-dist = [
     { name = "open-connectors-contract", editable = "packages/contract" },
     { name = "openpyxl", specifier = ">=3.1,<4" },
+    { name = "polars", specifier = ">=1.0,<2" },
+    { name = "pyarrow", specifier = ">=14,<20" },
+]
+
+[[package]]
+name = "open-connectors-maybesheet"
+version = "0.1.0"
+source = { editable = "packages/maybesheet" }
+dependencies = [
+    { name = "open-connectors-contract" },
+    { name = "polars" },
+    { name = "pyarrow" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "open-connectors-contract", editable = "packages/contract" },
+    { name = "polars", specifier = ">=1.0,<2" },
+    { name = "pyarrow", specifier = ">=14,<20" },
+]
+
+[[package]]
+name = "open-connectors-postgres"
+version = "0.1.0"
+source = { editable = "packages/postgres" }
+dependencies = [
+    { name = "open-connectors-contract" },
+    { name = "polars" },
+    { name = "pyarrow" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "open-connectors-contract", editable = "packages/contract" },
+    { name = "polars", specifier = ">=1.0,<2" },
+    { name = "pyarrow", specifier = ">=14,<20" },
+]
+
+[[package]]
+name = "open-connectors-sqlite"
+version = "0.1.0"
+source = { editable = "packages/sqlite" }
+dependencies = [
+    { name = "open-connectors-contract" },
+    { name = "polars" },
+    { name = "pyarrow" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "open-connectors-contract", editable = "packages/contract" },
     { name = "polars", specifier = ">=1.0,<2" },
     { name = "pyarrow", specifier = ">=14,<20" },
 ]

@@ -27,6 +27,8 @@ from .resolve import (
 )
 from .scalars import Scalar
 from .uri import TableURI
+from .execution import ExecutionRequest, ExecutionResult, PreparedOperation, StepExecutor
+from .storage import TableWriteRequest, TableWriteResult, TableWriter, TransactionalStore
 
 __all__ = [
     "BaseConvention",
@@ -55,4 +57,12 @@ __all__ = [
     "TableReadRequest",
     "URIResolver",
     "TableURI",
+    "ExecutionRequest",
+    "ExecutionResult",
+    "PreparedOperation",
+    "StepExecutor",
+    "TableWriteRequest",
+    "TableWriteResult",
+    "TableWriter",
+    "TransactionalStore",
 ]

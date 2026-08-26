@@ -9,10 +9,13 @@ description = "Framework-neutral physical data Connectors"
 requires-python = ">=3.11"
 
 [tool.uv.workspace]
-members = ["packages/contract", "packages/conformance", "packages/local_files"]
+members = ["packages/contract", "packages/conformance", "packages/local_files", "packages/postgres", "packages/sqlite", "packages/dbt", "packages/maybesheet", "packages/google_sheets", "packages/feishu_bitable"]
 
 [dependency-groups]
 dev = ["pytest>=9,<10"]
 
 [tool.setuptools]
 packages = []
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
