@@ -56,7 +56,9 @@ class SubprocessProcessClient:
         except subprocess.TimeoutExpired as exc:
             raise ConnectorError(ConnectorErrorCode.TIMEOUT, "MaybeSheet process timed out", {"timeout_seconds": self.timeout_seconds}) from exc
         if completed.returncode != 0:
-            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "MaybeSheet process failed", {"returncode": completed.returncode, "stderr": completed.stderr[-500:]})
+            # stderr is intentionally omitted: vendor tools occasionally echo
+            # credential material and Connector diagnostics must be safe.
+            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "MaybeSheet process failed", {"returncode": completed.returncode})
         try:
             payload = json.loads(completed.stdout)
         except json.JSONDecodeError as exc:
