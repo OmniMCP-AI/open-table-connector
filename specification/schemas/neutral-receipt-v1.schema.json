@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-connectors.dev/schemas/neutral-receipt-v1.schema.json",
+  "title": "Neutral Connector read receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "connector",
+    "capability",
+    "operation_id",
+    "safe_uri",
+    "mode",
+    "source_revision",
+    "schema_fingerprint",
+    "content_fingerprint",
+    "coordinate_convention",
+    "row_count",
+    "batch_count",
+    "vendor_receipt_ref"
+  ],
+  "properties": {
+    "contract_version": {"type": "string", "minLength": 1},
+    "connector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["connector_id", "connector_version", "contract_version"],
+      "properties": {
+        "connector_id": {"type": "string", "minLength": 1},
+        "connector_version": {"type": "string", "minLength": 1},
+        "contract_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability_id", "capability_version"],
+      "properties": {
+        "capability_id": {"type": "string", "minLength": 1},
+        "capability_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "operation_id": {"type": "string", "minLength": 1},
+    "safe_uri": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value"],
+      "properties": {"value": {"type": "string", "minLength": 1}}
+    },
+    "mode": {"enum": ["base", "sheet"]},
+    "source_revision": {"type": "string", "minLength": 1},
+    "schema_fingerprint": {"type": "string", "minLength": 1},
+    "content_fingerprint": {"type": "string", "minLength": 1},
+    "coordinate_convention": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "record_id_field", "key_fields", "ordinal_snapshot_id"],
+          "properties": {
+            "mode": {"const": "base"},
+            "record_id_field": {"type": ["string", "null"]},
+            "key_fields": {"type": "array", "items": {"type": "string"}},
+            "ordinal_snapshot_id": {"type": ["string", "null"]}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "sheet", "header_rows", "first_data_row"],
+          "properties": {
+            "mode": {"const": "sheet"},
+            "sheet": {"type": ["string", "integer"]},
+            "header_rows": {"type": "integer", "minimum": 1},
+            "first_data_row": {"type": "integer", "minimum": 1}
+          }
+        }
+      ]
+    },
+    "row_count": {"type": ["integer", "null"], "minimum": 0},
+    "batch_count": {"type": ["integer", "null"], "minimum": 0},
+    "vendor_receipt_ref": {"type": ["string", "null"]}
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-connectors.dev/schemas/connector-error-v1.schema.json",
+  "title": "Connector error v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "message", "safe_details"],
+  "properties": {
+    "code": {
+      "enum": [
+        "invalid_uri",
+        "unsupported_capability",
+        "authentication",
+        "conflict",
+        "timeout",
+        "cancelled",
+        "execution_failed",
+        "readback_mismatch"
+      ]
+    },
+    "message": {"type": "string", "minLength": 1},
+    "safe_details": {"type": "object", "additionalProperties": true}
+  }
+}

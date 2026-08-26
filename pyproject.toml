@@ -13,3 +13,6 @@ members = ["packages/contract", "packages/conformance", "packages/local_files"]
 
 [dependency-groups]
 dev = ["pytest>=9,<10"]
+
+[tool.setuptools]
+packages = []
