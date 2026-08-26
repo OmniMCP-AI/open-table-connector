@@ -86,7 +86,14 @@ class ResolvedSQLite:
 
 def _rows_to_arrow(description: Any, rows: list[tuple[Any, ...]]) -> pa.Table:
     names = [str(item[0]) for item in description]
-    return pa.Table.from_arrays([pa.array([row[index] for row in rows]) for index in range(len(names))], names=names)
+    columns = []
+    for index in range(len(names)):
+        values = [row[index] for row in rows]
+        column = pa.array(values)
+        if pa.types.is_string(column.type):
+            column = pa.array(values, type=pa.large_string())
+        columns.append(column)
+    return pa.Table.from_arrays(columns, names=names)
 
 
 class SQLiteConnector(

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from hashlib import sha256
 import json
+import os
+import subprocess
 from typing import Any, Mapping, Protocol
 
 import polars as pl
@@ -18,6 +20,50 @@ from .identity import BASE_READ_CAPABILITY, CONNECTOR_IDENTITY, SHEET_READ_CAPAB
 
 class ProcessClient(Protocol):
     def run(self, argv: tuple[str, ...], *, credentials: Mapping[str, str] | None = None) -> Mapping[str, Any]: ...
+
+
+@dataclass(frozen=True)
+class SubprocessProcessClient:
+    """Small injected process boundary owned by the neutral Connector.
+
+    Credentials never enter the URI or argv. They are passed only as
+    explicitly prefixed environment values, and callers may inject a fake
+    ProcessClient for cassette/replay or tests.
+    """
+
+    binary: str = "mbs"
+    timeout_seconds: float = 120.0
+    environment: Mapping[str, str] = field(default_factory=dict)
+
+    def run(self, argv: tuple[str, ...], *, credentials: Mapping[str, str] | None = None) -> Mapping[str, Any]:
+        command = tuple(argv)
+        if not command or command[0] != self.binary:
+            command = (self.binary, *command)
+        env = os.environ.copy()
+        env.update({str(key): str(value) for key, value in self.environment.items()})
+        for key, value in (credentials or {}).items():
+            safe_key = "MAYBESHEET_" + "".join(character if character.isalnum() else "_" for character in str(key).upper())
+            env[safe_key] = str(value)
+        try:
+            completed = subprocess.run(
+                list(command),
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout_seconds,
+                env=env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ConnectorError(ConnectorErrorCode.TIMEOUT, "MaybeSheet process timed out", {"timeout_seconds": self.timeout_seconds}) from exc
+        if completed.returncode != 0:
+            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "MaybeSheet process failed", {"returncode": completed.returncode, "stderr": completed.stderr[-500:]})
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "MaybeSheet process returned invalid JSON", {}) from exc
+        if not isinstance(payload, Mapping):
+            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "MaybeSheet process returned a non-object payload", {})
+        return payload
 
 
 @dataclass(frozen=True)
@@ -48,12 +94,12 @@ def _payload_table(payload: Mapping[str, Any]) -> pa.Table:
             for name in row:
                 if str(name) not in names:
                     names.append(str(name))
-        return pa.Table.from_arrays([pa.array([_cell(row.get(name)) for row in rows], type=pa.string()) for name in names], names=names)
+        return pa.Table.from_arrays([pa.array([_cell(row.get(name)) for row in rows], type=pa.large_string()) for name in names], names=names)
     values = payload.get("values")
     if isinstance(values, list) and values and isinstance(values[0], list):
         names = [str(value) for value in values[0]]
         records = [list(row) for row in values[1:]]
-        return pa.Table.from_arrays([pa.array([_cell(row[index]) if index < len(row) else None for row in records], type=pa.string()) for index in range(len(names))], names=names)
+        return pa.Table.from_arrays([pa.array([_cell(row[index]) if index < len(row) else None for row in records], type=pa.large_string()) for index in range(len(names))], names=names)
     return pa.table({})
 
 
@@ -76,6 +122,32 @@ class MaybeSheetConnector:
         from open_connectors.contract import TableInspection
         table, receipt = self._read(request)
         return TableInspection(safe_uri=request.uri, mode=request.mode, columns=tuple(table.column_names), schema_fingerprint=receipt.schema_fingerprint, row_count=table.num_rows, coordinate_convention=receipt.coordinate_convention, facts={"transport": "process_client"})
+
+    @staticmethod
+    def _unsupported(capability: str) -> None:
+        raise ConnectorError(
+            ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+            f"MaybeSheet capability is not implemented: {capability}",
+            {"capability": capability},
+        )
+
+    def write(self, request: Any) -> None:
+        """Explicit placeholder until governed Base/Sheet writes are ported."""
+
+        del request
+        self._unsupported("table.write")
+
+    def calculate_formulas(self, request: Any) -> None:
+        """MaybeSheet formula calculation remains outside this read slice."""
+
+        del request
+        self._unsupported("formula.calculate")
+
+    def read_formula_values(self, request: Any) -> None:
+        """Value-only reads are never accepted as formula evidence."""
+
+        del request
+        self._unsupported("formula.readback")
 
     def _read(self, request: MaybeSheetReadRequest):
         verb = "db-table" if request.mode is TableMode.BASE else "excel-worksheet"

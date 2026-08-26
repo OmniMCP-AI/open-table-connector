@@ -78,7 +78,7 @@ def read_excel_arrow(
             if limits.max_rows is not None and len(data_rows) >= limits.max_rows:
                 break
         columns = [
-            pa.array([row[index] for row in data_rows], type=pa.string())
+            pa.array([row[index] for row in data_rows], type=pa.large_string())
             for index in range(len(names))
         ]
         return pa.Table.from_arrays(columns, names=names), worksheet.title, tuple(workbook.sheetnames)

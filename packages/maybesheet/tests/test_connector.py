@@ -1,4 +1,6 @@
-from open_connectors.contract import TableMode, TableURI
+import pytest
+
+from open_connectors.contract import ConnectorError, ConnectorErrorCode, TableMode, TableURI
 from open_connectors.maybesheet import MaybeSheetConnector, MaybeSheetReadRequest
 
 
@@ -19,3 +21,10 @@ def test_maybesheet_has_explicit_base_and_sheet_argv_and_receipts() -> None:
     assert result.frame.to_dicts() == [{"id": "1", "amount": "2.50"}]
     assert process.calls[0][0][:3] == ("mbs", "db-table", "read")
     assert result.receipt.vendor_receipt_ref == "safe-ref"
+
+
+def test_maybesheet_non_read_capabilities_fail_explicitly() -> None:
+    connector = MaybeSheetConnector(Process())
+    with pytest.raises(ConnectorError) as error:
+        connector.read_formula_values(object())
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY

@@ -70,7 +70,7 @@ def read_csv_arrow(
             break
 
     columns = [
-        pa.array([row[index] for row in data_rows], type=pa.string())
+        pa.array([row[index] for row in data_rows], type=pa.large_string())
         for index in range(len(names))
     ]
     return pa.Table.from_arrays(columns, names=names)
