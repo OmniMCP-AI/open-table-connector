@@ -40,6 +40,13 @@ class DbtPreparedOperation:
     compiled_artifacts: Mapping[str, bytes]
     manifest_ref: str | None = None
     run_argv: tuple[str, ...] = ()
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "argv", tuple(self.argv))
+        object.__setattr__(self, "run_argv", tuple(self.run_argv))
+        object.__setattr__(self, "compiled_artifacts", dict(self.compiled_artifacts))
+        object.__setattr__(self, "metadata", dict(self.metadata))
 
     @property
     def artifact_hash(self) -> str:
@@ -98,9 +105,11 @@ class DbtConnector:
         if request.vars:
             run_argv += ("--vars", json.dumps(request.vars, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
         artifacts: Mapping[str, bytes] = {}
+        compile_payload: Mapping[str, Any] | None = None
         if self._runner is not None:
             try:
                 payload = self._runner(argv, request.project_dir)
+                compile_payload = payload
                 artifacts = {
                     str(name): content if isinstance(content, bytes) else str(content).encode("utf-8")
                     for name, content in dict(payload.get("artifacts", {})).items()
@@ -111,7 +120,23 @@ class DbtConnector:
             compiled = request.project_dir / "target" / "manifest.json"
             if compiled.is_file():
                 artifacts = {"manifest.json": compiled.read_bytes()}
-        return DbtPreparedOperation(invocation_id, argv, request.project_dir, artifacts, "manifest.json" if "manifest.json" in artifacts else None, run_argv)
+        metadata = {}
+        if compile_payload is not None:
+            metadata = {
+                str(key): value
+                for key, value in compile_payload.items()
+                if key not in {"artifacts", "status", "run_results", "artifact_refs"}
+            }
+        metadata.setdefault("artifacts", tuple(sorted(artifacts)))
+        return DbtPreparedOperation(
+            invocation_id,
+            argv,
+            request.project_dir,
+            artifacts,
+            "manifest.json" if "manifest.json" in artifacts else None,
+            run_argv,
+            metadata,
+        )
 
     def run(self, operation: DbtPreparedOperation) -> DbtRunResult:
         if self._runner is None:
@@ -132,6 +157,32 @@ class DbtConnector:
             return DbtRunResult(operation.invocation_id, "cancelled", payload.get("run_results"))
         except Exception as exc:
             raise ConnectorError(ConnectorErrorCode.CANCELLED, "dbt cancellation failed", {"reason": str(exc)}) from None
+
+    def readback(self, operation: DbtPreparedOperation, relation: str) -> Mapping[str, Any]:
+        """Return connector-owned physical readback facts when the runner has them."""
+
+        callback = getattr(self._runner, "readback", None)
+        if callable(callback):
+            try:
+                result = callback(relation)
+            except Exception as exc:
+                raise ConnectorError(
+                    ConnectorErrorCode.READBACK_MISMATCH,
+                    "dbt readback failed",
+                    {"relation": relation},
+                ) from exc
+            if isinstance(result, Mapping):
+                return dict(result)
+            raise ConnectorError(
+                ConnectorErrorCode.READBACK_MISMATCH,
+                "dbt readback did not return physical facts",
+                {"relation": relation},
+            )
+        return {
+            "relation": relation,
+            "invocation_id": operation.invocation_id,
+            "status": "not_provided",
+        }
 
     def read_artifact(self, operation: DbtPreparedOperation, name: str) -> bytes:
         try:

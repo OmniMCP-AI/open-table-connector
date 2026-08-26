@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from hashlib import sha256
 import json
-import os
-import subprocess
 from typing import Any, Mapping, Protocol
 
 import polars as pl
@@ -16,56 +14,11 @@ from open_connectors.contract import BaseConvention, ConnectorError, ConnectorEr
 from open_connectors.contract.fingerprints import arrow_content_fingerprint, arrow_schema_fingerprint, operation_identity
 
 from .identity import BASE_READ_CAPABILITY, CONNECTOR_IDENTITY, SHEET_READ_CAPABILITY
+from .process import SubprocessProcessClient
 
 
 class ProcessClient(Protocol):
     def run(self, argv: tuple[str, ...], *, credentials: Mapping[str, str] | None = None) -> Mapping[str, Any]: ...
-
-
-@dataclass(frozen=True)
-class SubprocessProcessClient:
-    """Small injected process boundary owned by the neutral Connector.
-
-    Credentials never enter the URI or argv. They are passed only as
-    explicitly prefixed environment values, and callers may inject a fake
-    ProcessClient for cassette/replay or tests.
-    """
-
-    binary: str = "mbs"
-    timeout_seconds: float = 120.0
-    environment: Mapping[str, str] = field(default_factory=dict)
-
-    def run(self, argv: tuple[str, ...], *, credentials: Mapping[str, str] | None = None) -> Mapping[str, Any]:
-        command = tuple(argv)
-        if not command or command[0] != self.binary:
-            command = (self.binary, *command)
-        env = os.environ.copy()
-        env.update({str(key): str(value) for key, value in self.environment.items()})
-        for key, value in (credentials or {}).items():
-            safe_key = "MAYBESHEET_" + "".join(character if character.isalnum() else "_" for character in str(key).upper())
-            env[safe_key] = str(value)
-        try:
-            completed = subprocess.run(
-                list(command),
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds,
-                env=env,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise ConnectorError(ConnectorErrorCode.TIMEOUT, "MaybeSheet process timed out", {"timeout_seconds": self.timeout_seconds}) from exc
-        if completed.returncode != 0:
-            # stderr is intentionally omitted: vendor tools occasionally echo
-            # credential material and Connector diagnostics must be safe.
-            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "MaybeSheet process failed", {"returncode": completed.returncode})
-        try:
-            payload = json.loads(completed.stdout)
-        except json.JSONDecodeError as exc:
-            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "MaybeSheet process returned invalid JSON", {}) from exc
-        if not isinstance(payload, Mapping):
-            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "MaybeSheet process returned a non-object payload", {})
-        return payload
 
 
 @dataclass(frozen=True)
@@ -158,8 +111,14 @@ class MaybeSheetConnector:
             argv += ("--limit", str(request.resource_limits.max_rows))
         try:
             payload = self._process.run(argv, credentials=request.credentials)
+        except ConnectorError:
+            raise
         except Exception as exc:
-            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "MaybeSheet process operation failed", {"reason": str(exc)}) from None
+            raise ConnectorError(
+                ConnectorErrorCode.EXECUTION_FAILED,
+                "MaybeSheet process operation failed",
+                {"reason": str(exc)},
+            ) from None
         table = _payload_table(payload)
         source = str(payload.get("source_revision") or "sha256:" + sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest())
         schema = arrow_schema_fingerprint(table.schema)
