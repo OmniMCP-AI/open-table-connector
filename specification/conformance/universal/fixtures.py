@@ -26,14 +26,49 @@ class RecordedProcessCall:
     timeout: int | float | None
 
 
+@dataclass(frozen=True)
+class RecordedSelection:
+    fields: tuple[str, ...] = ()
+    range: str | None = None
+
+
 def _copy_payload(payload: Any) -> Any:
-    return json.loads(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str))
+    return json.loads(json.dumps(payload, ensure_ascii=False, default=str))
 
 
 class RecordingSheetsTransport:
-    def __init__(self, responses: Mapping[str, Mapping[str, Any]]) -> None:
-        self._responses = {str(method): _copy_payload(payload) for method, payload in responses.items()}
+    def __init__(
+        self,
+        responses: Mapping[
+            str,
+            Mapping[str, Any] | Iterable[Mapping[str, Any]],
+        ],
+        *,
+        failure: BaseException | None = None,
+    ) -> None:
+        self._responses: dict[str, tuple[Mapping[str, Any], ...]] = {}
+        for method, payload in responses.items():
+            values = (payload,) if isinstance(payload, Mapping) else tuple(payload)
+            if not values:
+                raise ValueError(f"{method} requires at least one recorded response")
+            self._responses[str(method)] = tuple(_copy_payload(item) for item in values)
+        self._response_indexes = {method: 0 for method in self._responses}
+        self._failure = failure
         self.requests: list[RecordedRequest] = []
+        self.selections: list[RecordedSelection] = []
+
+    def record_selection(
+        self,
+        *,
+        fields: Iterable[str] = (),
+        range: str | None = None,
+    ) -> None:
+        self.selections.append(
+            RecordedSelection(
+                fields=tuple(str(field) for field in fields),
+                range=range,
+            )
+        )
 
     def request(
         self,
@@ -53,18 +88,29 @@ class RecordingSheetsTransport:
                 timeout=timeout,
             )
         )
+        if self._failure is not None:
+            raise self._failure
         try:
-            return _copy_payload(self._responses[method])
+            responses = self._responses[method]
         except KeyError as exc:
             raise KeyError(f"missing recorded response for method {method!r}") from exc
+        index = self._response_indexes[method]
+        self._response_indexes[method] = index + 1
+        return _copy_payload(responses[index % len(responses)])
 
 
 class RecordingProcessClient:
-    def __init__(self, responses: Mapping[str, Mapping[str, Any]]) -> None:
+    def __init__(
+        self,
+        responses: Mapping[str, Mapping[str, Any]],
+        *,
+        failure: BaseException | None = None,
+    ) -> None:
         self._responses = {
             str(operation): _copy_payload(payload)
             for operation, payload in responses.items()
         }
+        self._failure = failure
         self.calls: list[RecordedProcessCall] = []
 
     def run(
@@ -88,6 +134,8 @@ class RecordingProcessClient:
                 timeout=timeout,
             )
         )
+        if self._failure is not None:
+            raise self._failure
         if len(argv) < 3:
             raise KeyError(f"missing MaybeSheet operation in argv: {argv!r}")
         operation = argv[2]
@@ -115,13 +163,18 @@ class UniversalFixtureBundle:
 def build_fixture_bundle(root: Path) -> UniversalFixtureBundle:
     root.mkdir(parents=True, exist_ok=True)
     csv_path = root / "orders.csv"
-    csv_path.write_text("id,amount\n1,2.50\n2,\n", encoding="utf-8")
+    csv_path.write_text(
+        "id,amount,note\n1,2.50,first\n2,,\n3,7.00,last\n",
+        encoding="utf-8",
+    )
 
     xlsx_path = root / "orders.xlsx"
     workbook = Workbook()
     workbook.active.title = "orders"
-    workbook.active.append(["id", "amount"])
-    workbook.active.append(["1", "2.50"])
+    workbook.active.append(["id", "amount", "note"])
+    workbook.active.append(["1", 2.5, "first"])
+    workbook.active.append(["2", None, None])
+    workbook.active.append(["3", 7, "last"])
     refunds = workbook.create_sheet("refunds")
     refunds.append(["refund_id", "amount"])
     refunds.append(["r1", "1.00"])

@@ -12,6 +12,8 @@ import polars as pl
 from open_connectors.contract import (
     ArrowReadResult,
     CapabilityIdentity,
+    ConnectorError,
+    ConnectorErrorCode,
     ConnectorIdentity,
     ExecutionRequest,
     InspectRequest,
@@ -135,6 +137,8 @@ class ConnectorCase:
     inspect: Callable[[ResourceLimits], TableInspection] | None
     write: Callable[[pl.DataFrame, str], TableWriteResult] | None
     capability_bindings: Mapping[str, CapabilityBinding] = field(default_factory=dict)
+    recording: RecordingSheetsTransport | RecordingProcessClient | None = None
+    provider_failure: Callable[[], object] | None = None
 
     def __post_init__(self) -> None:
         connector_identity = getattr(self.connector, "identity", None)
@@ -271,14 +275,30 @@ def _local_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
 
 
 def _google_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
+    selected_range = "Orders!A1:C5"
     transport = RecordingSheetsTransport(
         {
             "GET": {
-                "range": "Orders!A1:B3",
-                "values": [["id", "amount"], ["a", 1], ["b", 2]],
+                "range": selected_range,
+                "majorDimension": "ROWS",
+                "values": [
+                    ["id", "amount", "note"],
+                    ["g1", 2.5, "first"],
+                    ["g2", None],
+                    ["g3", "7.00", "last"],
+                    ["g4", 4, "tail"],
+                ],
             },
-            "PUT": {"updatedRange": "Orders!A1:B3", "updatedRows": 2, "updatedColumns": 2},
-            "POST": {"updatedRange": "Orders!A1:B3", "updatedRows": 2, "updatedColumns": 2},
+            "PUT": {
+                "updatedRange": selected_range,
+                "updatedRows": 2,
+                "updatedColumns": 2,
+            },
+            "POST": {
+                "updatedRange": selected_range,
+                "updatedRows": 2,
+                "updatedColumns": 2,
+            },
         }
     )
     connector = GoogleSheetsConnector(transport=transport, access_token="fixture-token")
@@ -288,14 +308,44 @@ def _google_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
         return GoogleSheetsTableReadRequest(
             table_uri,
             resource_limits,
-            GoogleSheetsReadOptions(sheet="Orders"),
+            GoogleSheetsReadOptions(range=selected_range, sheet="Orders"),
         )
 
     def make_inspect_request(resource_limits: ResourceLimits) -> InspectRequest:
         return InspectRequest(table_uri, resource_limits)
 
     def make_write_request(frame: pl.DataFrame, if_exists: str) -> TableWriteRequest:
-        return TableWriteRequest(table_uri, frame, if_exists=if_exists, table="Orders")
+        return TableWriteRequest(
+            table_uri,
+            frame,
+            if_exists=if_exists,
+            table=selected_range,
+        )
+
+    def read_arrow(resource_limits: ResourceLimits) -> ArrowReadResult:
+        request = make_read_request(resource_limits)
+        transport.record_selection(range=request.options.range)
+        return connector.read_arrow(request)
+
+    def read_polars(resource_limits: ResourceLimits) -> PolarsReadResult:
+        request = make_read_request(resource_limits)
+        transport.record_selection(range=request.options.range)
+        return connector.read_polars(request)
+
+    def provider_failure() -> object:
+        failing_transport = RecordingSheetsTransport(
+            {"GET": {"values": []}},
+            failure=ConnectorError(
+                ConnectorErrorCode.EXECUTION_FAILED,
+                "Google Sheets provider request failed",
+                {"status": 503, "token": "fixture-token"},
+            ),
+        )
+        failing_connector = GoogleSheetsConnector(
+            transport=failing_transport,
+            access_token="fixture-token",
+        )
+        return failing_connector.read_arrow(make_read_request(ResourceLimits()))
 
     capability_bindings = {
         "uri.resolve": _binding(
@@ -306,13 +356,13 @@ def _google_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
             "table.read.arrow",
             expected_mode=TableMode.SHEET,
             make_request=make_read_request,
-            read_arrow=lambda resource_limits: connector.read_arrow(make_read_request(resource_limits)),
+            read_arrow=read_arrow,
         ),
         "table.read.polars": _binding(
             "table.read.polars",
             expected_mode=TableMode.SHEET,
             make_request=make_read_request,
-            read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
+            read_polars=read_polars,
         ),
         "table.inspect": _binding(
             "table.inspect",
@@ -343,23 +393,63 @@ def _google_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
         inspect=capability_bindings["table.inspect"].inspect,
         write=capability_bindings["table.write"].write,
         capability_bindings=capability_bindings,
+        recording=transport,
+        provider_failure=provider_failure,
     )
 
 
 def _feishu_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
+    selected_fields = ("name", "score", "note")
     transport = RecordingSheetsTransport(
         {
-            "GET": {
+            "GET": (
+                {
+                    "code": 0,
+                    "msg": "success",
+                    "data": {
+                        "items": [
+                            {
+                                "record_id": "rec_1",
+                                "fields": {
+                                    "name": "Ada",
+                                    "score": 10,
+                                    "note": "first",
+                                },
+                            }
+                        ],
+                        "has_more": True,
+                        "page_token": "fixture-page-2",
+                    },
+                },
+                {
+                    "code": 0,
+                    "msg": "success",
+                    "data": {
+                        "items": [
+                            {
+                                "record_id": "rec_2",
+                                "fields": {"name": "Lin", "score": "9"},
+                            },
+                            {
+                                "record_id": "rec_3",
+                                "fields": {"name": "Mei", "note": "last"},
+                            },
+                        ],
+                        "has_more": False,
+                        "page_token": None,
+                    },
+                },
+            ),
+            "POST": {
                 "code": 0,
+                "msg": "success",
                 "data": {
-                    "items": [
-                        {"record_id": "rec_1", "fields": {"name": "Ada", "score": 10}},
-                        {"record_id": "rec_2", "fields": {"name": "Lin", "score": 9}},
-                    ],
-                    "has_more": False,
+                    "records": [
+                        {"record_id": "rec_write_1"},
+                        {"record_id": "rec_write_2"},
+                    ]
                 },
             },
-            "POST": {"code": 0, "data": {"records": [{"record_id": "rec_3"}]}},
         }
     )
     connector = FeishuBitableConnector(
@@ -372,7 +462,7 @@ def _feishu_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
         return FeishuBitableTableReadRequest(
             table_uri,
             resource_limits,
-            FeishuBitableReadOptions(),
+            FeishuBitableReadOptions(selected_fields),
         )
 
     def make_inspect_request(resource_limits: ResourceLimits) -> InspectRequest:
@@ -380,6 +470,32 @@ def _feishu_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
 
     def make_write_request(frame: pl.DataFrame, if_exists: str) -> TableWriteRequest:
         return TableWriteRequest(table_uri, frame, if_exists=if_exists)
+
+    def read_arrow(resource_limits: ResourceLimits) -> ArrowReadResult:
+        request = make_read_request(resource_limits)
+        transport.record_selection(fields=request.options.field_names)
+        return connector.read_arrow(request)
+
+    def read_polars(resource_limits: ResourceLimits) -> PolarsReadResult:
+        request = make_read_request(resource_limits)
+        transport.record_selection(fields=request.options.field_names)
+        return connector.read_polars(request)
+
+    def provider_failure() -> object:
+        failing_transport = RecordingSheetsTransport(
+            {
+                "GET": {
+                    "code": 1254001,
+                    "msg": "provider rejected fixture-token",
+                    "data": {"items": [], "has_more": False},
+                }
+            }
+        )
+        failing_connector = FeishuBitableConnector(
+            transport=failing_transport,
+            tenant_access_token="fixture-token",
+        )
+        return failing_connector.read_arrow(make_read_request(ResourceLimits()))
 
     capability_bindings = {
         "uri.resolve": _binding(
@@ -390,13 +506,13 @@ def _feishu_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
             "table.read.arrow",
             expected_mode=TableMode.BASE,
             make_request=make_read_request,
-            read_arrow=lambda resource_limits: connector.read_arrow(make_read_request(resource_limits)),
+            read_arrow=read_arrow,
         ),
         "table.read.polars": _binding(
             "table.read.polars",
             expected_mode=TableMode.BASE,
             make_request=make_read_request,
-            read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
+            read_polars=read_polars,
         ),
         "table.inspect": _binding(
             "table.inspect",
@@ -427,36 +543,85 @@ def _feishu_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
         inspect=capability_bindings["table.inspect"].inspect,
         write=capability_bindings["table.write"].write,
         capability_bindings=capability_bindings,
+        recording=transport,
+        provider_failure=provider_failure,
     )
 
 
 def _maybe_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
+    credentials = {"access_token": "fixture-token"}
     process = RecordingProcessClient(
         {
             "db-table:read": {
-                "rows": [{"id": "1", "amount": "2.50"}],
+                "rows": [
+                    {"id": "1", "amount": 2.5, "note": "first"},
+                    {"id": "2", "amount": None, "note": None},
+                    {"id": "3", "amount": "7.00", "note": "last"},
+                    {"id": "4", "amount": 4, "note": "tail"},
+                ],
                 "source_revision": "fixture-maybe-base-rev",
                 "receipt_id": "fixture-base-read-ref",
             },
             "excel-worksheet:read": {
-                "rows": [{"id": "sheet-1", "amount": "7.00"}],
+                "rows": [
+                    {"id": "sheet-1", "amount": 7, "note": "first"},
+                    {"id": "sheet-2", "amount": None, "note": None},
+                    {"id": "sheet-3", "amount": "8.50", "note": "last"},
+                    {"id": "sheet-4", "amount": 9, "note": "tail"},
+                ],
                 "source_revision": "fixture-maybe-sheet-rev",
                 "receipt_id": "fixture-sheet-read-ref",
             },
-            "db-table:write": {"rows_written": 1, "receipt_id": "fixture-write-ref"},
+            "db-table:write": {
+                "rows_written": 2,
+                "receipt_id": "fixture-write-ref",
+            },
         }
     )
     connector = MaybeSheetConnector(process)
     table_uri = TableURI("https://www.maybe.ai/docs/spreadsheets/d/fixture-doc")
 
     def make_base_read_request(resource_limits: ResourceLimits) -> MaybeSheetReadRequest:
-        return MaybeSheetReadRequest(table_uri, TableMode.BASE, "R_orders", resource_limits)
+        return MaybeSheetReadRequest(
+            table_uri,
+            TableMode.BASE,
+            "R_orders",
+            resource_limits,
+            credentials,
+        )
 
     def make_sheet_read_request(resource_limits: ResourceLimits) -> MaybeSheetReadRequest:
-        return MaybeSheetReadRequest(table_uri, TableMode.SHEET, "Orders", resource_limits)
+        return MaybeSheetReadRequest(
+            table_uri,
+            TableMode.SHEET,
+            "Orders",
+            resource_limits,
+            credentials,
+        )
 
     def make_write_request(frame: pl.DataFrame, if_exists: str) -> TableWriteRequest:
         return TableWriteRequest(table_uri, frame, if_exists=if_exists, table="R_orders")
+
+    def write(frame: pl.DataFrame, if_exists: str) -> TableWriteResult:
+        return connector.write(
+            make_write_request(frame, if_exists),
+            credentials=credentials,
+        )
+
+    def provider_failure() -> object:
+        failing_process = RecordingProcessClient(
+            {},
+            failure=RuntimeError("process exposed fixture-token"),
+        )
+        failing_connector = MaybeSheetConnector(failing_process)
+        return failing_connector.read_arrow(
+            MaybeSheetReadRequest(
+                table_uri,
+                TableMode.BASE,
+                "R_orders",
+                credentials=credentials,
+            )
+        )
 
     capability_bindings = {
         "base.read": _binding(
@@ -488,7 +653,7 @@ def _maybe_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
         "table.write": _binding(
             MAYBE_TABLE_WRITE_CAPABILITY,
             expected_mode=TableMode.BASE,
-            write=lambda frame, if_exists: connector.write(make_write_request(frame, if_exists)),
+            write=write,
         ),
     }
 
@@ -514,6 +679,8 @@ def _maybe_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
         inspect=capability_bindings["base.inspect"].inspect,
         write=capability_bindings["table.write"].write,
         capability_bindings=capability_bindings,
+        recording=process,
+        provider_failure=provider_failure,
     )
 
 
