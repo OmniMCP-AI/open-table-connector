@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
 import sys
 from collections.abc import Sequence
 
@@ -14,6 +16,63 @@ from .registry import build_default_registry
 
 _FORMATS = ("auto", "csv", "json", "jsonl", "table")
 _OUTPUT_FORMATS = ("csv", "json", "jsonl", "table")
+_PARSER_FLAGS = frozenset(
+    {
+        "--from",
+        "--to",
+        "--from-format",
+        "--to-format",
+        "--output-format",
+        "--if-exists",
+        "--limit",
+        "--timeout",
+        "--sheet",
+        "--range",
+        "--field-name",
+        "--token",
+        "--target",
+    }
+)
+_KNOWN_VALUES = (*_FORMATS, "append", "replace", "error")
+
+
+class _ParserError(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class _ArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        raise _ParserError(message)
+
+
+def _safe_parser_details(message: str) -> dict[str, list[str]]:
+    flags = list(
+        dict.fromkeys(
+            flag for flag in re.findall(r"--[a-z][a-z0-9-]*", message) if flag in _PARSER_FLAGS
+        )
+    )
+    values = [
+        value
+        for value in _KNOWN_VALUES
+        if re.search(rf"\b{re.escape(value)}\b", message)
+    ]
+    details: dict[str, list[str]] = {}
+    if flags:
+        details["flags"] = flags
+    if values:
+        details["values"] = values
+    return details
+
+
+def _emit_parser_error(message: str) -> None:
+    payload = {
+        "code": "usage",
+        "message": "invalid command input",
+        "safe_details": _safe_parser_details(message),
+    }
+    sys.stderr.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
 
 
 def _add_options(parser: argparse.ArgumentParser, *, require_from: bool, require_to: bool) -> None:
@@ -33,8 +92,8 @@ def _add_options(parser: argparse.ArgumentParser, *, require_from: bool, require
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="otc", description="Move and inspect tables through Open Connectors.")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser = _ArgumentParser(prog="otc", description="Move and inspect tables through Open Connectors.")
+    subparsers = parser.add_subparsers(dest="command", required=True, parser_class=_ArgumentParser)
 
     list_parser = subparsers.add_parser("list", help="list available connectors")
     list_parser.add_argument("--output-format", choices=_OUTPUT_FORMATS, default="jsonl")
@@ -53,6 +112,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
+    except _ParserError as error:
+        _emit_parser_error(error.message)
+        sys.stderr.flush()
+        return 2
     except SystemExit as error:
         return int(error.code)
 

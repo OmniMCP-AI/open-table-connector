@@ -17,10 +17,15 @@ def _run_module(*args: str, env: dict[str, str] | None = None) -> subprocess.Com
 
 
 def test_parser_requires_explicit_from_and_to_for_import() -> None:
-    result = _run_module("import", "--from", "rows.csv")
+    token = "token-like-secret"
+    result = _run_module("import", "--from", "rows.csv", "--token", token)
 
     assert result.returncode == 2
+    assert len(result.stderr.splitlines()) == 1
+    error = json.loads(result.stderr)
+    assert error["code"] == "usage"
     assert "--to" in result.stderr
+    assert token not in result.stderr
 
 
 def test_otc_convert_csv_to_jsonl(tmp_path) -> None:
@@ -80,6 +85,9 @@ def test_parser_rejects_auto_output_format() -> None:
     )
 
     assert result.returncode == 2
+    assert len(result.stderr.splitlines()) == 1
+    error = json.loads(result.stderr)
+    assert error["code"] == "usage"
     assert "--output-format" in result.stderr
     assert "auto" in result.stderr
 
