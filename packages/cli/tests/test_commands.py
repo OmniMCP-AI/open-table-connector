@@ -26,7 +26,12 @@ class FakeAdapter:
     identity = ConnectorIdentity("fake", "1", "1")
     capabilities = (CapabilityIdentity("table.read.arrow", "1"),)
 
+    def __init__(self):
+        self.read_calls = 0
+        self.write_calls = 0
+
     def read(self, endpoint, options):
+        self.read_calls += 1
         if endpoint.uri is not None:
             raise ConnectorError(
                 ConnectorErrorCode.AUTHENTICATION,
@@ -53,6 +58,7 @@ class FakeAdapter:
         raise NotImplementedError
 
     def write(self, endpoint, table, options):
+        self.write_calls += 1
         raise NotImplementedError
 
 
@@ -107,6 +113,35 @@ def test_provider_auth_failure_maps_to_exit_code_four(fake_registry) -> None:
     assert code == 4
     assert out.getvalue() == ""
     assert "must not be emitted" not in out.getvalue() + err.getvalue()
+
+
+def test_read_rejects_provider_from_format_override_before_adapter_io(fake_registry) -> None:
+    out, err = io.StringIO(), io.StringIO()
+    args = type(
+        "Args",
+        (),
+        {
+            "command": "read",
+            "from_value": "gsheets://book/Orders",
+            "from_format": "csv",
+            "output_format": "jsonl",
+        },
+    )()
+
+    code = run_command(args, fake_registry, out, err)
+
+    payload = json.loads(err.getvalue())
+    adapter = fake_registry.list()[0]
+    assert code == 3
+    assert payload["code"] == "unsupported_capability"
+    assert payload["safe_details"] == {
+        "scheme": "gsheets",
+        "option": "from-format",
+        "format": "csv",
+    }
+    assert adapter.read_calls == 0
+    assert adapter.write_calls == 0
+    assert out.getvalue() == ""
 
 
 @pytest.mark.parametrize(

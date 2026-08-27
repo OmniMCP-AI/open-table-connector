@@ -5,7 +5,7 @@ import pyarrow as pa
 import pytest
 
 from open_connectors.cli.model import CliOptions, FormatName, parse_endpoint
-from open_connectors.cli.pipeline import convert_endpoint, import_endpoint, inspect_endpoint
+from open_connectors.cli.pipeline import convert_endpoint, import_endpoint, inspect_endpoint, read_endpoint
 from open_connectors.cli.registry import ConnectorRegistry, build_default_registry
 from open_connectors.contract import (
     CapabilityIdentity,
@@ -134,6 +134,44 @@ def test_inspect_delegates_to_adapter_without_cli_read() -> None:
     assert result is adapter.receipt
     assert adapter.inspection_calls == 1
     assert adapter.read_calls == 0
+
+
+def test_read_rejects_connector_format_override_before_adapter_read() -> None:
+    adapter = RecordingAdapter()
+    with pytest.raises(ConnectorError) as error:
+        read_endpoint(
+            parse_endpoint("fake://book/Orders"),
+            ConnectorRegistry([adapter]),
+            CliOptions(from_format=FormatName.CSV),
+        )
+
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+    assert error.value.safe_details == {
+        "scheme": "fake",
+        "option": "from-format",
+        "format": "csv",
+    }
+    assert adapter.read_calls == 0
+
+
+def test_import_rejects_connector_destination_format_before_adapter_io() -> None:
+    adapter = RecordingAdapter()
+    with pytest.raises(ConnectorError) as error:
+        import_endpoint(
+            parse_endpoint("fake://book/Orders"),
+            parse_endpoint("fake://book/Orders"),
+            ConnectorRegistry([adapter]),
+            CliOptions(to_format=FormatName.JSON),
+        )
+
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+    assert error.value.safe_details == {
+        "scheme": "fake",
+        "option": "to-format",
+        "format": "json",
+    }
+    assert adapter.read_calls == 0
+    assert adapter.write_calls == 0
 
 
 def test_convert_rejects_connector_destination() -> None:

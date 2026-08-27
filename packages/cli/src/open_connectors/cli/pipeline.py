@@ -10,7 +10,7 @@ from open_connectors.contract import ArrowReadResult, ConnectorError, ConnectorE
 
 from .adapters import ConnectorAdapter
 from .formats import infer_format, write_local
-from .model import CliOptions, Endpoint, PipelineSummary
+from .model import CliOptions, Endpoint, FormatName, PipelineSummary
 from .registry import ConnectorRegistry
 
 
@@ -19,6 +19,7 @@ def read_endpoint(
 ) -> ArrowReadResult:
     """Read one endpoint into Arrow, preserving the adapter's receipt."""
 
+    _validate_source_format(endpoint, options)
     adapter = registry.connector_for(endpoint)
     return adapter.read(endpoint, options)
 
@@ -28,6 +29,7 @@ def inspect_endpoint(
 ) -> TableInspection:
     """Delegate inspection to the selected adapter."""
 
+    _validate_source_format(endpoint, options)
     return registry.connector_for(endpoint).inspect(endpoint, options)
 
 
@@ -50,6 +52,7 @@ def convert_endpoint(
             {"scheme": "file", "format": destination_format.value},
         )
 
+    _validate_source_format(source, options)
     result = read_endpoint(source, registry, options)
     write_local(result.table, destination, destination_format)
     return PipelineSummary(
@@ -71,6 +74,9 @@ def import_endpoint(
     if _is_local(destination):
         raise _unsupported(destination, "import destinations must be writable connectors")
 
+    _validate_source_format(source, options)
+    _validate_destination_format(destination, options)
+
     # Validate before reading so unsupported imports cannot cause provider I/O.
     destination_adapter = registry.require_capability(destination, "table.write")
     preflight = getattr(destination_adapter, "preflight_write", None)
@@ -90,6 +96,34 @@ def import_endpoint(
 
 def _is_local(endpoint: Endpoint) -> bool:
     return endpoint.is_stdio or endpoint.path is not None
+
+
+def _validate_source_format(endpoint: Endpoint, options: CliOptions) -> None:
+    if _is_local(endpoint) or options.from_format is FormatName.AUTO:
+        return
+    raise ConnectorError(
+        ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+        "connector sources do not support --from-format; omit the override",
+        {
+            "scheme": endpoint.uri.scheme if endpoint.uri is not None else "file",
+            "option": "from-format",
+            "format": options.from_format.value,
+        },
+    )
+
+
+def _validate_destination_format(endpoint: Endpoint, options: CliOptions) -> None:
+    if _is_local(endpoint) or options.to_format is FormatName.AUTO:
+        return
+    raise ConnectorError(
+        ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+        "connector destinations do not support --to-format; omit the override",
+        {
+            "scheme": endpoint.uri.scheme if endpoint.uri is not None else "file",
+            "option": "to-format",
+            "format": options.to_format.value,
+        },
+    )
 
 
 def _unsupported(endpoint: Endpoint, message: str) -> ConnectorError:
