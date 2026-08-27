@@ -18,12 +18,12 @@ from .model import FormatName, PipelineSummary
 EXIT_CODES = {
     ConnectorErrorCode.INVALID_URI: 2,
     ConnectorErrorCode.UNSUPPORTED_CAPABILITY: 3,
-    ConnectorErrorCode.AUTHENTICATION: 3,
+    ConnectorErrorCode.AUTHENTICATION: 4,
     ConnectorErrorCode.CONFLICT: 6,
-    ConnectorErrorCode.TIMEOUT: 4,
-    ConnectorErrorCode.CANCELLED: 4,
-    ConnectorErrorCode.EXECUTION_FAILED: 4,
-    ConnectorErrorCode.READBACK_MISMATCH: 4,
+    ConnectorErrorCode.TIMEOUT: 5,
+    ConnectorErrorCode.CANCELLED: 5,
+    ConnectorErrorCode.EXECUTION_FAILED: 5,
+    ConnectorErrorCode.READBACK_MISMATCH: 5,
 }
 
 
@@ -98,16 +98,16 @@ def emit_summary(summary: PipelineSummary, out: TextIO) -> None:
 def emit_error(error: BaseException, err: TextIO) -> int:
     if isinstance(error, ConnectorError):
         payload = error.to_wire()
-        code = EXIT_CODES.get(error.code, 4)
+        code = EXIT_CODES.get(error.code, 5)
     elif isinstance(error, ValueError):
         payload = {"code": "usage", "message": "invalid command input", "safe_details": {}}
         code = 2
     elif isinstance(error, OSError):
         payload = {"code": "execution", "message": "command execution failed", "safe_details": {}}
-        code = 4
+        code = 5
     else:
         payload = {"code": "execution", "message": "command failed", "safe_details": {}}
-        code = 4
+        code = 5
     _write_json(payload, err)
     return code
 

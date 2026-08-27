@@ -5,6 +5,7 @@ import pyarrow as pa
 import pytest
 
 from open_connectors.cli.commands import run_command
+from open_connectors.cli.output import emit_error
 from open_connectors.cli.registry import ConnectorRegistry
 from open_connectors.contract import (
     ArrowReadResult,
@@ -87,6 +88,22 @@ def test_auth_error_is_safe_json_on_stderr(fake_registry) -> None:
         err,
     )
     payload = json.loads(err.getvalue())
-    assert code == 3
+    assert code == 4
     assert payload["code"] == "authentication"
     assert "token" not in err.getvalue().casefold()
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_code"),
+    [
+        (OSError("credential-bearing provider failure"), 5),
+        (ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "provider failure", {}), 5),
+        (ConnectorError(ConnectorErrorCode.CONFLICT, "write conflict", {}), 6),
+    ],
+)
+def test_error_exit_codes_are_stable_and_safe(error, expected_code) -> None:
+    err = io.StringIO()
+    assert emit_error(error, err) == expected_code
+    payload = json.loads(err.getvalue())
+    assert payload["code"] in {"execution", "execution_failed", "conflict"}
+    assert "credential-bearing" not in err.getvalue()
