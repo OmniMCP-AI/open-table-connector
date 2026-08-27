@@ -223,6 +223,8 @@ class MaybeSheetConnector:
                 {"reason": "unexpected process-client exception"},
             ) from None
         table = _payload_table(payload)
+        if request.resource_limits.max_rows is not None:
+            table = table.slice(0, request.resource_limits.max_rows)
         source = str(payload.get("source_revision") or "sha256:" + sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest())
         schema = arrow_schema_fingerprint(table.schema)
         content = arrow_content_fingerprint(table)

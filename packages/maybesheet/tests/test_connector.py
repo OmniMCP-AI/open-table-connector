@@ -5,6 +5,7 @@ import pytest
 import polars as pl
 
 from open_connectors.contract import ConnectorError, ConnectorErrorCode, ResourceLimits, TableMode, TableURI, TableWriteRequest
+from open_connectors.contract.fingerprints import arrow_content_fingerprint, arrow_schema_fingerprint
 from open_connectors.maybesheet import MaybeSheetConnector, MaybeSheetReadRequest, SubprocessProcessClient
 
 
@@ -24,6 +25,19 @@ class TimedProcess:
         return {"rows": [{"id": "1"}]}
 
 
+class OverReturningProcess:
+    def __init__(self):
+        self.calls = []
+
+    def run(self, argv, *, credentials=None, stdin=None):
+        self.calls.append((argv, credentials, stdin))
+        return {
+            "rows": [{"id": "1"}, {"id": "2"}, {"id": "3"}],
+            "source_revision": "rev-over-return",
+            "receipt_id": "over-return-ref",
+        }
+
+
 def test_maybesheet_has_explicit_base_and_sheet_argv_and_receipts() -> None:
     process = Process()
     connector = MaybeSheetConnector(process)
@@ -39,6 +53,25 @@ def test_maybesheet_has_explicit_base_and_sheet_argv_and_receipts() -> None:
     )
     assert process.calls[0][1] == {}
     assert result.receipt.vendor_receipt_ref == "safe-ref"
+
+
+def test_maybesheet_read_enforces_max_rows_when_process_over_returns() -> None:
+    process = OverReturningProcess()
+    request = MaybeSheetReadRequest(
+        TableURI("maybe://doc/R_orders"),
+        TableMode.BASE,
+        "R_orders",
+        ResourceLimits(max_rows=1),
+    )
+
+    result = MaybeSheetConnector(process).read_arrow(request)
+
+    assert result.table.to_pylist() == [{"id": "1"}]
+    assert process.calls[0][0][-2:] == ("--limit", "1")
+    assert result.receipt.row_count == 1
+    assert result.receipt.schema_fingerprint == arrow_schema_fingerprint(result.table.schema)
+    assert result.receipt.content_fingerprint == arrow_content_fingerprint(result.table)
+    assert result.receipt.vendor_receipt_ref == "over-return-ref"
 
 
 def test_maybesheet_non_read_capabilities_fail_explicitly() -> None:

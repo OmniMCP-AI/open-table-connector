@@ -17,6 +17,7 @@ from open_connectors.contract import (
     TableURI,
     TableWriteResult,
 )
+from open_connectors.contract.fingerprints import arrow_content_fingerprint
 
 
 @dataclass
@@ -49,6 +50,19 @@ class RecordingProcess:
         if argv[2] == "write":
             return {"rows_written": 1, "receipt_id": "write-ref"}
         return {"rows": [{"id": "a"}], "receipt_id": "read-ref"}
+
+
+class OverReturningProcess:
+    def __init__(self) -> None:
+        self.calls: list[tuple[tuple[str, ...], object, str | None]] = []
+
+    def run(self, argv, *, credentials=None, stdin=None):
+        self.calls.append((argv, credentials, stdin))
+        return {
+            "rows": [{"id": "a"}, {"id": "b"}, {"id": "c"}],
+            "source_revision": "rev-over-return",
+            "receipt_id": "read-ref",
+        }
 
 
 def test_convert_csv_to_json_writes_union_rows(tmp_path) -> None:
@@ -515,6 +529,28 @@ def test_google_source_limit_is_reflected_in_import_summary_and_destination_tabl
     assert summary.rows_read == 2
     assert summary.rows_written == 2
     assert destination_adapter.tables[0].num_rows == 2
+
+
+def test_maybesheet_source_limit_is_enforced_when_process_over_returns_during_import() -> None:
+    process = OverReturningProcess()
+    destination_adapter = RecordingAdapter()
+    registry = build_default_registry(transports={"maybesheet": process})
+    registry.register(destination_adapter)
+
+    summary = import_endpoint(
+        parse_endpoint("maybe://doc/R_orders"),
+        parse_endpoint("fake://book/Orders"),
+        registry,
+        CliOptions(limit=2, if_exists="append"),
+    )
+
+    written_table = destination_adapter.tables[0]
+    assert written_table.to_pylist() == [{"id": "a"}, {"id": "b"}]
+    assert process.calls[0][0][-2:] == ("--limit", "2")
+    assert summary.rows_read == 2
+    assert summary.rows_written == 2
+    assert summary.source_receipt.row_count == 2
+    assert summary.source_receipt.content_fingerprint == arrow_content_fingerprint(written_table)
 
 
 def test_maybesheet_https_missing_target_is_rejected_before_source_or_process_io() -> None:
