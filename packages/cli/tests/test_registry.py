@@ -15,6 +15,15 @@ class Transport:
         return self.payload
 
 
+class Process:
+    def __init__(self):
+        self.calls = []
+
+    def run(self, argv, *, credentials=None, stdin=None):
+        self.calls.append((argv, credentials, stdin))
+        return {"rows": [{"id": "1"}]}
+
+
 def test_default_registry_lists_all_supported_adapter_schemes() -> None:
     schemes = {scheme for adapter in build_default_registry(env={}).list() for scheme in adapter.schemes}
     assert {"gsheets", "https", "feishu", "feishu_bitable", "maybe", "file"}.issubset(schemes)
@@ -55,3 +64,43 @@ def test_https_dispatch_rejects_unknown_hosts_without_calling_transport() -> Non
         registry.connector_for(parse_endpoint("https://example.com/table"))
     assert error.value.code is ConnectorErrorCode.INVALID_URI
     assert error.value.safe_details == {"scheme": "https", "host": "example.com"}
+
+
+def test_google_adapter_inspect_uses_options_and_injected_transport() -> None:
+    transport = Transport({"values": [["id"], ["1"]]})
+    registry = build_default_registry(
+        env={"GOOGLE_SHEETS_ACCESS_TOKEN": "google-secret"},
+        transports={"google_sheets": transport},
+    )
+    endpoint = parse_endpoint("gsheets://book/Orders")
+
+    inspection = registry.connector_for(endpoint).inspect(endpoint, CliOptions(token="cli-secret"))
+
+    assert inspection.columns == ("id",)
+    assert transport.calls[0][2] == {"Authorization": "Bearer cli-secret"}
+
+
+def test_feishu_adapter_inspect_uses_options_and_injected_transport() -> None:
+    transport = Transport({"code": 0, "data": {"items": [{"record_id": "r1", "fields": {"id": "1"}}]}})
+    registry = build_default_registry(
+        env={"FEISHU_TENANT_ACCESS_TOKEN": "feishu-secret"},
+        transports={"feishu_bitable": transport},
+    )
+    endpoint = parse_endpoint("feishu://app/table")
+
+    inspection = registry.connector_for(endpoint).inspect(endpoint, CliOptions(token="cli-secret"))
+
+    assert inspection.columns == ("_record_id", "id")
+    assert transport.calls[0][2] == {"Authorization": "Bearer cli-secret"}
+
+
+def test_maybesheet_sheet_capability_is_rejected_before_process_io() -> None:
+    process = Process()
+    registry = build_default_registry(transports={"maybesheet": process})
+
+    with pytest.raises(ConnectorError) as error:
+        registry.require_capability(parse_endpoint("maybe://doc/target"), "sheet.read")
+
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+    assert error.value.safe_details == {"scheme": "maybe", "capability": "sheet.read"}
+    assert process.calls == []

@@ -90,7 +90,6 @@ class GoogleSheetsAdapter:
         return self._connector(options).read_arrow(request)
 
     def inspect(self, endpoint: Endpoint, options: CliOptions) -> TableInspection:
-        del options
         return self._connector(options).inspect(InspectRequest(_uri(endpoint)))
 
     def write(self, endpoint: Endpoint, table: pa.Table, options: CliOptions) -> TableWriteResult:
@@ -119,7 +118,6 @@ class FeishuBitableAdapter:
         return self._connector(options).read_arrow(request)
 
     def inspect(self, endpoint: Endpoint, options: CliOptions) -> TableInspection:
-        del options
         return self._connector(options).inspect(InspectRequest(_uri(endpoint)))
 
     def write(self, endpoint: Endpoint, table: pa.Table, options: CliOptions) -> TableWriteResult:
@@ -133,9 +131,7 @@ class MaybeSheetAdapter:
     identity: ConnectorIdentity = ConnectorIdentity("maybesheet", "0.1.0", "1.0")
     capabilities: tuple[CapabilityIdentity, ...] = (
         CapabilityIdentity("base.read", "1.0"),
-        CapabilityIdentity("sheet.read", "1.0"),
         CapabilityIdentity("base.inspect", "1.0"),
-        CapabilityIdentity("sheet.inspect", "1.0"),
         CapabilityIdentity("table.write", "1.0"),
     )
 
