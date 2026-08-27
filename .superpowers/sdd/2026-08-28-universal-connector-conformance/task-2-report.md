@@ -91,3 +91,36 @@ Observed result: the shared invariant helpers and fixtures did not regress the e
 - `dbt` remains an identity-only universal case for this suite: it has capability bindings and schemes but no connector manifest or table modes, so the new tests intentionally validate its capability wire shape and stable empty mode set without forcing it through `CapabilityManifest`.
 - The shared sqlite case still does not expose a table-specific inspect request through the Task 1 boundary, so Task 2’s deterministic inspection test excludes `sqlite` and covers its deterministic metadata through read and write receipts instead.
 - The MaybeSheet write fixture intentionally returns `affected_rows == 1` for a two-row append receipt in the recorded process response. The suite now locks that deterministic fixture value in place; if the fixture contract changes later, that expectation will need to change with it.
+
+## Fix Round 1
+
+Date: 2026-08-28
+
+Fix commit: `513edb75f7186b9cb04917a6bc88bc8b6e736f3e`
+
+### Summary
+
+- Restored capability-driven SQLite inspection coverage and added the fixture table required by the connector's public inspection path.
+- Compared all public repeated-inspection metadata: safe URI, mode, columns, schema fingerprint, row count, coordinate convention, and facts.
+- Rebuilt the universal fixture bundle per test so SQLite writes cannot contaminate later cases.
+- Preserved public `CapabilityIdentity` objects in manifest-less capability bindings instead of fabricating version `1.0` identities.
+- Declared expected modes on capability bindings and used those declarations for read, inspect, and write receipt assertions.
+- Added descriptive invalid-URI case IDs and failure matching; removed duplicate capability wire assertions, self-derived frozenset uniqueness checks, and provider-specific affected-row expectations from Task 2.
+
+### TDD Evidence
+
+- SQLite inspection red: `1 failed, 4 passed`; failure was `SQLite read failed` for the advertised `table.inspect` binding's missing `main.table` fixture.
+- SQLite isolation red: `1 failed, 1 passed`; the later case observed rows written by the prior `replace` test.
+- Expected-mode red: `1 failed`; `CapabilityBinding` did not yet expose an independent `expected_mode` declaration.
+- Public-identity red: `1 failed`; `CapabilityBinding` did not yet retain the public capability identity object.
+
+### Verification
+
+- `uv run python -m pytest specification/conformance/universal/test_discovery.py specification/conformance/universal/test_contract.py -q` — `66 passed in 0.68s`.
+- `uv run python -m pytest specification/conformance/universal -q` — `66 passed in 1.62s`.
+- Focused universal tests plus the relevant Google Sheets, Feishu Bitable, MaybeSheet, SQLite, Postgres, dbt, and local-files regression tests — `101 passed in 0.76s`.
+- `git diff --check` — passed before the fix commit.
+
+### Concerns
+
+- SQLite's public `inspect(InspectRequest)` currently selects the connector default literal table name `main.table`; the universal fixture mirrors that behavior while normal reads continue to use `orders`. If SQLite inspection later accepts connector-specific table options, this fixture alias should be removed in favor of the declared request target.
