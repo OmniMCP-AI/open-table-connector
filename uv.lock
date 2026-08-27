@@ -13,8 +13,8 @@ members = [
     "open-connectors-maybesheet",
     "open-connectors-postgres",
     "open-connectors-sqlite",
-    "open-connectors-workspace",
     "open-table-connector",
+    "open-table-connector-workspace",
 ]
 
 [[package]]
@@ -200,7 +200,18 @@ requires-dist = [
 ]
 
 [[package]]
-name = "open-connectors-workspace"
+name = "open-table-connector"
+version = "0.1.0"
+source = { editable = "packages/cli" }
+dependencies = [
+    { name = "open-connectors-contract" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "open-connectors-contract", editable = "packages/contract" }]
+
+[[package]]
+name = "open-table-connector-workspace"
 version = "0.1.0"
 source = { editable = "." }
 
@@ -213,17 +224,6 @@ dev = [
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=9,<10" }]
-
-[[package]]
-name = "open-table-connector"
-version = "0.1.0"
-source = { editable = "packages/cli" }
-dependencies = [
-    { name = "open-connectors-contract" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "open-connectors-contract", editable = "packages/contract" }]
 
 [[package]]
 name = "openpyxl"
