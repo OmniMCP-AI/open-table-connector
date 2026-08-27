@@ -271,3 +271,20 @@ Output: no output; exit code `0`.
 ### Concerns
 
 - `open_connectors.cli.__main__` remains a later-task follow-up, so the declared console scripts are not expected to be runnable until that task implements the entry point.
+
+## Local File Endpoint Safety Fix
+
+- Rejects non-local `file:` authorities while preserving empty and `localhost` authorities.
+- Rejects file URI query and fragment components before path conversion, using errors that do not echo input secrets.
+- Preserves absolute file URIs, bare paths, stdin, Windows drive paths, and connector URIs.
+- Added focused authority, ignored-component, secret-leakage, and preservation regressions.
+
+Verification:
+
+```text
+uv run python -m pytest packages/cli/tests/test_model.py -q
+14 passed in 0.36s
+
+uv run python -m pytest packages/cli/tests -q
+101 passed in 2.76s
+```

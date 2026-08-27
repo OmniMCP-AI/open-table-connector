@@ -55,7 +55,12 @@ def parse_endpoint(value: str) -> Endpoint:
     if parsed.scheme:
         if parsed.scheme.casefold() == "file":
             validated = TableURI(value)
-            path = Path(url2pathname(urlsplit(validated.value).path))
+            file_uri = urlsplit(validated.value)
+            if file_uri.netloc.casefold() not in ("", "localhost"):
+                raise ValueError("file endpoint authority must be empty or localhost")
+            if file_uri.query or file_uri.fragment:
+                raise ValueError("file endpoint cannot contain a query or fragment")
+            path = Path(url2pathname(file_uri.path))
             return Endpoint(raw=value, uri=None, path=path, is_stdio=False)
         return Endpoint(raw=value, uri=TableURI(value), path=None, is_stdio=False)
 
