@@ -69,6 +69,16 @@ def test_https_dispatch_rejects_unknown_hosts_without_calling_transport() -> Non
     assert error.value.safe_details == {"scheme": "https", "host": "example.com"}
 
 
+def test_registry_reports_unknown_connector_scheme_as_unsupported_capability() -> None:
+    registry = build_default_registry(env={})
+
+    with pytest.raises(ConnectorError) as error:
+        registry.connector_for(parse_endpoint("unknown://book/Orders"))
+
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+    assert error.value.safe_details == {"scheme": "unknown"}
+
+
 def test_google_adapter_inspect_uses_options_and_injected_transport() -> None:
     transport = Transport({"values": [["id"], ["1"], ["2"]]})
     registry = build_default_registry(

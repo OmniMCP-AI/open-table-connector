@@ -31,9 +31,11 @@ class ConnectorRegistry:
         assert endpoint.uri is not None
         scheme = endpoint.uri.scheme
         parsed = urlsplit(endpoint.uri.value)
+        scheme_matched = False
         for adapter in self._adapters:
             if scheme not in adapter.schemes:
                 continue
+            scheme_matched = True
             if scheme == "https":
                 host = (parsed.hostname or "").casefold()
                 if adapter.identity.connector_id == "google_sheets" and host != "docs.google.com":
@@ -41,6 +43,8 @@ class ConnectorRegistry:
                 if adapter.identity.connector_id == "maybesheet" and host != "www.maybe.ai":
                     continue
             return adapter
+        if not scheme_matched:
+            raise self._unsupported_scheme(endpoint)
         raise self._invalid(endpoint, parsed.hostname)
 
     def require_capability(self, endpoint: Endpoint, capability_id: str) -> ConnectorAdapter:
@@ -57,6 +61,15 @@ class ConnectorRegistry:
         if host:
             details["host"] = host
         return ConnectorError(ConnectorErrorCode.INVALID_URI, "no connector supports this endpoint", details)
+
+    @staticmethod
+    def _unsupported_scheme(endpoint: Endpoint) -> ConnectorError:
+        scheme = endpoint.uri.scheme if endpoint.uri else "file"
+        return ConnectorError(
+            ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+            "no connector advertises this endpoint scheme",
+            {"scheme": scheme},
+        )
 
 
 def build_default_registry(env: Mapping[str, str] | None = None, transports: Mapping[str, Any] | None = None) -> ConnectorRegistry:
