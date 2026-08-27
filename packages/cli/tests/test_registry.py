@@ -1,8 +1,11 @@
+import io
+import sys
+
 import pytest
 
 from open_connectors.cli.model import CliOptions, parse_endpoint
 from open_connectors.cli.registry import build_default_registry
-from open_connectors.contract import ConnectorError, ConnectorErrorCode
+from open_connectors.contract import ConnectorError, ConnectorErrorCode, TableMode
 
 
 class Transport:
@@ -67,31 +70,49 @@ def test_https_dispatch_rejects_unknown_hosts_without_calling_transport() -> Non
 
 
 def test_google_adapter_inspect_uses_options_and_injected_transport() -> None:
-    transport = Transport({"values": [["id"], ["1"]]})
+    transport = Transport({"values": [["id"], ["1"], ["2"]]})
     registry = build_default_registry(
         env={"GOOGLE_SHEETS_ACCESS_TOKEN": "google-secret"},
         transports={"google_sheets": transport},
     )
     endpoint = parse_endpoint("gsheets://book/Orders")
 
-    inspection = registry.connector_for(endpoint).inspect(endpoint, CliOptions(token="cli-secret"))
+    inspection = registry.connector_for(endpoint).inspect(
+        endpoint, CliOptions(token="cli-secret", limit=1, timeout=1.1)
+    )
 
     assert inspection.columns == ("id",)
+    assert inspection.row_count == 1
     assert transport.calls[0][2] == {"Authorization": "Bearer cli-secret"}
+    assert transport.calls[0][4] == 2
 
 
 def test_feishu_adapter_inspect_uses_options_and_injected_transport() -> None:
-    transport = Transport({"code": 0, "data": {"items": [{"record_id": "r1", "fields": {"id": "1"}}]}})
+    transport = Transport({"code": 0, "data": {"items": [
+        {"record_id": "r1", "fields": {"id": "1"}},
+        {"record_id": "r2", "fields": {"id": "2"}},
+    ]}})
     registry = build_default_registry(
         env={"FEISHU_TENANT_ACCESS_TOKEN": "feishu-secret"},
         transports={"feishu_bitable": transport},
     )
     endpoint = parse_endpoint("feishu://app/table")
 
-    inspection = registry.connector_for(endpoint).inspect(endpoint, CliOptions(token="cli-secret"))
+    inspection = registry.connector_for(endpoint).inspect(
+        endpoint, CliOptions(token="cli-secret", limit=1, timeout=1.1)
+    )
 
     assert inspection.columns == ("_record_id", "id")
+    assert inspection.row_count == 1
     assert transport.calls[0][2] == {"Authorization": "Bearer cli-secret"}
+    assert transport.calls[0][4] == 2
+
+
+def test_default_registry_exposes_base_modes_for_local_and_maybesheet() -> None:
+    adapters = {adapter.identity.connector_id: adapter for adapter in build_default_registry(env={}).list()}
+
+    assert adapters["local_files"].modes == (TableMode.BASE,)
+    assert adapters["maybesheet"].modes == (TableMode.BASE,)
 
 
 def test_maybesheet_sheet_capability_is_rejected_before_process_io() -> None:
@@ -117,6 +138,7 @@ def test_local_receipts_are_content_and_operation_specific(tmp_path) -> None:
     source.write_text('[{"id": 2}]')
     second = adapter.read(endpoint, options).receipt
 
+    assert first.safe_uri.value == endpoint.path.resolve().as_uri()
     assert first.content_fingerprint != second.content_fingerprint
     assert first.source_revision != second.source_revision
     assert first.operation_id != second.operation_id
@@ -170,3 +192,13 @@ def test_maybesheet_https_document_uses_explicit_target() -> None:
     registry.connector_for(endpoint).read(endpoint, CliOptions(target="R_orders"))
 
     assert process.calls[0][0][-2:] == ("--target", "R_orders")
+
+
+def test_local_stdin_receipt_uses_stable_stdio_uri(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "stdin", io.StringIO('[{"id": 1}]'))
+    endpoint = parse_endpoint("-")
+    adapter = build_default_registry(env={}).connector_for(endpoint)
+
+    result = adapter.read(endpoint, CliOptions(from_format="json"))
+
+    assert result.receipt.safe_uri.value == "stdio://stdin"

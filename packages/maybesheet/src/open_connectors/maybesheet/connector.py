@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from hashlib import sha256
+import inspect
 import json
 from typing import Any, Mapping, Protocol
 
@@ -18,7 +19,14 @@ from .process import SubprocessProcessClient
 
 
 class ProcessClient(Protocol):
-    def run(self, argv: tuple[str, ...], *, credentials: Mapping[str, str] | None = None, stdin: str | None = None) -> Mapping[str, Any]: ...
+    def run(
+        self,
+        argv: tuple[str, ...],
+        *,
+        credentials: Mapping[str, str] | None = None,
+        stdin: str | None = None,
+        timeout: float | int | None = None,
+    ) -> Mapping[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -176,13 +184,36 @@ class MaybeSheetConnector:
         del request
         self._unsupported("formula.readback")
 
+    def _run_process(
+        self,
+        argv: tuple[str, ...],
+        *,
+        credentials: Mapping[str, str] | None = None,
+        stdin: str | None = None,
+        timeout: float | int | None = None,
+    ) -> Mapping[str, Any]:
+        kwargs: dict[str, Any] = {"credentials": credentials, "stdin": stdin}
+        try:
+            parameters = inspect.signature(self._process.run).parameters.values()
+        except (TypeError, ValueError):
+            parameters = ()
+        if any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters) or any(
+            parameter.name == "timeout" for parameter in parameters
+        ):
+            kwargs["timeout"] = timeout
+        return self._process.run(argv, **kwargs)
+
     def _read(self, request: MaybeSheetReadRequest):
         verb = "db-table" if request.mode is TableMode.BASE else "excel-worksheet"
         argv = ("mbs", verb, "read", "--uri", request.uri.value, "--target", request.target)
         if request.resource_limits.max_rows is not None:
             argv += ("--limit", str(request.resource_limits.max_rows))
         try:
-            payload = self._process.run(argv, credentials=request.credentials)
+            payload = self._run_process(
+                argv,
+                credentials=request.credentials,
+                timeout=request.resource_limits.timeout_seconds,
+            )
         except ConnectorError:
             raise
         except Exception:

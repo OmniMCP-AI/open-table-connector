@@ -4,7 +4,7 @@ import pytest
 
 import polars as pl
 
-from open_connectors.contract import ConnectorError, ConnectorErrorCode, TableMode, TableURI, TableWriteRequest
+from open_connectors.contract import ConnectorError, ConnectorErrorCode, ResourceLimits, TableMode, TableURI, TableWriteRequest
 from open_connectors.maybesheet import MaybeSheetConnector, MaybeSheetReadRequest, SubprocessProcessClient
 
 
@@ -13,6 +13,15 @@ class Process:
     def run(self, argv, *, credentials=None, stdin=None):
         self.calls.append((argv, credentials, stdin))
         return {"rows": [{"id": "1", "amount": "2.50"}], "source_revision": "rev-1", "receipt_id": "safe-ref"}
+
+
+class TimedProcess:
+    def __init__(self):
+        self.timeout = None
+
+    def run(self, argv, *, credentials=None, stdin=None, timeout=None):
+        self.timeout = timeout
+        return {"rows": [{"id": "1"}]}
 
 
 def test_maybesheet_has_explicit_base_and_sheet_argv_and_receipts() -> None:
@@ -166,3 +175,32 @@ def test_maybesheet_subprocess_transport_maps_timeouts_to_stable_connector_error
     with pytest.raises(ConnectorError) as error:
         SubprocessProcessClient().run(("mbs", "db-table", "read"))
     assert error.value.code is ConnectorErrorCode.TIMEOUT
+
+
+def test_maybesheet_read_passes_request_timeout_to_compatible_process_client() -> None:
+    process = TimedProcess()
+    request = MaybeSheetReadRequest(
+        TableURI("maybe://doc/R_orders"),
+        TableMode.BASE,
+        "R_orders",
+        ResourceLimits(timeout_seconds=7),
+    )
+
+    MaybeSheetConnector(process).read_arrow(request)
+
+    assert process.timeout == 7
+
+
+def test_maybesheet_subprocess_client_accepts_per_request_timeout(monkeypatch) -> None:
+    seen = {}
+
+    def fake_run(command, **kwargs):
+        seen.update(command=command, **kwargs)
+        return subprocess.CompletedProcess(command, 0, '{"ok": true}', "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    SubprocessProcessClient(timeout_seconds=120).run(
+        ("mbs", "db-table", "read"), timeout=3.5
+    )
+
+    assert seen["timeout"] == 3.5

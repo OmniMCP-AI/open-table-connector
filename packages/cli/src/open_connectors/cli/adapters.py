@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 from typing import Any, Mapping, Protocol
 from urllib.parse import urlsplit
@@ -52,6 +53,7 @@ class ConnectorAdapter(Protocol):
     schemes: tuple[str, ...]
     identity: ConnectorIdentity
     capabilities: tuple[CapabilityIdentity, ...]
+    modes: tuple[TableMode, ...]
 
     def read(self, endpoint: Endpoint, options: CliOptions) -> ArrowReadResult: ...
     def inspect(self, endpoint: Endpoint, options: CliOptions) -> TableInspection: ...
@@ -65,7 +67,7 @@ def _uri(endpoint: Endpoint) -> TableURI:
 
 
 def _limits(options: CliOptions) -> ResourceLimits:
-    timeout = None if options.timeout is None else int(options.timeout)
+    timeout = None if options.timeout is None else math.ceil(options.timeout)
     return ResourceLimits(max_rows=options.limit, timeout_seconds=timeout)
 
 
@@ -85,6 +87,12 @@ def _conflict(endpoint: Endpoint) -> ConnectorError:
         "destination already contains rows",
         {"scheme": endpoint.uri.scheme if endpoint.uri else "file"},
     )
+
+
+def _local_uri(endpoint: Endpoint) -> TableURI:
+    if endpoint.path is not None:
+        return TableURI(endpoint.path.resolve().as_uri())
+    return TableURI("stdio://stdin")
 
 
 @dataclass
@@ -130,7 +138,7 @@ class GoogleSheetsAdapter:
         return self._connector(options).read_arrow(request)
 
     def inspect(self, endpoint: Endpoint, options: CliOptions) -> TableInspection:
-        return self._connector(options).inspect(InspectRequest(_uri(endpoint)))
+        return self._connector(options).inspect(InspectRequest(_uri(endpoint), _limits(options)))
 
     def write(self, endpoint: Endpoint, table: pa.Table, options: CliOptions) -> TableWriteResult:
         return self._connector(options).write(TableWriteRequest(_uri(endpoint), _frame(table), options.if_exists, options.target))
@@ -175,7 +183,7 @@ class FeishuBitableAdapter:
         return self._connector(options).read_arrow(request)
 
     def inspect(self, endpoint: Endpoint, options: CliOptions) -> TableInspection:
-        return self._connector(options).inspect(InspectRequest(_uri(endpoint)))
+        return self._connector(options).inspect(InspectRequest(_uri(endpoint), _limits(options)))
 
     def write(self, endpoint: Endpoint, table: pa.Table, options: CliOptions) -> TableWriteResult:
         return self._connector(options).write(TableWriteRequest(_uri(endpoint), _frame(table), options.if_exists, options.target))
@@ -186,6 +194,7 @@ class MaybeSheetAdapter:
     connector: MaybeSheetConnector
     schemes: tuple[str, ...] = ("maybe", "https")
     identity: ConnectorIdentity = ConnectorIdentity("maybesheet", "0.1.0", "1.0")
+    modes: tuple[TableMode, ...] = (TableMode.BASE,)
     capabilities: tuple[CapabilityIdentity, ...] = (
         CapabilityIdentity("base.read", "1.0"),
         CapabilityIdentity("base.inspect", "1.0"),
@@ -249,6 +258,7 @@ class MaybeSheetAdapter:
 class LocalAdapter:
     schemes: tuple[str, ...] = ("file",)
     identity: ConnectorIdentity = ConnectorIdentity("local_files", "0.1.0", "1.0")
+    modes: tuple[TableMode, ...] = (TableMode.BASE,)
     capabilities: tuple[CapabilityIdentity, ...] = (
         CapabilityIdentity("table.read.arrow", "1.0"),
         CapabilityIdentity("table.read.polars", "1.0"),
@@ -281,7 +291,7 @@ _LOCAL_WRITE_CAPABILITY = CapabilityIdentity("table.write", "1.0")
 def _local_receipt(
     endpoint: Endpoint, table: pa.Table, capability: CapabilityIdentity
 ) -> NeutralReceipt:
-    uri = endpoint.uri or TableURI("file:///" + str(endpoint.path))
+    uri = _local_uri(endpoint)
     schema = arrow_schema_fingerprint(table.schema)
     content = arrow_content_fingerprint(table)
     source_revision = "sha256:" + content

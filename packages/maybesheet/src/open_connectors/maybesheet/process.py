@@ -25,7 +25,9 @@ class SubprocessProcessClient:
         *,
         credentials: Mapping[str, str] | None = None,
         stdin: str | None = None,
+        timeout: float | int | None = None,
     ) -> Mapping[str, Any]:
+        effective_timeout = self.timeout_seconds if timeout is None else timeout
         command = tuple(argv)
         if not command or command[0] != self.binary:
             command = (self.binary, *command)
@@ -44,14 +46,14 @@ class SubprocessProcessClient:
                 capture_output=True,
                 text=True,
                 input=stdin,
-                timeout=self.timeout_seconds,
+                timeout=effective_timeout,
                 env=env,
             )
         except subprocess.TimeoutExpired as exc:
             raise ConnectorError(
                 ConnectorErrorCode.TIMEOUT,
                 "MaybeSheet process timed out",
-                {"timeout_seconds": self.timeout_seconds},
+                {"timeout_seconds": effective_timeout},
             ) from exc
         if completed.returncode != 0:
             raise ConnectorError(
