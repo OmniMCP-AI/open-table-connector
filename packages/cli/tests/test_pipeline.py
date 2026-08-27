@@ -440,3 +440,60 @@ def test_google_invalid_policy_is_rejected_before_source_read_or_destination_wri
     assert error.value.code is ConnectorErrorCode.INVALID_URI
     assert source_adapter.read_calls == 0
     assert transport.calls == []
+
+
+def test_local_source_limit_is_reflected_in_import_summary_and_destination_table(tmp_path) -> None:
+    source = tmp_path / "orders.json"
+    source.write_text('[{"id": 1}, {"id": 2}, {"id": 3}]')
+    destination_adapter = RecordingAdapter()
+    registry = build_default_registry(env={})
+    registry.register(destination_adapter)
+
+    summary = import_endpoint(
+        parse_endpoint(str(source)), parse_endpoint("fake://book/Orders"), registry,
+        CliOptions(from_format="json", limit=2, if_exists="append"),
+    )
+
+    assert summary.rows_read == 2
+    assert summary.rows_written == 2
+    assert destination_adapter.tables[0].num_rows == 2
+
+
+def test_google_source_limit_is_reflected_in_import_summary_and_destination_table() -> None:
+    transport = RecordingTransport({
+        "GET": {"values": [["id"], ["a"], ["b"], ["c"]]},
+    })
+    destination_adapter = RecordingAdapter()
+    registry = build_default_registry(
+        env={"GOOGLE_SHEETS_ACCESS_TOKEN": "token"}, transports={"google_sheets": transport}
+    )
+    registry.register(destination_adapter)
+
+    summary = import_endpoint(
+        parse_endpoint("gsheets://book/Orders"), parse_endpoint("fake://book/Orders"), registry,
+        CliOptions(limit=2, if_exists="append"),
+    )
+
+    assert summary.rows_read == 2
+    assert summary.rows_written == 2
+    assert destination_adapter.tables[0].num_rows == 2
+
+
+def test_maybesheet_https_missing_target_is_rejected_before_source_or_process_io() -> None:
+    source_adapter = RecordingAdapter()
+    process = RecordingProcess()
+    registry = build_default_registry(transports={"maybesheet": process})
+    registry.register(source_adapter)
+
+    with pytest.raises(ConnectorError) as error:
+        import_endpoint(
+            parse_endpoint("fake://book/Orders"),
+            parse_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc"),
+            registry,
+            CliOptions(if_exists="append"),
+        )
+
+    assert error.value.code is ConnectorErrorCode.INVALID_URI
+    assert error.value.safe_details == {"option": "target"}
+    assert source_adapter.read_calls == 0
+    assert process.calls == []

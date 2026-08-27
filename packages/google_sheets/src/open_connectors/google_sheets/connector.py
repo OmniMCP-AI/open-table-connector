@@ -128,6 +128,8 @@ class GoogleSheetsConnector(URIResolver, TableInspector, ArrowTableReader, Polar
         url = f"https://sheets.googleapis.com/v4/spreadsheets/{quote(resource.spreadsheet_id, safe='')}/values/{quote(value_range, safe='')}?majorDimension=ROWS"
         payload = self._transport.request("GET", url, headers=self._headers(), timeout=request.resource_limits.timeout_seconds or self._timeout)
         table = _arrow_from_values(list(payload.get("values", [])), options.header_row)
+        if request.resource_limits.max_rows is not None:
+            table = table.slice(0, request.resource_limits.max_rows)
         revision = "sha256:" + sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
         return table, revision, selected_sheet
 

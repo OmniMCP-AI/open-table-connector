@@ -3,7 +3,7 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
-from open_connectors.contract import InspectRequest, ResolveContext, TableReadRequest, TableURI, TableWriteRequest
+from open_connectors.contract import InspectRequest, ResourceLimits, ResolveContext, TableReadRequest, TableURI, TableWriteRequest
 from open_connectors.google_sheets import GoogleSheetsConnector, GoogleSheetsReadOptions
 
 
@@ -35,6 +35,20 @@ def test_google_sheets_reads_values_and_builds_receipt() -> None:
     assert transport.calls[0][2]["Authorization"] == "Bearer token"
     assert transport.calls[0][3] is None
     assert result.receipt.vendor_receipt_ref is None
+
+
+def test_google_sheets_read_applies_max_rows_to_table_and_receipt() -> None:
+    transport = FakeTransport()
+    connector = GoogleSheetsConnector(transport=transport, access_token="token")
+    request = TableReadRequest(
+        TableURI("https://docs.google.com/spreadsheets/d/sheet-123/edit#gid=0"),
+        ResourceLimits(max_rows=1),
+    )
+
+    result = connector.read_polars(request)
+
+    assert result.frame.to_dicts() == [{"id": "a", "amount": 1}]
+    assert result.receipt.row_count == 1
 
 
 def test_google_sheets_uses_credentials_and_writes_values() -> None:

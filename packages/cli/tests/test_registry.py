@@ -135,3 +135,38 @@ def test_registry_injects_maybesheet_process_transport() -> None:
         {"access_token": "cli-secret"},
         None,
     )
+
+
+def test_local_adapter_applies_limit_before_returning_rows(tmp_path) -> None:
+    endpoint = parse_endpoint(str(tmp_path / "orders.json"))
+    adapter = build_default_registry(env={}).connector_for(endpoint)
+    options = CliOptions(from_format="json", limit=2)
+
+    endpoint.path.write_text('[{"id": 1}, {"id": 2}, {"id": 3}]')
+    result = adapter.read(endpoint, options)
+
+    assert result.table.num_rows == 2
+    assert result.receipt.row_count == 2
+
+
+def test_maybesheet_https_document_requires_explicit_target_before_process_io() -> None:
+    process = Process()
+    registry = build_default_registry(transports={"maybesheet": process})
+    endpoint = parse_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc")
+
+    with pytest.raises(ConnectorError) as error:
+        registry.connector_for(endpoint).read(endpoint, CliOptions())
+
+    assert error.value.code is ConnectorErrorCode.INVALID_URI
+    assert error.value.safe_details == {"option": "target"}
+    assert process.calls == []
+
+
+def test_maybesheet_https_document_uses_explicit_target() -> None:
+    process = Process()
+    registry = build_default_registry(transports={"maybesheet": process})
+    endpoint = parse_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc")
+
+    registry.connector_for(endpoint).read(endpoint, CliOptions(target="R_orders"))
+
+    assert process.calls[0][0][-2:] == ("--target", "R_orders")

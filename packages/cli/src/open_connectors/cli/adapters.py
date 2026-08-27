@@ -73,6 +73,12 @@ def _frame(table: pa.Table) -> pl.DataFrame:
     return pl.from_arrow(table)
 
 
+def _limited_table(table: pa.Table, options: CliOptions) -> pa.Table:
+    if options.limit is None:
+        return table
+    return table.slice(0, options.limit)
+
+
 def _conflict(endpoint: Endpoint) -> ConnectorError:
     return ConnectorError(
         ConnectorErrorCode.CONFLICT,
@@ -189,9 +195,20 @@ class MaybeSheetAdapter:
     def _target(self, endpoint: Endpoint, options: CliOptions) -> str:
         if options.target:
             return options.target
-        target = urlsplit(_uri(endpoint).value).path.strip("/")
+        uri = _uri(endpoint)
+        if uri.scheme == "https":
+            raise ConnectorError(
+                ConnectorErrorCode.INVALID_URI,
+                "MaybeSheet HTTPS document URLs require an explicit target",
+                {"option": "target"},
+            )
+        target = urlsplit(uri.value).path.strip("/")
         if not target:
-            raise ValueError("MaybeSheet URI requires a target")
+            raise ConnectorError(
+                ConnectorErrorCode.INVALID_URI,
+                "MaybeSheet URI requires an explicit target",
+                {"option": "target"},
+            )
         return target
 
     def preflight_write(self, endpoint: Endpoint, options: CliOptions) -> None:
@@ -207,6 +224,7 @@ class MaybeSheetAdapter:
                 "if_exists must be append for MaybeSheet table writes",
                 {"if_exists": options.if_exists},
             )
+        self._target(endpoint, options)
 
     def _request(self, endpoint: Endpoint, options: CliOptions) -> MaybeSheetReadRequest:
         token = options.token
@@ -242,7 +260,7 @@ class LocalAdapter:
         return infer_format(endpoint, options.to_format if output else options.from_format)
 
     def read(self, endpoint: Endpoint, options: CliOptions) -> ArrowReadResult:
-        table = read_local(endpoint, self._format(endpoint, options))
+        table = _limited_table(read_local(endpoint, self._format(endpoint, options)), options)
         return ArrowReadResult(table, _local_receipt(endpoint, table, _LOCAL_READ_CAPABILITY))
 
     def inspect(self, endpoint: Endpoint, options: CliOptions) -> TableInspection:
