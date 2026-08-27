@@ -1,1 +1,5 @@
-"""Manifest-only placeholder; no Feishu client or network implementation."""
+"""Framework-neutral Feishu Bitable records connector."""
+
+from .connector import FeishuBitableConnector, FeishuBitableReadOptions, FeishuBitableTableReadRequest
+
+__all__ = ["FeishuBitableConnector", "FeishuBitableReadOptions", "FeishuBitableTableReadRequest"]
