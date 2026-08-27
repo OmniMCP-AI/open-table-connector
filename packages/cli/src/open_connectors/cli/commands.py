@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from typing import Any, TextIO
 
 from .model import CliOptions, FormatName, parse_endpoint, parse_format
-from .output import _wire, emit_error, emit_read, emit_summary, emit_table
+from .output import _wire, emit_error, emit_read, emit_record, emit_records, emit_summary, emit_table
 from .pipeline import convert_endpoint, import_endpoint, inspect_endpoint, read_endpoint
 from .registry import ConnectorRegistry
 
@@ -21,9 +21,9 @@ def _options(args: Namespace) -> CliOptions:
     else:
         field_names = tuple(field_name)
     return CliOptions(
-        from_format=parse_format(getattr(args, "from_format", None)),
-        to_format=parse_format(getattr(args, "to_format", None)),
-        output_format=parse_format(getattr(args, "output_format", None)),
+        from_format=_format(args, "from_format", FormatName.AUTO),
+        to_format=_format(args, "to_format", FormatName.AUTO),
+        output_format=_format(args, "output_format", FormatName.JSONL),
         if_exists=getattr(args, "if_exists", "error"),
         limit=getattr(args, "limit", None),
         timeout=getattr(args, "timeout", None),
@@ -33,6 +33,11 @@ def _options(args: Namespace) -> CliOptions:
         token=getattr(args, "token", None),
         target=getattr(args, "target", None),
     )
+
+
+def _format(args: Namespace, name: str, default: FormatName) -> FormatName:
+    value = getattr(args, name, None)
+    return parse_format(default.value if value is None else value)
 
 
 def _manifest(adapter: Any) -> tuple[Any, tuple[Any, ...], tuple[Any, ...], tuple[str, ...]]:
@@ -46,7 +51,7 @@ def _manifest(adapter: Any) -> tuple[Any, tuple[Any, ...], tuple[Any, ...], tupl
 def _emit_list(
     registry: ConnectorRegistry, out: TextIO, output_format: FormatName = FormatName.JSONL
 ) -> None:
-    rows = []
+    payloads = []
     for adapter in registry.list():
         manifest, capabilities, modes, schemes = _manifest(adapter)
         identity = getattr(manifest, "connector", getattr(adapter, "identity", None))
@@ -56,13 +61,13 @@ def _emit_list(
             "capabilities": [_wire_item(item) for item in capabilities],
             "modes": [_wire_item(item) for item in modes],
         }
-        if output_format is FormatName.TABLE:
-            rows.append((payload["connector_id"], ",".join(payload["schemes"]),
-                         payload["capabilities"], ",".join(payload["modes"])))
-        else:
-            _emit_json(payload, out)
-    if output_format is FormatName.TABLE:
-        emit_table(("connector_id", "schemes", "capabilities", "modes"), rows, out)
+        payloads.append(payload)
+    emit_records(
+        payloads,
+        output_format,
+        out,
+        headers=("connector_id", "schemes", "capabilities", "modes"),
+    )
 
 
 def _wire_item(value: Any) -> Any:
@@ -81,7 +86,7 @@ def run_command(args: Namespace, registry: ConnectorRegistry, out: TextIO, err: 
     try:
         command = getattr(args, "command", None)
         if command == "list":
-            _emit_list(registry, out, parse_format(getattr(args, "output_format", None)))
+            _emit_list(registry, out, _format(args, "output_format", FormatName.JSONL))
             return 0
         options = _options(args)
         source = parse_endpoint(getattr(args, "from_value"))
@@ -96,10 +101,7 @@ def run_command(args: Namespace, registry: ConnectorRegistry, out: TextIO, err: 
                 "coordinate_convention": _wire(inspection.coordinate_convention),
                 "facts": _wire(dict(inspection.facts)),
             }
-            if options.output_format is FormatName.TABLE:
-                emit_table(("field", "value"), payload.items(), out)
-            else:
-                _emit_json(payload, out)
+            emit_record(payload, options.output_format, out)
         elif command == "read":
             result = read_endpoint(source, registry, options)
             emit_read(result, options.output_format, out)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import csv
 from dataclasses import fields, is_dataclass
 from enum import Enum
 from collections.abc import Iterable, Sequence
@@ -76,6 +77,68 @@ def emit_table(headers: Sequence[str], rows: Iterable[Sequence[Any]], out: TextI
         out.write(row_line(row))
 
 
+def _record_columns(records: Sequence[dict[str, Any]], headers: Sequence[str] | None) -> list[str]:
+    if headers is not None:
+        return [str(header) for header in headers]
+    columns: list[str] = []
+    for record in records:
+        for key in record:
+            if key not in columns:
+                columns.append(key)
+    return columns
+
+
+def emit_csv(
+    records: Sequence[dict[str, Any]], out: TextIO, headers: Sequence[str] | None = None
+) -> None:
+    """Emit records as valid CSV, stringifying structured cells safely."""
+    columns = _record_columns(records, headers)
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(columns)
+    for record in records:
+        writer.writerow([_display(record.get(column)) for column in columns])
+
+
+def emit_record(
+    record: dict[str, Any], output_format: FormatName, out: TextIO,
+    *, headers: Sequence[str] | None = None,
+) -> None:
+    """Emit one object in the selected command-output format."""
+    if output_format in (FormatName.JSONL, FormatName.JSON):
+        _write_json(record, out)
+        return
+    if output_format is FormatName.CSV:
+        emit_csv([record], out, headers)
+        return
+    if output_format is FormatName.TABLE:
+        columns = _record_columns([record], headers)
+        emit_table(("field", "value"), ((column, record.get(column)) for column in columns), out)
+        return
+    raise ValueError("output format must be explicit")
+
+
+def emit_records(
+    records: Sequence[dict[str, Any]], output_format: FormatName, out: TextIO,
+    *, headers: Sequence[str] | None = None,
+) -> None:
+    """Emit a collection, using one JSON document for JSON output."""
+    if output_format is FormatName.JSONL:
+        for record in records:
+            _write_json(record, out)
+        return
+    if output_format is FormatName.JSON:
+        _write_json(list(records), out)
+        return
+    if output_format is FormatName.CSV:
+        emit_csv(records, out, headers)
+        return
+    if output_format is FormatName.TABLE:
+        columns = _record_columns(records, headers)
+        emit_table(columns, ([record.get(column) for column in columns] for record in records), out)
+        return
+    raise ValueError("output format must be explicit")
+
+
 def _rows(table: pa.Table) -> list[dict[str, Any]]:
     return [{str(key): _wire(value) for key, value in row.items()} for row in table.to_pylist()]
 
@@ -133,7 +196,13 @@ def emit_summary(
         payload.setdefault("receipt", _wire(summary.source_receipt))
     if summary.destination_receipt is not None:
         payload["destination_receipt"] = _wire(summary.destination_receipt)
-    _write_json(payload, out)
+    if output_format is FormatName.CSV:
+        emit_csv([payload], out)
+        return
+    if output_format in (FormatName.JSONL, FormatName.JSON):
+        _write_json(payload, out)
+        return
+    raise ValueError("output format must be explicit")
 
 
 def emit_error(error: BaseException, err: TextIO) -> int:
@@ -153,4 +222,12 @@ def emit_error(error: BaseException, err: TextIO) -> int:
     return code
 
 
-__all__ = ["emit_error", "emit_read", "emit_summary", "emit_table"]
+__all__ = [
+    "emit_error",
+    "emit_csv",
+    "emit_read",
+    "emit_record",
+    "emit_records",
+    "emit_summary",
+    "emit_table",
+]

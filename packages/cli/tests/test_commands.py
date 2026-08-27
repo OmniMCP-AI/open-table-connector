@@ -15,6 +15,7 @@ from open_connectors.contract import (
     ConnectorErrorCode,
     ConnectorIdentity,
     NeutralReceipt,
+    TableWriteResult,
     TableMode,
     TableURI,
 )
@@ -24,7 +25,10 @@ from open_connectors.contract.coordinates import BaseConvention
 class FakeAdapter:
     schemes = ("gsheets", "file")
     identity = ConnectorIdentity("fake", "1", "1")
-    capabilities = (CapabilityIdentity("table.read.arrow", "1"),)
+    capabilities = (
+        CapabilityIdentity("table.read.arrow", "1"),
+        CapabilityIdentity("table.write", "1"),
+    )
 
     def __init__(self):
         self.read_calls = 0
@@ -39,7 +43,10 @@ class FakeAdapter:
                 {"token": "must not be emitted"},
             )
         table = pa.table({"id": ["a"], "amount": [1]})
-        receipt = NeutralReceipt(
+        return ArrowReadResult(table, self._receipt())
+
+    def _receipt(self):
+        return NeutralReceipt(
             self.identity,
             self.capabilities[0],
             "op-1",
@@ -52,14 +59,13 @@ class FakeAdapter:
             1,
             1,
         )
-        return ArrowReadResult(table, receipt)
 
     def inspect(self, endpoint, options):
         raise NotImplementedError
 
     def write(self, endpoint, table, options):
         self.write_calls += 1
-        raise NotImplementedError
+        return TableWriteResult(self._receipt(), table.num_rows)
 
 
 @pytest.fixture
@@ -74,7 +80,7 @@ def test_read_defaults_to_jsonl_row_events_then_summary(fake_registry, tmp_path)
     source.write_text('{"id":"a"}\n')
     out, err = io.StringIO(), io.StringIO()
     code = run_command(
-        type("Args", (), {"command": "read", "from_value": str(source), "output_format": "jsonl"})(),
+        type("Args", (), {"command": "read", "from_value": str(source)})(),
         fake_registry,
         out,
         err,
@@ -217,6 +223,27 @@ def test_list_table_output_is_aligned_human_table(fake_registry) -> None:
         json.loads(out.getvalue())
 
 
+def test_list_json_output_is_one_array_document(fake_registry) -> None:
+    out, err = io.StringIO(), io.StringIO()
+    args = type("Args", (), {"command": "list", "output_format": "json"})()
+
+    assert run_command(args, fake_registry, out, err) == 0
+    assert err.getvalue() == ""
+    payload = json.loads(out.getvalue())
+    assert isinstance(payload, list)
+    assert payload[0]["connector_id"] == "fake"
+
+
+def test_list_csv_output_has_header_and_rows(fake_registry) -> None:
+    out, err = io.StringIO(), io.StringIO()
+    args = type("Args", (), {"command": "list", "output_format": "csv"})()
+
+    assert run_command(args, fake_registry, out, err) == 0
+    rows = list(csv.DictReader(io.StringIO(out.getvalue())))
+    assert rows[0]["connector_id"] == "fake"
+    assert set(rows[0]) == {"connector_id", "schemes", "capabilities", "modes"}
+
+
 def test_inspect_table_output_is_aligned_human_table(fake_registry) -> None:
     out, err = io.StringIO(), io.StringIO()
     args = type(
@@ -248,6 +275,38 @@ def test_inspect_table_output_is_aligned_human_table(fake_registry) -> None:
     assert "| schema_fingerprint" in out.getvalue()
 
 
+@pytest.mark.parametrize("format_name", ("json", "csv"))
+def test_inspect_structured_output_format_is_truthful(format_name, fake_registry) -> None:
+    inspection = type(
+        "Inspection",
+        (),
+        {
+            "safe_uri": TableURI("gsheets://book/Orders"),
+            "mode": TableMode.BASE,
+            "columns": ("id",),
+            "schema_fingerprint": "schema",
+            "row_count": 1,
+            "coordinate_convention": BaseConvention(ordinal_snapshot_id="local"),
+            "facts": {"provider": "fake"},
+        },
+    )()
+    fake_registry.list()[0].inspect = lambda endpoint, options: inspection
+    out, err = io.StringIO(), io.StringIO()
+    args = type(
+        "Args",
+        (),
+        {"command": "inspect", "from_value": "gsheets://book/Orders", "output_format": format_name},
+    )()
+
+    assert run_command(args, fake_registry, out, err) == 0
+    assert err.getvalue() == ""
+    if format_name == "json":
+        assert json.loads(out.getvalue())["schema_fingerprint"] == "schema"
+    else:
+        row = next(csv.DictReader(io.StringIO(out.getvalue())))
+        assert row["schema_fingerprint"] == "schema"
+
+
 def test_convert_summary_table_is_not_json(fake_registry, tmp_path) -> None:
     source = tmp_path / "source.csv"
     destination = tmp_path / "destination.json"
@@ -268,3 +327,28 @@ def test_convert_summary_table_is_not_json(fake_registry, tmp_path) -> None:
     assert err.getvalue() == ""
     assert "| field" in out.getvalue()
     assert "| rows_read" in out.getvalue()
+
+
+@pytest.mark.parametrize("format_name", ("json", "csv"))
+def test_import_summary_uses_requested_structured_format(format_name, fake_registry, tmp_path) -> None:
+    source = tmp_path / "source.csv"
+    source.write_text("id\na\n")
+    out, err = io.StringIO(), io.StringIO()
+    args = type(
+        "Args",
+        (),
+        {
+            "command": "import",
+            "from_value": str(source),
+            "to_value": "gsheets://book/Orders",
+            "output_format": format_name,
+        },
+    )()
+
+    assert run_command(args, fake_registry, out, err) == 0
+    assert err.getvalue() == ""
+    if format_name == "json":
+        assert json.loads(out.getvalue())["rows_read"] == 1
+    else:
+        row = next(csv.DictReader(io.StringIO(out.getvalue())))
+        assert row["rows_read"] == "1"
