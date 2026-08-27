@@ -138,3 +138,47 @@ Concerns:
 Deviations:
 
 - No output, command, or packaging files were changed. The Google connector source and tests were updated because the requested limit behavior is part of its public read path.
+
+## Final re-review adapter identity, modes, limits, and timeout fix
+
+Status: complete
+
+Changed files:
+
+- `packages/cli/src/open_connectors/cli/adapters.py`
+- `packages/cli/tests/test_registry.py`
+- `packages/maybesheet/src/open_connectors/maybesheet/connector.py`
+- `packages/maybesheet/src/open_connectors/maybesheet/process.py`
+- `packages/maybesheet/tests/test_connector.py`
+
+Changes:
+
+- Local receipts now use canonical resolved filesystem URIs and the stable `stdio://stdin` URI for stdin; no `file:///None` or malformed slash-prefixed identities are produced.
+- LocalAdapter and MaybeSheetAdapter now expose `(TableMode.BASE,)` for accurate connector discovery.
+- `_limits` now rounds positive fractional CLI timeouts up with `ceil`, preserving the contract's positive integer timeout requirement. Google and Feishu inspection adapters pass limits through `InspectRequest`, so row and timeout options reach their provider reads and inspection receipts.
+- MaybeSheet read requests now pass per-request timeouts to compatible process clients. SubprocessProcessClient accepts a per-call timeout override while retaining its fixed default, and the connector omits the new keyword for older injected fake clients that do not support it.
+- Preserved the explicit MaybeSheet write credential behavior from `826879e` and the existing Google max-row enforcement.
+- Added regressions for canonical file/stdin receipts, adapter modes, bounded Google/Feishu inspection with fractional timeouts, and MaybeSheet timeout compatibility.
+
+Commit:
+
+- `9fe142f fix: preserve adapter modes and request limits`
+
+Tests and results:
+
+- Red focused run: `uv run python -m pytest packages/cli/tests/test_registry.py packages/cli/tests/test_pipeline.py packages/google_sheets/tests/test_connector.py packages/maybesheet/tests/test_connector.py -q` — 48 passed, 7 failed, reproducing all newly covered identity, modes, inspect-limit/timeout, and MaybeSheet timeout gaps.
+- Green focused run: same command — 55 passed
+- `uv run python -m pytest packages/cli/tests -q` — 71 passed
+- `uv run python -m pytest packages/google_sheets/tests packages/feishu_bitable/tests packages/maybesheet/tests -q` — 21 passed
+- `uv run python -m compileall -q packages/cli/src/open_connectors/cli packages/google_sheets/src/open_connectors/google_sheets packages/maybesheet/src/open_connectors/maybesheet` — passed
+- `git diff --check` — passed
+
+Concerns:
+
+- Local and Google row limits are applied after the underlying file/API payload is fetched, then before returned tables and receipts are built; bounded tables, receipts, inspections, and pipeline summaries are correct.
+- Older injected MaybeSheet process clients without a `timeout` keyword remain supported; only timeout-capable clients receive the per-request value.
+- The direct `uv run pytest` executable remains unavailable in this environment; equivalent `uv run python -m pytest` invocations passed.
+
+Deviations:
+
+- No output, command, packaging, or registry implementation files were changed. MaybeSheet provider/process source was updated because per-request timeout behavior is part of its public process/read path.
