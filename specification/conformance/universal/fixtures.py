@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import json
 from pathlib import Path
 import sqlite3
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from openpyxl import Workbook
 
@@ -24,12 +24,6 @@ class RecordedProcessCall:
     credentials: dict[str, str]
     stdin: str | None
     timeout: int | float | None
-
-
-@dataclass(frozen=True)
-class RecordedSelection:
-    fields: tuple[str, ...] = ()
-    range: str | None = None
 
 
 def _copy_payload(payload: Any) -> Any:
@@ -55,20 +49,6 @@ class RecordingSheetsTransport:
         self._response_indexes = {method: 0 for method in self._responses}
         self._failure = failure
         self.requests: list[RecordedRequest] = []
-        self.selections: list[RecordedSelection] = []
-
-    def record_selection(
-        self,
-        *,
-        fields: Iterable[str] = (),
-        range: str | None = None,
-    ) -> None:
-        self.selections.append(
-            RecordedSelection(
-                fields=tuple(str(field) for field in fields),
-                range=range,
-            )
-        )
 
     def request(
         self,
@@ -95,8 +75,107 @@ class RecordingSheetsTransport:
         except KeyError as exc:
             raise KeyError(f"missing recorded response for method {method!r}") from exc
         index = self._response_indexes[method]
+        if index >= len(responses):
+            raise AssertionError(
+                f"recorded responses for method {method!r} were over-consumed"
+            )
         self._response_indexes[method] = index + 1
-        return _copy_payload(responses[index % len(responses)])
+        return _copy_payload(responses[index])
+
+
+class _ObservedFieldValues(dict[str, Any]):
+    def __init__(self, values: Mapping[str, Any], field_reads: list[str]) -> None:
+        super().__init__((str(key), value) for key, value in values.items())
+        self._field_reads = field_reads
+
+    def get(self, key: str, default: Any = None) -> Any:
+        self._field_reads.append(str(key))
+        return super().get(key, default)
+
+
+class RecordingFeishuTransport(RecordingSheetsTransport):
+    def __init__(
+        self,
+        responses: Mapping[
+            str,
+            Mapping[str, Any] | Iterable[Mapping[str, Any]],
+        ],
+        *,
+        failure: BaseException | None = None,
+    ) -> None:
+        super().__init__(responses, failure=failure)
+        self._field_reads: list[str] = []
+
+    @property
+    def used_fields(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(self._field_reads))
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: Mapping[str, str],
+        body: Mapping[str, Any] | None = None,
+        timeout: int | None = None,
+    ) -> Mapping[str, Any]:
+        payload = dict(
+            super().request(
+                method,
+                url,
+                headers=headers,
+                body=body,
+                timeout=timeout,
+            )
+        )
+        data = payload.get("data")
+        if not isinstance(data, Mapping):
+            return payload
+        copied_data = dict(data)
+        items = copied_data.get("items")
+        if not isinstance(items, list):
+            return payload
+        copied_items: list[Any] = []
+        for item in items:
+            if not isinstance(item, Mapping):
+                copied_items.append(item)
+                continue
+            copied_item = dict(item)
+            fields = copied_item.get("fields")
+            if isinstance(fields, Mapping):
+                copied_item["fields"] = _ObservedFieldValues(
+                    fields,
+                    self._field_reads,
+                )
+            copied_items.append(copied_item)
+        copied_data["items"] = copied_items
+        payload["data"] = copied_data
+        return payload
+
+
+class RawProviderFailure(RuntimeError):
+    def __init__(self, message: str, *, credential: str) -> None:
+        super().__init__(message)
+        self.credential = credential
+
+
+@dataclass(frozen=True)
+class ProviderFailureProbe:
+    raw_failure: BaseException | Mapping[str, Any]
+    fixture_secret: str
+    invoke: Callable[[], object]
+
+
+@dataclass(frozen=True)
+class HttpProviderFixture:
+    transport: RecordingSheetsTransport
+    failure: ProviderFailureProbe
+
+
+@dataclass(frozen=True)
+class ProcessProviderFixture:
+    process: RecordingProcessClient
+    failure: ProviderFailureProbe
 
 
 class RecordingProcessClient:

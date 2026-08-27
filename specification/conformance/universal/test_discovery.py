@@ -14,10 +14,16 @@ from specification.conformance.universal.assertions import (
 from specification.conformance.universal import cases as cases_module
 from specification.conformance.universal.cases import ConnectorCase, all_cases, case
 
-_CASE_NAMES = tuple(item.name for item in all_cases())
-_MANIFESTLESS_CASE_NAMES = tuple(
-    item.name for item in all_cases() if getattr(item.connector, "manifest", None) is None
+_CASE_NAMES = (
+    "local_files",
+    "google_sheets",
+    "feishu_bitable",
+    "maybesheet",
+    "sqlite",
+    "postgres",
+    "dbt",
 )
+_MANIFESTLESS_CASE_NAMES = ("maybesheet", "sqlite", "postgres", "dbt")
 
 
 def test_all_current_connectors_have_named_cases() -> None:

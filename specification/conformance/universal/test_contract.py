@@ -18,12 +18,32 @@ from specification.conformance.universal.assertions import (
     assert_receipt_matches_table,
     assert_safe_uri,
 )
-from specification.conformance.universal.cases import ConnectorCase, all_cases, cases_with
+from specification.conformance.universal.cases import ConnectorCase
 
-_CASE_NAMES = tuple(item.name for item in all_cases())
-_READ_ARROW_CASE_NAMES = tuple(item.name for item in cases_with("table.read.arrow"))
-_INSPECT_CASE_NAMES = tuple(item.name for item in cases_with("table.inspect"))
-_WRITE_CASE_NAMES = tuple(item.name for item in cases_with("table.write"))
+_CASE_NAMES = (
+    "local_files",
+    "google_sheets",
+    "feishu_bitable",
+    "maybesheet",
+    "sqlite",
+    "postgres",
+    "dbt",
+)
+_READ_ARROW_CASE_NAMES = (
+    "local_files",
+    "google_sheets",
+    "feishu_bitable",
+    "sqlite",
+    "postgres",
+)
+_INSPECT_CASE_NAMES = _READ_ARROW_CASE_NAMES
+_WRITE_CASE_NAMES = (
+    "google_sheets",
+    "feishu_bitable",
+    "maybesheet",
+    "sqlite",
+    "postgres",
+)
 
 
 def _canonical_write_table(connector_case: ConnectorCase, write_frame: pl.DataFrame) -> pa.Table:

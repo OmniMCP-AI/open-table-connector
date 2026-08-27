@@ -27,24 +27,13 @@ from specification.conformance.universal.cases import (
     CapabilityBinding,
     ConnectorCase,
     case,
-    cases_with,
 )
 from specification.conformance.universal.fixtures import (
+    RecordingFeishuTransport,
     RecordingProcessClient,
     RecordingSheetsTransport,
     UniversalFixtureBundle,
 )
-
-
-_TABLE_CASE_NAMES = frozenset(
-    {"local_files", "google_sheets", "feishu_bitable", "maybesheet"}
-)
-
-
-def _case_names_with(capability: str) -> tuple[str, ...]:
-    return tuple(
-        item.name for item in cases_with(capability) if item.name in _TABLE_CASE_NAMES
-    )
 
 
 @dataclass(frozen=True)
@@ -54,6 +43,7 @@ class ReadScenario:
     inspect_capability: str
     expected_columns: tuple[str, ...]
     expected_mode: TableMode
+    expected_sheet: str | None = None
 
     @property
     def id(self) -> str:
@@ -61,47 +51,47 @@ class ReadScenario:
 
 
 _READ_SCENARIOS = (
-    *(
-        ReadScenario(
-            case_name=name,
-            read_capability="table.read.arrow",
-            inspect_capability="table.inspect",
-            expected_columns=(
-                ("_record_id", "name", "score", "note")
-                if name == "feishu_bitable"
-                else ("id", "amount", "note")
-            ),
-            expected_mode=(
-                TableMode.BASE if name == "feishu_bitable" else TableMode.SHEET
-            ),
-        )
-        for name in _case_names_with("table.read.arrow")
+    ReadScenario(
+        "local_files",
+        "table.read.arrow",
+        "table.inspect",
+        ("id", "amount", "note"),
+        TableMode.SHEET,
+        "data",
     ),
-    *(
-        ReadScenario(
-            case_name=name,
-            read_capability="base.read",
-            inspect_capability="base.inspect",
-            expected_columns=("id", "amount", "note"),
-            expected_mode=TableMode.BASE,
-        )
-        for name in _case_names_with("base.read")
+    ReadScenario(
+        "google_sheets",
+        "table.read.arrow",
+        "table.inspect",
+        ("id", "amount", "note"),
+        TableMode.SHEET,
+        "Orders",
     ),
-    *(
-        ReadScenario(
-            case_name=name,
-            read_capability="sheet.read",
-            inspect_capability="sheet.inspect",
-            expected_columns=("id", "amount", "note"),
-            expected_mode=TableMode.SHEET,
-        )
-        for name in _case_names_with("sheet.read")
+    ReadScenario(
+        "feishu_bitable",
+        "table.read.arrow",
+        "table.inspect",
+        ("_record_id", "name", "score", "note"),
+        TableMode.BASE,
+    ),
+    ReadScenario(
+        "maybesheet",
+        "base.read",
+        "base.inspect",
+        ("id", "amount", "note"),
+        TableMode.BASE,
+    ),
+    ReadScenario(
+        "maybesheet",
+        "sheet.read",
+        "sheet.inspect",
+        ("id", "amount", "note"),
+        TableMode.SHEET,
+        "Orders",
     ),
 )
 
-_WRITE_CASE_NAMES = tuple(
-    name for name in _case_names_with("table.write") if name != "local_files"
-)
+_WRITE_CASE_NAMES = ("google_sheets", "feishu_bitable", "maybesheet")
 
 
 def _read_arrow(
@@ -227,7 +217,7 @@ def test_sheet_reads_use_one_based_header_and_data_coordinates(
     assert isinstance(convention, SheetConvention)
     assert convention.header_rows == 1
     assert convention.first_data_row == 2
-    assert convention.sheet in {"data", "orders", "Orders"}
+    assert convention.sheet == scenario.expected_sheet
 
 
 @pytest.mark.parametrize(
@@ -250,11 +240,7 @@ def test_base_reads_publish_record_or_snapshot_coordinates(
 
 @pytest.mark.parametrize(
     "connector_case",
-    tuple(
-        name
-        for name in _case_names_with("table.read.arrow")
-        if name in {"google_sheets", "feishu_bitable"}
-    ),
+    ("google_sheets", "feishu_bitable"),
     ids=str,
     indirect=True,
 )
@@ -267,29 +253,42 @@ def test_http_reads_record_method_url_timeout_selection_and_credential_locality(
 
     result = binding.read_arrow(limits)
 
-    recording = connector_case.recording
+    fixture = connector_case.http_fixture
+    assert fixture is not None
+    recording = fixture.transport
     assert isinstance(recording, RecordingSheetsTransport)
     assert recording.requests
     assert all(request.method == "GET" for request in recording.requests)
     assert all(request.timeout == 3 for request in recording.requests)
     assert all(request.body is None for request in recording.requests)
-    authorization = recording.requests[0].headers["Authorization"]
-    assert authorization.startswith("Bearer ")
-    secret = authorization.removeprefix("Bearer ")
+    assert all(
+        request.headers == {"Authorization": "Bearer fixture-token"}
+        for request in recording.requests
+    )
     _assert_credential_is_local(
-        secret,
+        "fixture-token",
         tuple(request.url for request in recording.requests),
         result.receipt.to_wire(),
     )
     if connector_case.name == "google_sheets":
-        assert len(recording.requests) == 1
-        assert "Orders%21A1%3AC5" in recording.requests[0].url
-        assert recording.selections[-1].range == "Orders!A1:C5"
+        assert [request.url for request in recording.requests] == [
+            "https://sheets.googleapis.com/v4/spreadsheets/fixture-spreadsheet/"
+            "values/Orders%21A1%3AC5?majorDimension=ROWS"
+        ]
     else:
-        assert len(recording.requests) == 2
-        assert "page_size=500" in recording.requests[0].url
-        assert "page_token=fixture-page-2" in recording.requests[1].url
-        assert recording.selections[-1].fields == ("name", "score", "note")
+        assert isinstance(recording, RecordingFeishuTransport)
+        assert [request.url for request in recording.requests] == [
+            "https://open.feishu.cn/open-apis/bitable/v1/apps/fixture-app/"
+            "tables/orders/records?page_size=500",
+            "https://open.feishu.cn/open-apis/bitable/v1/apps/fixture-app/"
+            "tables/orders/records?page_size=500&page_token=fixture-page-2",
+        ]
+        assert recording.used_fields == (
+            "name",
+            "score",
+            "note",
+        )
+        assert "internal_only" not in result.table.column_names
 
 
 @pytest.mark.parametrize(
@@ -304,17 +303,52 @@ def test_maybesheet_reads_record_argv_timeout_target_limit_and_credentials(
 
     result = binding.read_arrow(ResourceLimits(max_rows=2, timeout_seconds=3))
 
-    recording = connector_case.recording
+    fixture = connector_case.process_fixture
+    assert fixture is not None
+    recording = fixture.process
     assert isinstance(recording, RecordingProcessClient)
     call = recording.calls[-1]
-    expected_verb = "db-table" if capability == "base.read" else "excel-worksheet"
-    expected_target = "R_orders" if capability == "base.read" else "Orders"
-    assert call.argv[:3] == ("mbs", expected_verb, "read")
-    assert call.argv[-4:] == ("--target", expected_target, "--limit", "2")
+    expected_argv = (
+        (
+            "mbs",
+            "db-table",
+            "read",
+            "--uri",
+            "https://www.maybe.ai/docs/spreadsheets/d/fixture-doc",
+            "--target",
+            "R_orders",
+            "--limit",
+            "2",
+        )
+        if capability == "base.read"
+        else (
+            "mbs",
+            "excel-worksheet",
+            "read",
+            "--uri",
+            "https://www.maybe.ai/docs/spreadsheets/d/fixture-doc",
+            "--target",
+            "Orders",
+            "--limit",
+            "2",
+        )
+    )
+    assert call.argv == expected_argv
     assert call.timeout == 3
-    assert set(call.credentials) == {"access_token"}
-    secret = call.credentials["access_token"]
-    _assert_credential_is_local(secret, call.argv, call.stdin, result.receipt.to_wire())
+    assert call.credentials == {"access_token": "fixture-token"}
+    _assert_credential_is_local(
+        "fixture-token", call.argv, call.stdin, result.receipt.to_wire()
+    )
+
+
+def test_recorded_http_responses_fail_closed_when_over_consumed() -> None:
+    transport = RecordingSheetsTransport({"GET": {"values": []}})
+    kwargs = {"headers": {"Authorization": "Bearer fixture-token"}}
+
+    transport.request("GET", "https://fixture.invalid/first", **kwargs)
+
+    with pytest.raises(AssertionError, match="over-consumed"):
+        transport.request("GET", "https://fixture.invalid/second", **kwargs)
 
 
 def test_feishu_paginates_and_preserves_record_ids_from_all_pages() -> None:
@@ -329,7 +363,9 @@ def test_feishu_paginates_and_preserves_record_ids_from_all_pages() -> None:
         {"_record_id": "rec_2", "name": "Lin", "score": "9", "note": None},
         {"_record_id": "rec_3", "name": "Mei", "score": None, "note": "last"},
     ]
-    recording = connector_case.recording
+    fixture = connector_case.http_fixture
+    assert fixture is not None
+    recording = fixture.transport
     assert isinstance(recording, RecordingSheetsTransport)
     assert len(recording.requests) == 2
 
@@ -391,12 +427,11 @@ def test_table_writes_reject_unsupported_policies_before_provider_io(
         connector_case.write(write_frame, policy)
 
     assert raised.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
-    recording = connector_case.recording
-    calls = (
-        recording.requests
-        if isinstance(recording, RecordingSheetsTransport)
-        else recording.calls
-    )
+    if connector_case.http_fixture is not None:
+        calls = connector_case.http_fixture.transport.requests
+    else:
+        assert connector_case.process_fixture is not None
+        calls = connector_case.process_fixture.process.calls
     assert calls == []
 
 
@@ -412,11 +447,18 @@ def test_google_sheets_write_records_range_method_body_timeout_and_credentials(
 
     result = connector_case.write(write_frame, policy)
 
-    recording = connector_case.recording
+    fixture = connector_case.http_fixture
+    assert fixture is not None
+    recording = fixture.transport
     assert isinstance(recording, RecordingSheetsTransport)
     request = recording.requests[-1]
     assert request.method == ("POST" if policy == "append" else "PUT")
-    assert "Orders%21A1%3AC5" in request.url
+    suffix = ":append" if policy == "append" else ""
+    assert request.url == (
+        "https://sheets.googleapis.com/v4/spreadsheets/fixture-spreadsheet/"
+        f"values/Orders%21A1%3AC5{suffix}?valueInputOption=USER_ENTERED&"
+        "includeValuesInResponse=true"
+    )
     assert request.timeout == 30
     assert request.body == {
         "range": "Orders!A1:C5",
@@ -427,10 +469,9 @@ def test_google_sheets_write_records_range_method_body_timeout_and_credentials(
             ["write-2", "4.00"],
         ],
     }
-    authorization = request.headers["Authorization"]
-    assert authorization.startswith("Bearer ")
+    assert request.headers == {"Authorization": "Bearer fixture-token"}
     _assert_credential_is_local(
-        authorization.removeprefix("Bearer "),
+        "fixture-token",
         request.url,
         request.body,
         result.receipt.to_wire(),
@@ -445,11 +486,16 @@ def test_feishu_write_records_batch_shape_timeout_and_credentials(
 
     result = connector_case.write(write_frame, "append")
 
-    recording = connector_case.recording
+    fixture = connector_case.http_fixture
+    assert fixture is not None
+    recording = fixture.transport
     assert isinstance(recording, RecordingSheetsTransport)
     request = recording.requests[-1]
     assert request.method == "POST"
-    assert request.url.endswith("/records/batch_create")
+    assert request.url == (
+        "https://open.feishu.cn/open-apis/bitable/v1/apps/fixture-app/"
+        "tables/orders/records/batch_create"
+    )
     assert request.timeout == 30
     assert request.body == {
         "records": [
@@ -457,10 +503,9 @@ def test_feishu_write_records_batch_shape_timeout_and_credentials(
             {"fields": {"id": "write-2", "amount": "4.00"}},
         ]
     }
-    authorization = request.headers["Authorization"]
-    assert authorization.startswith("Bearer ")
+    assert request.headers == {"Authorization": "Bearer fixture-token"}
     _assert_credential_is_local(
-        authorization.removeprefix("Bearer "),
+        "fixture-token",
         request.url,
         request.body,
         result.receipt.to_wire(),
@@ -475,7 +520,9 @@ def test_maybesheet_write_records_stdin_jsonl_argv_and_credential_locality(
 
     result = connector_case.write(write_frame, "append")
 
-    recording = connector_case.recording
+    fixture = connector_case.process_fixture
+    assert fixture is not None
+    recording = fixture.process
     assert isinstance(recording, RecordingProcessClient)
     call = recording.calls[-1]
     assert call.argv == (
@@ -494,9 +541,9 @@ def test_maybesheet_write_records_stdin_jsonl_argv_and_credential_locality(
         {"id": "write-1", "amount": "3.50"},
         {"id": "write-2", "amount": "4.00"},
     ]
-    assert set(call.credentials) == {"access_token"}
+    assert call.credentials == {"access_token": "fixture-token"}
     _assert_credential_is_local(
-        call.credentials["access_token"],
+        "fixture-token",
         call.argv,
         call.stdin,
         result.receipt.to_wire(),
@@ -528,11 +575,22 @@ def test_provider_failures_map_to_safe_redacted_errors(
     expected_code: ConnectorErrorCode,
 ) -> None:
     connector_case = case(case_name)
-    failure = connector_case.provider_failure
-    assert failure is not None
+    fixture = connector_case.http_fixture or connector_case.process_fixture
+    assert fixture is not None
+    failure = fixture.failure
+    assert not isinstance(failure.raw_failure, ConnectorError)
+    if isinstance(failure.raw_failure, BaseException):
+        raw_secret = getattr(
+            failure.raw_failure,
+            "credential",
+            str(failure.raw_failure),
+        )
+        assert failure.fixture_secret in raw_secret
+    else:
+        assert failure.fixture_secret in repr(failure.raw_failure)
 
     with pytest.raises(ConnectorError) as raised:
-        failure()
+        failure.invoke()
 
     assert raised.value.code is expected_code
     assert_error_is_safe(

@@ -6,14 +6,13 @@ import sqlite3
 from tempfile import TemporaryDirectory
 from types import MappingProxyType
 from typing import Any, Callable, Mapping
+from unittest.mock import patch
 
 import polars as pl
 
 from open_connectors.contract import (
     ArrowReadResult,
     CapabilityIdentity,
-    ConnectorError,
-    ConnectorErrorCode,
     ConnectorIdentity,
     ExecutionRequest,
     InspectRequest,
@@ -45,7 +44,10 @@ from open_connectors.google_sheets import (
     GoogleSheetsReadOptions,
     GoogleSheetsTableReadRequest,
 )
-from open_connectors.google_sheets.connector import CAPABILITY_MANIFEST as GOOGLE_MANIFEST
+from open_connectors.google_sheets.connector import (
+    CAPABILITY_MANIFEST as GOOGLE_MANIFEST,
+    UrllibSheetsTransport,
+)
 from open_connectors.local_files import LocalFilesConnector, LocalTableReadRequest
 from open_connectors.maybesheet import MaybeSheetConnector, MaybeSheetReadRequest
 from open_connectors.maybesheet.identity import (
@@ -80,7 +82,12 @@ from open_connectors.sqlite import (
 )
 
 from .fixtures import (
+    HttpProviderFixture,
+    ProcessProviderFixture,
+    ProviderFailureProbe,
+    RawProviderFailure,
     RecordingDbtRunner,
+    RecordingFeishuTransport,
     RecordingPostgresFactory,
     RecordingProcessClient,
     RecordingSheetsTransport,
@@ -137,8 +144,8 @@ class ConnectorCase:
     inspect: Callable[[ResourceLimits], TableInspection] | None
     write: Callable[[pl.DataFrame, str], TableWriteResult] | None
     capability_bindings: Mapping[str, CapabilityBinding] = field(default_factory=dict)
-    recording: RecordingSheetsTransport | RecordingProcessClient | None = None
-    provider_failure: Callable[[], object] | None = None
+    http_fixture: HttpProviderFixture | None = None
+    process_fixture: ProcessProviderFixture | None = None
 
     def __post_init__(self) -> None:
         connector_identity = getattr(self.connector, "identity", None)
@@ -276,19 +283,20 @@ def _local_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
 
 def _google_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
     selected_range = "Orders!A1:C5"
+    read_payload = {
+        "range": selected_range,
+        "majorDimension": "ROWS",
+        "values": [
+            ["id", "amount", "note"],
+            ["g1", 2.5, "first"],
+            ["g2", None],
+            ["g3", "7.00", "last"],
+            ["g4", 4, "tail"],
+        ],
+    }
     transport = RecordingSheetsTransport(
         {
-            "GET": {
-                "range": selected_range,
-                "majorDimension": "ROWS",
-                "values": [
-                    ["id", "amount", "note"],
-                    ["g1", 2.5, "first"],
-                    ["g2", None],
-                    ["g3", "7.00", "last"],
-                    ["g4", 4, "tail"],
-                ],
-            },
+            "GET": (read_payload,) * 3,
             "PUT": {
                 "updatedRange": selected_range,
                 "updatedRows": 2,
@@ -323,29 +331,26 @@ def _google_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
         )
 
     def read_arrow(resource_limits: ResourceLimits) -> ArrowReadResult:
-        request = make_read_request(resource_limits)
-        transport.record_selection(range=request.options.range)
-        return connector.read_arrow(request)
+        return connector.read_arrow(make_read_request(resource_limits))
 
     def read_polars(resource_limits: ResourceLimits) -> PolarsReadResult:
-        request = make_read_request(resource_limits)
-        transport.record_selection(range=request.options.range)
-        return connector.read_polars(request)
+        return connector.read_polars(make_read_request(resource_limits))
+
+    raw_failure = RawProviderFailure(
+        "Google Sheets upstream returned 503",
+        credential="fixture-token",
+    )
 
     def provider_failure() -> object:
-        failing_transport = RecordingSheetsTransport(
-            {"GET": {"values": []}},
-            failure=ConnectorError(
-                ConnectorErrorCode.EXECUTION_FAILED,
-                "Google Sheets provider request failed",
-                {"status": 503, "token": "fixture-token"},
-            ),
-        )
         failing_connector = GoogleSheetsConnector(
-            transport=failing_transport,
+            transport=UrllibSheetsTransport(),
             access_token="fixture-token",
         )
-        return failing_connector.read_arrow(make_read_request(ResourceLimits()))
+        with patch(
+            "open_connectors.google_sheets.connector.urlopen",
+            side_effect=raw_failure,
+        ):
+            return failing_connector.read_arrow(make_read_request(ResourceLimits()))
 
     capability_bindings = {
         "uri.resolve": _binding(
@@ -393,52 +398,65 @@ def _google_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
         inspect=capability_bindings["table.inspect"].inspect,
         write=capability_bindings["table.write"].write,
         capability_bindings=capability_bindings,
-        recording=transport,
-        provider_failure=provider_failure,
+        http_fixture=HttpProviderFixture(
+            transport=transport,
+            failure=ProviderFailureProbe(
+                raw_failure=raw_failure,
+                fixture_secret="fixture-token",
+                invoke=provider_failure,
+            ),
+        ),
     )
 
 
 def _feishu_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
     selected_fields = ("name", "score", "note")
-    transport = RecordingSheetsTransport(
+    first_page = {
+        "code": 0,
+        "msg": "success",
+        "data": {
+            "items": [
+                {
+                    "record_id": "rec_1",
+                    "fields": {
+                        "name": "Ada",
+                        "score": 10,
+                        "note": "first",
+                        "internal_only": "not selected",
+                    },
+                }
+            ],
+            "has_more": True,
+            "page_token": "fixture-page-2",
+        },
+    }
+    second_page = {
+        "code": 0,
+        "msg": "success",
+        "data": {
+            "items": [
+                {
+                    "record_id": "rec_2",
+                    "fields": {"name": "Lin", "score": "9"},
+                },
+                {
+                    "record_id": "rec_3",
+                    "fields": {"name": "Mei", "note": "last"},
+                },
+            ],
+            "has_more": False,
+            "page_token": None,
+        },
+    }
+    transport = RecordingFeishuTransport(
         {
             "GET": (
-                {
-                    "code": 0,
-                    "msg": "success",
-                    "data": {
-                        "items": [
-                            {
-                                "record_id": "rec_1",
-                                "fields": {
-                                    "name": "Ada",
-                                    "score": 10,
-                                    "note": "first",
-                                },
-                            }
-                        ],
-                        "has_more": True,
-                        "page_token": "fixture-page-2",
-                    },
-                },
-                {
-                    "code": 0,
-                    "msg": "success",
-                    "data": {
-                        "items": [
-                            {
-                                "record_id": "rec_2",
-                                "fields": {"name": "Lin", "score": "9"},
-                            },
-                            {
-                                "record_id": "rec_3",
-                                "fields": {"name": "Mei", "note": "last"},
-                            },
-                        ],
-                        "has_more": False,
-                        "page_token": None,
-                    },
-                },
+                first_page,
+                second_page,
+                first_page,
+                second_page,
+                first_page,
+                second_page,
             ),
             "POST": {
                 "code": 0,
@@ -465,32 +483,28 @@ def _feishu_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
             FeishuBitableReadOptions(selected_fields),
         )
 
-    def make_inspect_request(resource_limits: ResourceLimits) -> InspectRequest:
-        return InspectRequest(table_uri, resource_limits)
+    def make_inspect_request(
+        resource_limits: ResourceLimits,
+    ) -> FeishuBitableTableReadRequest:
+        return make_read_request(resource_limits)
 
     def make_write_request(frame: pl.DataFrame, if_exists: str) -> TableWriteRequest:
         return TableWriteRequest(table_uri, frame, if_exists=if_exists)
 
     def read_arrow(resource_limits: ResourceLimits) -> ArrowReadResult:
-        request = make_read_request(resource_limits)
-        transport.record_selection(fields=request.options.field_names)
-        return connector.read_arrow(request)
+        return connector.read_arrow(make_read_request(resource_limits))
 
     def read_polars(resource_limits: ResourceLimits) -> PolarsReadResult:
-        request = make_read_request(resource_limits)
-        transport.record_selection(fields=request.options.field_names)
-        return connector.read_polars(request)
+        return connector.read_polars(make_read_request(resource_limits))
+
+    raw_failure = {
+        "code": 1254001,
+        "msg": "provider rejected fixture-token",
+        "data": {"items": [], "has_more": False},
+    }
 
     def provider_failure() -> object:
-        failing_transport = RecordingSheetsTransport(
-            {
-                "GET": {
-                    "code": 1254001,
-                    "msg": "provider rejected fixture-token",
-                    "data": {"items": [], "has_more": False},
-                }
-            }
-        )
+        failing_transport = RecordingSheetsTransport({"GET": raw_failure})
         failing_connector = FeishuBitableConnector(
             transport=failing_transport,
             tenant_access_token="fixture-token",
@@ -543,8 +557,14 @@ def _feishu_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
         inspect=capability_bindings["table.inspect"].inspect,
         write=capability_bindings["table.write"].write,
         capability_bindings=capability_bindings,
-        recording=transport,
-        provider_failure=provider_failure,
+        http_fixture=HttpProviderFixture(
+            transport=transport,
+            failure=ProviderFailureProbe(
+                raw_failure=raw_failure,
+                fixture_secret="fixture-token",
+                invoke=provider_failure,
+            ),
+        ),
     )
 
 
@@ -608,10 +628,12 @@ def _maybe_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
             credentials=credentials,
         )
 
+    raw_failure = RuntimeError("process exposed fixture-token")
+
     def provider_failure() -> object:
         failing_process = RecordingProcessClient(
             {},
-            failure=RuntimeError("process exposed fixture-token"),
+            failure=raw_failure,
         )
         failing_connector = MaybeSheetConnector(failing_process)
         return failing_connector.read_arrow(
@@ -679,8 +701,14 @@ def _maybe_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
         inspect=capability_bindings["base.inspect"].inspect,
         write=capability_bindings["table.write"].write,
         capability_bindings=capability_bindings,
-        recording=process,
-        provider_failure=provider_failure,
+        process_fixture=ProcessProviderFixture(
+            process=process,
+            failure=ProviderFailureProbe(
+                raw_failure=raw_failure,
+                fixture_secret="fixture-token",
+                invoke=provider_failure,
+            ),
+        ),
     )
 
 
