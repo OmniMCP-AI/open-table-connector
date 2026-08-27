@@ -54,7 +54,8 @@ def parse_endpoint(value: str) -> Endpoint:
     parsed = urlsplit(value)
     if parsed.scheme:
         if parsed.scheme.casefold() == "file":
-            path = Path(url2pathname(parsed.path))
+            validated = TableURI(value)
+            path = Path(url2pathname(urlsplit(validated.value).path))
             return Endpoint(raw=value, uri=None, path=path, is_stdio=False)
         return Endpoint(raw=value, uri=TableURI(value), path=None, is_stdio=False)
 

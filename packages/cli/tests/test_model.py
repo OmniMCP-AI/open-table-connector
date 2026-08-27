@@ -23,6 +23,18 @@ def test_parse_endpoint_treats_windows_drive_path_as_local_path() -> None:
     assert endpoint.path == Path(r"C:\tmp\orders.csv")
 
 
+def test_parse_endpoint_rejects_credential_bearing_file_uri_without_leaking_secret() -> None:
+    with pytest.raises(ValueError) as error:
+        parse_endpoint("file:///tmp/x?token=secret")
+
+    assert "secret" not in str(error.value)
+
+
+def test_parse_endpoint_rejects_relative_file_uri() -> None:
+    with pytest.raises(ValueError):
+        parse_endpoint("file:relative")
+
+
 def test_parse_format_defaults_to_auto_and_rejects_unknown_values() -> None:
     assert parse_format(None) is FormatName.AUTO
     with pytest.raises(ValueError, match="unsupported format"):
