@@ -72,6 +72,18 @@ def test_list_accepts_jsonl_output_format_without_endpoints() -> None:
     assert all("connector_id" in connector for connector in output)
 
 
+def test_parser_rejects_auto_output_format() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "open_connectors.cli", "list", "--output-format", "auto"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "--output-format" in result.stderr
+    assert "auto" in result.stderr
+
+
 def test_module_and_alias_help_commands_exit_successfully() -> None:
     for command in (
         [sys.executable, "-m", "open_connectors.cli", "--help"],

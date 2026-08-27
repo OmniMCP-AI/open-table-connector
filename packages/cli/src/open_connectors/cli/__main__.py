@@ -13,6 +13,7 @@ from .registry import build_default_registry
 
 
 _FORMATS = ("auto", "csv", "json", "jsonl", "table")
+_OUTPUT_FORMATS = ("csv", "json", "jsonl", "table")
 
 
 def _add_options(parser: argparse.ArgumentParser, *, require_from: bool, require_to: bool) -> None:
@@ -20,7 +21,7 @@ def _add_options(parser: argparse.ArgumentParser, *, require_from: bool, require
     parser.add_argument("--to", dest="to_value", required=require_to, metavar="DESTINATION")
     parser.add_argument("--from-format", choices=_FORMATS, default=None)
     parser.add_argument("--to-format", choices=_FORMATS, default=None)
-    parser.add_argument("--output-format", choices=_FORMATS, default="jsonl")
+    parser.add_argument("--output-format", choices=_OUTPUT_FORMATS, default="jsonl")
     parser.add_argument("--if-exists", choices=("append", "replace", "error"), default="error")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--timeout", type=float)
@@ -36,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     list_parser = subparsers.add_parser("list", help="list available connectors")
-    list_parser.add_argument("--output-format", choices=_FORMATS, default="jsonl")
+    list_parser.add_argument("--output-format", choices=_OUTPUT_FORMATS, default="jsonl")
     inspect_parser = subparsers.add_parser("inspect", help="inspect a table")
     _add_options(inspect_parser, require_from=True, require_to=False)
     read_parser = subparsers.add_parser("read", help="read a table")
