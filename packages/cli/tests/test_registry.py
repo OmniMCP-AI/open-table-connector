@@ -144,6 +144,31 @@ def test_local_receipts_are_content_and_operation_specific(tmp_path) -> None:
     assert first.operation_id != second.operation_id
 
 
+def test_local_inspection_uses_canonical_uri_and_receipt_revision(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    endpoint = parse_endpoint("orders.json")
+    endpoint.path.write_text('[{"id": 1}]')
+    adapter = build_default_registry(env={}).connector_for(endpoint)
+    options = CliOptions(from_format="json")
+
+    inspection = adapter.inspect(endpoint, options)
+    receipt = adapter.read(endpoint, options).receipt
+
+    assert inspection.safe_uri.value == endpoint.path.resolve().as_uri()
+    assert inspection.coordinate_convention.ordinal_snapshot_id == receipt.source_revision
+
+
+def test_local_stdin_inspection_uses_stable_uri_and_receipt_revision(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "stdin", io.StringIO('[{"id": 1}]'))
+    endpoint = parse_endpoint("-")
+    adapter = build_default_registry(env={}).connector_for(endpoint)
+
+    inspection = adapter.inspect(endpoint, CliOptions(from_format="json"))
+
+    assert inspection.safe_uri.value == "stdio://stdin"
+    assert inspection.coordinate_convention.ordinal_snapshot_id.startswith("sha256:")
+
+
 def test_registry_injects_maybesheet_process_transport() -> None:
     process = Process()
     registry = build_default_registry(transports={"maybesheet": process})
@@ -192,6 +217,29 @@ def test_maybesheet_https_document_uses_explicit_target() -> None:
     registry.connector_for(endpoint).read(endpoint, CliOptions(target="R_orders"))
 
     assert process.calls[0][0][-2:] == ("--target", "R_orders")
+
+
+@pytest.mark.parametrize(
+    "uri",
+    (
+        "maybe:///R_orders",
+        "maybe://",
+        "maybe://doc",
+        "maybe://doc/",
+        "maybe://doc/R_orders/extra",
+    ),
+)
+def test_maybesheet_rejects_malformed_opaque_uris_before_process_io(uri) -> None:
+    process = Process()
+    registry = build_default_registry(transports={"maybesheet": process})
+    endpoint = parse_endpoint(uri)
+
+    with pytest.raises(ConnectorError) as error:
+        registry.connector_for(endpoint).read(endpoint, CliOptions(target="R_orders"))
+
+    assert error.value.code is ConnectorErrorCode.INVALID_URI
+    assert error.value.safe_details == {"scheme": "maybe"}
+    assert process.calls == []
 
 
 def test_local_stdin_receipt_uses_stable_stdio_uri(monkeypatch) -> None:

@@ -202,15 +202,35 @@ class MaybeSheetAdapter:
     )
 
     def _target(self, endpoint: Endpoint, options: CliOptions) -> str:
-        if options.target:
-            return options.target
         uri = _uri(endpoint)
         if uri.scheme == "https":
+            if options.target:
+                return options.target
             raise ConnectorError(
                 ConnectorErrorCode.INVALID_URI,
                 "MaybeSheet HTTPS document URLs require an explicit target",
                 {"option": "target"},
             )
+
+        if uri.scheme == "maybe":
+            parsed = urlsplit(uri.value)
+            target = parsed.path[1:] if parsed.path.startswith("/") else ""
+            if (
+                not parsed.netloc.strip()
+                or not target
+                or "/" in target
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ConnectorError(
+                    ConnectorErrorCode.INVALID_URI,
+                    "MaybeSheet URI must use maybe://DOCUMENT/TARGET",
+                    {"scheme": "maybe"},
+                )
+            return options.target or target
+
+        if options.target:
+            return options.target
         target = urlsplit(uri.value).path.strip("/")
         if not target:
             raise ConnectorError(
@@ -275,9 +295,11 @@ class LocalAdapter:
 
     def inspect(self, endpoint: Endpoint, options: CliOptions) -> TableInspection:
         result = self.read(endpoint, options)
-        return TableInspection(endpoint.uri or TableURI("file:///" + str(endpoint.path)), TableMode.BASE,
+        return TableInspection(_local_uri(endpoint), TableMode.BASE,
                                 tuple(result.table.column_names), result.receipt.schema_fingerprint,
-                                result.table.num_rows, BaseConvention(ordinal_snapshot_id="local"), {"provider": "local"})
+                                result.table.num_rows,
+                                BaseConvention(ordinal_snapshot_id=result.receipt.source_revision),
+                                {"provider": "local"})
 
     def write(self, endpoint: Endpoint, table: pa.Table, options: CliOptions) -> TableWriteResult:
         write_local(table, endpoint, self._format(endpoint, options, output=True))
