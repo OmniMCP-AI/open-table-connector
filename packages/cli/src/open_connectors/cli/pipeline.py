@@ -42,8 +42,16 @@ def convert_endpoint(
     if not _is_local(destination):
         raise _unsupported(destination, "convert destinations must be local files or stdout")
 
+    destination_format = infer_format(destination, options.to_format)
+    if destination_format.value == "auto":
+        raise ConnectorError(
+            ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+            "local destination format could not be inferred; provide --to-format",
+            {"scheme": "file", "format": destination_format.value},
+        )
+
     result = read_endpoint(source, registry, options)
-    write_local(result.table, destination, infer_format(destination, options.to_format))
+    write_local(result.table, destination, destination_format)
     return PipelineSummary(
         status="completed",
         rows_read=result.table.num_rows,

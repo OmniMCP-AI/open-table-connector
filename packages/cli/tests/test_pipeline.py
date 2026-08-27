@@ -3,7 +3,7 @@ import json
 import pyarrow as pa
 import pytest
 
-from open_connectors.cli.model import CliOptions, parse_endpoint
+from open_connectors.cli.model import CliOptions, FormatName, parse_endpoint
 from open_connectors.cli.pipeline import convert_endpoint, import_endpoint, inspect_endpoint
 from open_connectors.cli.registry import ConnectorRegistry, build_default_registry
 from open_connectors.contract import (
@@ -113,6 +113,39 @@ def test_convert_rejects_connector_destination() -> None:
         )
 
     assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+
+
+def test_convert_rejects_unknown_local_codec_before_read(tmp_path) -> None:
+    adapter = RecordingAdapter()
+    destination = tmp_path / "orders"
+
+    with pytest.raises(ConnectorError) as error:
+        convert_endpoint(
+            parse_endpoint("fake://book/Orders"),
+            parse_endpoint(str(destination)),
+            ConnectorRegistry([adapter]),
+            CliOptions(),
+        )
+
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+    assert "format" in error.value.safe_details
+    assert adapter.read_calls == 0
+
+
+def test_convert_explicit_format_allows_extensionless_local_destination(tmp_path) -> None:
+    adapter = RecordingAdapter()
+    destination = tmp_path / "orders"
+
+    summary = convert_endpoint(
+        parse_endpoint("fake://book/Orders"),
+        parse_endpoint(str(destination)),
+        ConnectorRegistry([adapter]),
+        CliOptions(to_format=FormatName.JSON),
+    )
+
+    assert summary.rows_read == 1
+    assert adapter.read_calls == 1
+    assert json.loads(destination.read_text()) == [{"id": "a"}]
 
 
 def test_import_rejects_local_destination_before_read(tmp_path) -> None:
