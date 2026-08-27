@@ -13,7 +13,7 @@ import pyarrow as pa
 
 from open_connectors.contract import ArrowReadResult, ConnectorError, ConnectorErrorCode
 
-from .formats import write_local
+from .formats import json_safe_value, write_local
 from .model import FormatName, PipelineSummary
 
 
@@ -31,8 +31,6 @@ EXIT_CODES = {
 
 def _wire(value: Any) -> Any:
     """Convert contract values to JSON without exposing arbitrary exceptions."""
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
     if isinstance(value, Enum):
         return value.value
     to_wire = getattr(value, "to_wire", None)
@@ -44,11 +42,13 @@ def _wire(value: Any) -> Any:
         return {str(key): _wire(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_wire(item) for item in value]
-    return str(value)
+    return json_safe_value(value)
 
 
 def _write_json(value: Any, out: TextIO) -> None:
-    out.write(json.dumps(_wire(value), ensure_ascii=False, default=str) + "\n")
+    out.write(
+        json.dumps(_wire(value), ensure_ascii=False, allow_nan=False, default=str) + "\n"
+    )
 
 
 def _display(value: Any) -> str:
@@ -56,7 +56,13 @@ def _display(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
     return str(value).replace("\n", "\\n").replace("|", "\\|")
 
 

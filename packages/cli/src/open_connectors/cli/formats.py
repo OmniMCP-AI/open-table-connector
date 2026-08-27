@@ -5,8 +5,11 @@ from __future__ import annotations
 import csv
 import io
 import json
+import math
 import sys
 import re
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Iterable, Mapping, TextIO
 
 import pyarrow as pa
@@ -268,12 +271,26 @@ def _write_csv(table: pa.Table, stream: TextIO) -> None:
 
 
 def _write_json(table: pa.Table, stream: TextIO) -> None:
-    json.dump(_table_rows(table), stream, ensure_ascii=False, separators=(",", ":"))
+    json.dump(
+        _json_table_rows(table),
+        stream,
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+    )
 
 
 def _write_jsonl(table: pa.Table, stream: TextIO) -> None:
-    for row in _table_rows(table):
-        stream.write(json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+    for row in _json_table_rows(table):
+        stream.write(
+            json.dumps(
+                row,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
         stream.write("\n")
 
 
@@ -298,6 +315,14 @@ def _table_rows(table: pa.Table) -> list[dict[str, object | None]]:
     return [{name: _normalize_cell(row.get(name)) for name in table.column_names} for row in rows]
 
 
+def _json_table_rows(table: pa.Table) -> list[dict[str, object | None]]:
+    rows = table.to_pylist()
+    return [
+        {name: _normalize_json_cell(row.get(name)) for name in table.column_names}
+        for row in rows
+    ]
+
+
 def _stringify_cell(value: object | None) -> str:
     normalized = _normalize_cell(value)
     return "" if normalized is None else str(normalized)
@@ -307,6 +332,38 @@ def _normalize_cell(value: object | None) -> object | None:
     if isinstance(value, (list, dict)):
         return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return value
+
+
+def _normalize_json_cell(value: object | None) -> object | None:
+    normalized = json_safe_value(value)
+    if not isinstance(normalized, (list, dict)):
+        return normalized
+    return json.dumps(
+        normalized,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def json_safe_value(value: object | None) -> object | None:
+    """Convert Arrow-derived values to JSON-compatible Python values."""
+    if isinstance(value, pa.Scalar):
+        return json_safe_value(value.as_py())
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, Decimal):
+        return format(value, "f") if value.is_finite() else None
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Mapping):
+        return {str(key): json_safe_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe_value(item) for item in value]
+    return str(value)
 
 
 def _normalize_table_cell(value: object | None) -> object | None:

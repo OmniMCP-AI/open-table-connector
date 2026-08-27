@@ -1,4 +1,7 @@
 import io
+import json
+from datetime import date, datetime, timezone
+from decimal import Decimal
 
 import pyarrow as pa
 import pytest
@@ -6,6 +9,13 @@ import pytest
 from open_connectors.contract import ConnectorError
 from open_connectors.cli.formats import infer_format, read_local, write_local
 from open_connectors.cli.model import Endpoint, FormatName, parse_endpoint
+
+
+def _strict_json_loads(text: str):
+    def reject_constant(value: str):
+        raise ValueError(f"non-standard JSON constant: {value}")
+
+    return json.loads(text, parse_constant=reject_constant)
 
 
 def test_csv_reader_preserves_empty_cells(tmp_path) -> None:
@@ -59,6 +69,36 @@ def test_jsonl_writer_emits_one_object_per_line() -> None:
     stream = io.StringIO()
     write_local(pa.table({"id": ["a"], "amount": [1]}), parse_endpoint("-"), FormatName.JSONL, stream)
     assert stream.getvalue() == '{"amount":1,"id":"a"}\n'
+
+
+@pytest.mark.parametrize("format_name", (FormatName.JSON, FormatName.JSONL))
+def test_json_writers_normalize_arrow_scalars_to_strict_json(format_name) -> None:
+    table = pa.table(
+        {
+            "nan": [float("nan")],
+            "positive_infinity": [float("inf")],
+            "negative_infinity": [float("-inf")],
+            "date": [date(2026, 8, 28)],
+            "timestamp": [datetime(2026, 8, 28, 1, 2, 3, tzinfo=timezone.utc)],
+            "decimal": pa.array([Decimal("12.30")], type=pa.decimal128(4, 2)),
+            "nested": pa.array([[float("nan"), float("inf"), float("-inf")]]),
+        }
+    )
+    stream = io.StringIO()
+
+    write_local(table, parse_endpoint("-"), format_name, stream)
+
+    payload = _strict_json_loads(stream.getvalue())
+    row = payload[0] if format_name is FormatName.JSON else payload
+    assert row == {
+        "nan": None,
+        "positive_infinity": None,
+        "negative_infinity": None,
+        "date": "2026-08-28",
+        "timestamp": "2026-08-28T01:02:03+00:00",
+        "decimal": "12.30",
+        "nested": "[null,null,null]",
+    }
 
 
 def test_infer_format_uses_explicit_format() -> None:

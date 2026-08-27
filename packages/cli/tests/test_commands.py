@@ -1,6 +1,8 @@
 import io
 import json
 import csv
+from datetime import date, datetime, timezone
+from decimal import Decimal
 
 import pyarrow as pa
 import pytest
@@ -20,6 +22,13 @@ from open_connectors.contract import (
     TableURI,
 )
 from open_connectors.contract.coordinates import BaseConvention
+
+
+def _strict_json_loads(text: str):
+    def reject_constant(value: str):
+        raise ValueError(f"non-standard JSON constant: {value}")
+
+    return json.loads(text, parse_constant=reject_constant)
 
 
 class FakeAdapter:
@@ -89,6 +98,48 @@ def test_read_defaults_to_jsonl_row_events_then_summary(fake_registry, tmp_path)
     assert code == 0
     assert events[0]["event"] == "row"
     assert events[-1]["event"] == "summary"
+    assert err.getvalue() == ""
+
+
+@pytest.mark.parametrize("format_name", ("json", "jsonl"))
+def test_read_normalizes_arrow_scalars_to_strict_json(format_name, fake_registry, tmp_path) -> None:
+    adapter = fake_registry.list()[0]
+    table = pa.table(
+        {
+            "nan": [float("nan")],
+            "positive_infinity": [float("inf")],
+            "negative_infinity": [float("-inf")],
+            "date": [date(2026, 8, 28)],
+            "timestamp": [datetime(2026, 8, 28, 1, 2, 3, tzinfo=timezone.utc)],
+            "decimal": pa.array([Decimal("12.30")], type=pa.decimal128(4, 2)),
+            "nested": pa.array([[float("nan"), float("inf"), float("-inf")]]),
+        }
+    )
+    adapter.read = lambda endpoint, options: ArrowReadResult(table, adapter._receipt())
+    source = tmp_path / "source.jsonl"
+    source.write_text('{}\n')
+    out, err = io.StringIO(), io.StringIO()
+    args = type(
+        "Args",
+        (),
+        {"command": "read", "from_value": str(source), "output_format": format_name},
+    )()
+
+    assert run_command(args, fake_registry, out, err) == 0
+
+    if format_name == "json":
+        row = _strict_json_loads(out.getvalue())["rows"][0]
+    else:
+        row = _strict_json_loads(out.getvalue().splitlines()[0])["row"]
+    assert row == {
+        "nan": None,
+        "positive_infinity": None,
+        "negative_infinity": None,
+        "date": "2026-08-28",
+        "timestamp": "2026-08-28T01:02:03+00:00",
+        "decimal": "12.30",
+        "nested": [None, None, None],
+    }
     assert err.getvalue() == ""
 
 
