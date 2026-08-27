@@ -182,3 +182,41 @@ Concerns:
 Deviations:
 
 - No output, command, packaging, or registry implementation files were changed. MaybeSheet provider/process source was updated because per-request timeout behavior is part of its public process/read path.
+
+## Final re-review adapter identity and opaque URI fix
+
+Status: complete
+
+Changed files:
+
+- `packages/cli/src/open_connectors/cli/adapters.py`
+- `packages/cli/tests/test_registry.py`
+- `.superpowers/sdd/2026-08-27-open-table-connector-cli/task-4-report.md`
+
+Changes:
+
+- Local inspection now uses the same canonical local URI helper as local receipts: resolved filesystem paths use `Path.resolve().as_uri()`, while stdin uses `stdio://stdin`. Its base inspection convention now uses the local read receipt's content-derived source revision.
+- MaybeSheet opaque URIs are now validated as exactly `maybe://DOCUMENT/TARGET`: the document/netloc and one target path segment must be non-empty, with no extra path segments, query, or fragment. Validation occurs before the injected process client is called, and explicit `options.target` does not bypass malformed URI validation.
+- Preserved HTTPS MaybeSheet document behavior requiring an explicit target and preserved all existing credential, limit, timeout, capability, and transport-injection fixes.
+- Added regressions for relative local paths, stdin inspection identities/source revisions, malformed opaque MaybeSheet URI forms, safe error details, and zero process calls.
+
+Commit:
+
+- `516f8a6 fix: validate adapter inspection identities and maybe uris`
+
+Tests and results:
+
+- Red focused run: `uv run python -m pytest packages/cli/tests/test_registry.py -q` — 15 passed, 7 failed, reproducing the incorrect local inspection identities/convention and malformed MaybeSheet URI acceptance.
+- Green focused run: `uv run python -m pytest packages/cli/tests/test_registry.py packages/cli/tests/test_pipeline.py packages/google_sheets/tests/test_connector.py packages/feishu_bitable/tests/test_connector.py packages/maybesheet/tests/test_connector.py -q` — 66 passed.
+- Full CLI suite: `uv run python -m pytest packages/cli/tests -q` — 79 passed.
+- `git diff --check` — passed.
+
+Concerns:
+
+- Local stdin inspection consumes the injected stdin stream once, as local reads already do; the inspection URI and source revision remain stable and credential-free.
+- MaybeSheet URI validation intentionally rejects query and fragment components because the supported opaque grammar is exact; HTTPS target handling remains unchanged.
+- The direct `uv run pytest` executable remains unavailable in this environment; equivalent `uv run python -m pytest` commands passed.
+
+Deviations:
+
+- No output, command, packaging, or provider package files were changed; this fix was confined to the CLI adapter and registry tests plus this report.
