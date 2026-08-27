@@ -88,6 +88,20 @@ def test_table_writer_escapes_special_characters_and_keeps_rows_aligned() -> Non
     assert len({len(line) for line in lines}) == 1
 
 
+@pytest.mark.parametrize("value", ["left|right", r"C:\temp", "line1\nline2"])
+def test_markdown_table_writer_output_round_trips_escaped_cells(value: str) -> None:
+    stream = io.StringIO()
+    write_local(pa.table({"value": [value]}), parse_endpoint("-"), FormatName.TABLE, stream)
+
+    table = read_local(
+        parse_endpoint("-"),
+        FormatName.TABLE,
+        io.StringIO(stream.getvalue()),
+    )
+
+    assert table.to_pylist() == [{"value": value}]
+
+
 @pytest.mark.parametrize("format_name", (FormatName.JSON, FormatName.JSONL))
 def test_json_writers_normalize_arrow_scalars_to_strict_json(format_name) -> None:
     table = pa.table(

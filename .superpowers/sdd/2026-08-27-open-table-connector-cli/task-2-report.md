@@ -49,3 +49,22 @@
 ### Concerns
 
 - The focused verification still relies on the ad hoc `PYTHONPATH` plus transient `pytest`/`pyarrow`/`polars` provisioning in this workspace.
+
+## Markdown table round-trip fix
+
+### Changes
+
+- Made Markdown row splitting escape-aware and decoded the writer's `\|`, `\\`, and `\n` cell representations.
+- Added writer-to-reader regression cases for pipes, backslashes, and embedded newlines while retaining separator/header parsing and column-count diagnostics.
+
+### Tests/results
+
+- Red phase: all **3** new round-trip cases failed against the raw pipe splitter.
+- Focused format tests: **15 passed**.
+- Full CLI suite: **106 passed**.
+- Full workspace suite: **186 passed**.
+- CLI source compilation and `git diff --check`: passed.
+
+### Commit
+
+- This report is included with `fix: round-trip markdown table escapes`.

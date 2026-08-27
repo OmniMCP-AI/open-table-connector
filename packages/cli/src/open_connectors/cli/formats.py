@@ -387,7 +387,36 @@ def _normalize_table_cell(value: object | None) -> object | None:
 
 
 def _split_markdown_row(line: str, *, line_number: int, source: Endpoint) -> list[str]:
-    cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+    content = line.strip()
+    if content.startswith("|"):
+        content = content[1:]
+    if content.endswith("|"):
+        backslashes = 0
+        for character in reversed(content[:-1]):
+            if character != "\\":
+                break
+            backslashes += 1
+        if backslashes % 2 == 0:
+            content = content[:-1]
+
+    raw_cells: list[str] = []
+    cell: list[str] = []
+    index = 0
+    while index < len(content):
+        character = content[index]
+        if character == "\\" and index + 1 < len(content):
+            cell.extend((character, content[index + 1]))
+            index += 2
+            continue
+        if character == "|":
+            raw_cells.append("".join(cell))
+            cell = []
+        else:
+            cell.append(character)
+        index += 1
+    raw_cells.append("".join(cell))
+
+    cells = [_unescape_markdown_cell(cell.strip()) for cell in raw_cells]
     if len(cells) == 1 and cells[0] == "":
         raise ConnectorError(
             ConnectorErrorCode.EXECUTION_FAILED,
@@ -395,6 +424,27 @@ def _split_markdown_row(line: str, *, line_number: int, source: Endpoint) -> lis
             {"path": _endpoint_path(source), "line": line_number},
         )
     return cells
+
+
+def _unescape_markdown_cell(value: str) -> str:
+    characters: list[str] = []
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if character != "\\" or index + 1 == len(value):
+            characters.append(character)
+            index += 1
+            continue
+
+        escaped = value[index + 1]
+        if escaped == "n":
+            characters.append("\n")
+        elif escaped in {"\\", "|"}:
+            characters.append(escaped)
+        else:
+            characters.extend((character, escaped))
+        index += 2
+    return "".join(characters)
 
 
 def _is_separator_row(row: list[str]) -> bool:
