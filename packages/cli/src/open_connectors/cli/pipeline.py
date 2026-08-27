@@ -73,6 +73,9 @@ def import_endpoint(
 
     # Validate before reading so unsupported imports cannot cause provider I/O.
     destination_adapter = registry.require_capability(destination, "table.write")
+    preflight = getattr(destination_adapter, "preflight_write", None)
+    if callable(preflight):
+        preflight(destination, options)
     result = read_endpoint(source, registry, options)
     table = _table_for_destination(result.table, result.receipt, destination_adapter)
     write_result = destination_adapter.write(destination, table, options)

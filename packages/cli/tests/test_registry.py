@@ -106,6 +106,22 @@ def test_maybesheet_sheet_capability_is_rejected_before_process_io() -> None:
     assert process.calls == []
 
 
+def test_local_receipts_are_content_and_operation_specific(tmp_path) -> None:
+    source = tmp_path / "orders.json"
+    endpoint = parse_endpoint(str(source))
+    adapter = build_default_registry(env={}).connector_for(endpoint)
+    options = CliOptions(from_format="json")
+
+    source.write_text('[{"id": 1}]')
+    first = adapter.read(endpoint, options).receipt
+    source.write_text('[{"id": 2}]')
+    second = adapter.read(endpoint, options).receipt
+
+    assert first.content_fingerprint != second.content_fingerprint
+    assert first.source_revision != second.source_revision
+    assert first.operation_id != second.operation_id
+
+
 def test_registry_injects_maybesheet_process_transport() -> None:
     process = Process()
     registry = build_default_registry(transports={"maybesheet": process})

@@ -296,3 +296,143 @@ def test_row_limit_is_applied_before_destination_write(tmp_path) -> None:
         "range": "Orders", "majorDimension": "ROWS",
         "values": [["_record_id", "id"], ["rec_1", "a"]],
     }
+
+
+def test_maybesheet_unsupported_policy_is_rejected_before_source_read() -> None:
+    source_adapter = RecordingAdapter()
+    process = RecordingProcess()
+    registry = build_default_registry(transports={"maybesheet": process})
+    registry.register(source_adapter)
+
+    with pytest.raises(ConnectorError) as error:
+        import_endpoint(
+            parse_endpoint("fake://book/Orders"), parse_endpoint("maybe://doc/R_orders"), registry,
+            CliOptions(if_exists="error"),
+        )
+
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+    assert error.value.safe_details == {"if_exists": "error"}
+    assert source_adapter.read_calls == 0
+    assert process.calls == []
+
+
+def test_feishu_replace_is_rejected_before_source_read_or_destination_write() -> None:
+    source_adapter = RecordingAdapter()
+    transport = RecordingTransport({"GET": {"code": 0, "data": {"items": []}}, "POST": {}})
+    registry = build_default_registry(
+        env={"FEISHU_TENANT_ACCESS_TOKEN": "token"}, transports={"feishu_bitable": transport}
+    )
+    registry.register(source_adapter)
+
+    with pytest.raises(ConnectorError) as error:
+        import_endpoint(
+            parse_endpoint("fake://book/Orders"), parse_endpoint("feishu://app/table"), registry,
+            CliOptions(if_exists="replace"),
+        )
+
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+    assert error.value.safe_details == {"if_exists": "replace"}
+    assert source_adapter.read_calls == 0
+    assert transport.calls == []
+
+
+def test_feishu_error_policy_conflicts_before_source_read_when_destination_has_rows() -> None:
+    source_adapter = RecordingAdapter()
+    transport = RecordingTransport({
+        "GET": {"code": 0, "data": {"items": [{"record_id": "r1", "fields": {"id": "1"}}]}},
+        "POST": {},
+    })
+    registry = build_default_registry(
+        env={"FEISHU_TENANT_ACCESS_TOKEN": "token"}, transports={"feishu_bitable": transport}
+    )
+    registry.register(source_adapter)
+
+    with pytest.raises(ConnectorError) as error:
+        import_endpoint(
+            parse_endpoint("fake://book/Orders"), parse_endpoint("feishu://app/table"), registry,
+            CliOptions(if_exists="error"),
+        )
+
+    assert error.value.code is ConnectorErrorCode.CONFLICT
+    assert source_adapter.read_calls == 0
+    assert [call.method for call in transport.calls] == ["GET"]
+
+
+def test_feishu_empty_destination_allows_error_policy_write() -> None:
+    source_adapter = RecordingAdapter()
+    transport = RecordingTransport({
+        "GET": {"code": 0, "data": {"items": [], "has_more": False}},
+        "POST": {"data": {}},
+    })
+    registry = build_default_registry(
+        env={"FEISHU_TENANT_ACCESS_TOKEN": "token"}, transports={"feishu_bitable": transport}
+    )
+    registry.register(source_adapter)
+
+    summary = import_endpoint(
+        parse_endpoint("fake://book/Orders"), parse_endpoint("feishu://app/table"), registry,
+        CliOptions(if_exists="error"),
+    )
+
+    assert summary.rows_read == 1
+    assert source_adapter.read_calls == 1
+    assert [call.method for call in transport.calls] == ["GET", "POST"]
+
+
+def test_google_error_policy_conflicts_before_source_read_when_destination_has_rows() -> None:
+    source_adapter = RecordingAdapter()
+    transport = RecordingTransport({
+        "GET": {"values": [["id"], ["existing"]]},
+        "PUT": {},
+    })
+    registry = build_default_registry(
+        env={"GOOGLE_SHEETS_ACCESS_TOKEN": "token"}, transports={"google_sheets": transport}
+    )
+    registry.register(source_adapter)
+
+    with pytest.raises(ConnectorError) as error:
+        import_endpoint(
+            parse_endpoint("fake://book/Orders"), parse_endpoint("gsheets://book/Orders"), registry,
+            CliOptions(if_exists="error"),
+        )
+
+    assert error.value.code is ConnectorErrorCode.CONFLICT
+    assert source_adapter.read_calls == 0
+    assert [call.method for call in transport.calls] == ["GET"]
+
+
+def test_google_empty_destination_allows_error_policy_write() -> None:
+    source_adapter = RecordingAdapter()
+    transport = RecordingTransport({"GET": {"values": []}, "PUT": {"updatedRows": 1}})
+    registry = build_default_registry(
+        env={"GOOGLE_SHEETS_ACCESS_TOKEN": "token"}, transports={"google_sheets": transport}
+    )
+    registry.register(source_adapter)
+
+    summary = import_endpoint(
+        parse_endpoint("fake://book/Orders"), parse_endpoint("gsheets://book/Orders"), registry,
+        CliOptions(if_exists="error"),
+    )
+
+    assert summary.rows_read == 1
+    assert source_adapter.read_calls == 1
+    assert [call.method for call in transport.calls] == ["GET", "PUT"]
+
+
+def test_google_invalid_policy_is_rejected_before_source_read_or_destination_write() -> None:
+    source_adapter = RecordingAdapter()
+    transport = RecordingTransport({"GET": {}, "PUT": {}})
+    registry = build_default_registry(
+        env={"GOOGLE_SHEETS_ACCESS_TOKEN": "token"}, transports={"google_sheets": transport}
+    )
+    registry.register(source_adapter)
+
+    with pytest.raises(ConnectorError) as error:
+        import_endpoint(
+            parse_endpoint("fake://book/Orders"), parse_endpoint("gsheets://book/Orders"), registry,
+            CliOptions(if_exists="merge"),
+        )
+
+    assert error.value.code is ConnectorErrorCode.INVALID_URI
+    assert source_adapter.read_calls == 0
+    assert transport.calls == []

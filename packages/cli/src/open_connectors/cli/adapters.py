@@ -14,8 +14,11 @@ from open_connectors.contract import (
     ArrowReadResult,
     BaseConvention,
     CapabilityIdentity,
+    ConnectorError,
+    ConnectorErrorCode,
     ConnectorIdentity,
     InspectRequest,
+    NeutralReceipt,
     ResourceLimits,
     TableInspection,
     TableReadRequest,
@@ -24,7 +27,11 @@ from open_connectors.contract import (
     TableWriteResult,
     TableMode,
 )
-from open_connectors.contract.fingerprints import arrow_schema_fingerprint
+from open_connectors.contract.fingerprints import (
+    arrow_content_fingerprint,
+    arrow_schema_fingerprint,
+    operation_identity,
+)
 from open_connectors.feishu_bitable import (
     FeishuBitableConnector,
     FeishuBitableReadOptions,
@@ -66,6 +73,14 @@ def _frame(table: pa.Table) -> pl.DataFrame:
     return pl.from_arrow(table)
 
 
+def _conflict(endpoint: Endpoint) -> ConnectorError:
+    return ConnectorError(
+        ConnectorErrorCode.CONFLICT,
+        "destination already contains rows",
+        {"scheme": endpoint.uri.scheme if endpoint.uri else "file"},
+    )
+
+
 @dataclass
 class GoogleSheetsAdapter:
     connector: GoogleSheetsConnector
@@ -80,6 +95,25 @@ class GoogleSheetsAdapter:
 
     def _connector(self, options: CliOptions) -> GoogleSheetsConnector:
         return GoogleSheetsConnector(self.transport, access_token=options.token or self.environment_token)
+
+    def preflight_write(self, endpoint: Endpoint, options: CliOptions) -> None:
+        if options.if_exists not in {"error", "append", "replace"}:
+            raise ConnectorError(
+                ConnectorErrorCode.INVALID_URI,
+                "if_exists must be error, append, or replace",
+                {},
+            )
+        if options.if_exists != "error":
+            return
+        result = self._connector(options).read_arrow(
+            GoogleSheetsTableReadRequest(
+                _uri(endpoint),
+                _limits(options),
+                GoogleSheetsReadOptions(range=options.target),
+            )
+        )
+        if result.table.num_rows:
+            raise _conflict(endpoint)
 
     def read(self, endpoint: Endpoint, options: CliOptions) -> ArrowReadResult:
         request = GoogleSheetsTableReadRequest(
@@ -110,6 +144,23 @@ class FeishuBitableAdapter:
 
     def _connector(self, options: CliOptions) -> FeishuBitableConnector:
         return FeishuBitableConnector(self.transport, tenant_access_token=options.token or self.environment_token)
+
+    def preflight_write(self, endpoint: Endpoint, options: CliOptions) -> None:
+        if options.if_exists not in {"append", "error"}:
+            raise ConnectorError(
+                ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+                "Feishu Bitable only supports append writes",
+                {"if_exists": options.if_exists},
+            )
+        if options.if_exists != "error":
+            return
+        result = self._connector(options).read_arrow(
+            FeishuBitableTableReadRequest(
+                _uri(endpoint), _limits(options), FeishuBitableReadOptions()
+            )
+        )
+        if result.table.num_rows:
+            raise _conflict(endpoint)
 
     def read(self, endpoint: Endpoint, options: CliOptions) -> ArrowReadResult:
         request = FeishuBitableTableReadRequest(
@@ -142,6 +193,20 @@ class MaybeSheetAdapter:
         if not target:
             raise ValueError("MaybeSheet URI requires a target")
         return target
+
+    def preflight_write(self, endpoint: Endpoint, options: CliOptions) -> None:
+        if options.if_exists in {"replace", "error"}:
+            raise ConnectorError(
+                ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+                "MaybeSheet table writes support append only",
+                {"if_exists": options.if_exists},
+            )
+        if options.if_exists != "append":
+            raise ConnectorError(
+                ConnectorErrorCode.INVALID_URI,
+                "if_exists must be append for MaybeSheet table writes",
+                {"if_exists": options.if_exists},
+            )
 
     def _request(self, endpoint: Endpoint, options: CliOptions) -> MaybeSheetReadRequest:
         token = options.token
@@ -177,7 +242,7 @@ class LocalAdapter:
 
     def read(self, endpoint: Endpoint, options: CliOptions) -> ArrowReadResult:
         table = read_local(endpoint, self._format(endpoint, options))
-        return ArrowReadResult(table, _local_receipt(endpoint, table))
+        return ArrowReadResult(table, _local_receipt(endpoint, table, _LOCAL_READ_CAPABILITY))
 
     def inspect(self, endpoint: Endpoint, options: CliOptions) -> TableInspection:
         result = self.read(endpoint, options)
@@ -187,16 +252,41 @@ class LocalAdapter:
 
     def write(self, endpoint: Endpoint, table: pa.Table, options: CliOptions) -> TableWriteResult:
         write_local(table, endpoint, self._format(endpoint, options, output=True))
-        return TableWriteResult(_local_receipt(endpoint, table), table.num_rows)
+        return TableWriteResult(_local_receipt(endpoint, table, _LOCAL_WRITE_CAPABILITY), table.num_rows)
 
 
-def _local_receipt(endpoint: Endpoint, table: pa.Table):
-    from open_connectors.contract import NeutralReceipt
+_LOCAL_READ_CAPABILITY = CapabilityIdentity("table.read.arrow", "1.0")
+_LOCAL_WRITE_CAPABILITY = CapabilityIdentity("table.write", "1.0")
+
+
+def _local_receipt(
+    endpoint: Endpoint, table: pa.Table, capability: CapabilityIdentity
+) -> NeutralReceipt:
     uri = endpoint.uri or TableURI("file:///" + str(endpoint.path))
-    fingerprint = arrow_schema_fingerprint(table.schema)
-    return NeutralReceipt(LocalAdapter.identity, CapabilityIdentity("table.read.arrow", "1.0"),
-                          "local", uri, TableMode.BASE, "local", fingerprint, fingerprint,
-                          BaseConvention(ordinal_snapshot_id="local"), table.num_rows, 1)
+    schema = arrow_schema_fingerprint(table.schema)
+    content = arrow_content_fingerprint(table)
+    source_revision = "sha256:" + content
+    operation = operation_identity(
+        connector=LocalAdapter.identity,
+        capability=capability,
+        uri=uri,
+        source_revision=source_revision,
+        schema_fingerprint=schema,
+        content_fingerprint=content,
+    )
+    return NeutralReceipt(
+        LocalAdapter.identity,
+        capability,
+        operation,
+        uri,
+        TableMode.BASE,
+        source_revision,
+        schema,
+        content,
+        BaseConvention(ordinal_snapshot_id=source_revision),
+        table.num_rows,
+        1,
+    )
 
 
 def build_adapters(env: Mapping[str, str], transports: Mapping[str, Any] | None = None) -> tuple[ConnectorAdapter, ...]:
