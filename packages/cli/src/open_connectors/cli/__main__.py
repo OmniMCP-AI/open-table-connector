@@ -6,7 +6,6 @@ import argparse
 import os
 import sys
 from collections.abc import Sequence
-from typing import TextIO
 
 from .commands import run_command
 from .output import emit_error
@@ -21,7 +20,7 @@ def _add_options(parser: argparse.ArgumentParser, *, require_from: bool, require
     parser.add_argument("--to", dest="to_value", required=require_to, metavar="DESTINATION")
     parser.add_argument("--from-format", choices=_FORMATS, default=None)
     parser.add_argument("--to-format", choices=_FORMATS, default=None)
-    parser.add_argument("--output-format", choices=_FORMATS, default=None)
+    parser.add_argument("--output-format", choices=_FORMATS, default="jsonl")
     parser.add_argument("--if-exists", choices=("append", "replace", "error"), default="error")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--timeout", type=float)
