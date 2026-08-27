@@ -4,14 +4,21 @@ import importlib
 
 import pytest
 
-from open_connectors.contract import ResourceLimits, TableMode
+from open_connectors.contract import CapabilityIdentity, CapabilityManifest, ResourceLimits, TableMode
+
+from specification.conformance.universal.assertions import (
+    assert_capabilities_are_unique,
+    assert_identity_round_trip,
+)
 
 from specification.conformance.universal import cases as cases_module
-from specification.conformance.universal.cases import all_cases, case
+from specification.conformance.universal.cases import ConnectorCase, all_cases, case
+
+_CASE_NAMES = tuple(item.name for item in all_cases())
 
 
 def test_all_current_connectors_have_named_cases() -> None:
-    assert {item.name for item in all_cases()} == {
+    assert tuple(item.name for item in all_cases()) == (
         "local_files",
         "google_sheets",
         "feishu_bitable",
@@ -19,7 +26,7 @@ def test_all_current_connectors_have_named_cases() -> None:
         "sqlite",
         "postgres",
         "dbt",
-    }
+    )
 
 
 def test_case_lookup_rejects_unknown_connector() -> None:
@@ -30,7 +37,7 @@ def test_case_lookup_rejects_unknown_connector() -> None:
 def test_all_cases_bootstrap_fixtures_without_pytest_configure() -> None:
     reloaded = importlib.reload(cases_module)
 
-    assert {item.name for item in reloaded.all_cases()} == {
+    assert tuple(item.name for item in reloaded.all_cases()) == (
         "local_files",
         "google_sheets",
         "feishu_bitable",
@@ -38,12 +45,60 @@ def test_all_cases_bootstrap_fixtures_without_pytest_configure() -> None:
         "sqlite",
         "postgres",
         "dbt",
-    }
+    )
+
+
+@pytest.mark.parametrize("connector_case", _CASE_NAMES, ids=str, indirect=True)
+def test_connector_identity_is_closed_and_stable(connector_case: ConnectorCase) -> None:
+    assert_identity_round_trip(connector_case.identity)
+
+
+@pytest.mark.parametrize("connector_case", _CASE_NAMES, ids=str, indirect=True)
+def test_case_manifest_capabilities_modes_and_schemes_are_closed(
+    connector_case: ConnectorCase,
+    capability_identities: tuple[CapabilityIdentity, ...],
+    capability_manifest: CapabilityManifest,
+) -> None:
+    assert_capabilities_are_unique(
+        capability_identities,
+        expected_connector=connector_case.identity,
+        expected_capabilities=connector_case.capabilities,
+        expected_modes=connector_case.modes,
+        expected_schemes=connector_case.schemes,
+        manifest=capability_manifest,
+    )
+
+
+@pytest.mark.parametrize("connector_case", _CASE_NAMES, ids=str, indirect=True)
+def test_manifest_capability_wire_shape_is_closed(
+    connector_case: ConnectorCase,
+    capability_identities: tuple[CapabilityIdentity, ...],
+) -> None:
+    for capability in capability_identities:
+        wire = capability.to_wire()
+
+        assert CapabilityIdentity.from_wire(wire) == capability
+        assert set(wire) == {"capability_id", "capability_version"}
 
 
 def test_all_advertised_capabilities_have_case_bindings() -> None:
     for connector_case in all_cases():
         assert set(connector_case.capability_bindings) == connector_case.capabilities
+
+
+@pytest.mark.parametrize("connector_case", _CASE_NAMES, ids=str, indirect=True)
+def test_case_modes_are_closed_to_contract_values(
+    connector_case: ConnectorCase,
+    capability_manifest: CapabilityManifest | None,
+) -> None:
+    assert set(connector_case.modes).issubset(set(TableMode))
+    if capability_manifest is None:
+        assert len(connector_case.modes) == len(set(connector_case.modes))
+        if connector_case.name == "dbt":
+            assert connector_case.modes == frozenset()
+        return
+    assert tuple(capability_manifest.modes) == tuple(dict.fromkeys(capability_manifest.modes))
+    assert set(capability_manifest.modes) == set(connector_case.modes)
 
 
 def test_cases_with_sheet_read_returns_mode_specific_maybesheet_binding() -> None:
