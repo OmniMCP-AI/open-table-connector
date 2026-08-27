@@ -234,7 +234,7 @@ def test_google_sheets_to_maybesheet_import_sends_jsonl_to_process(tmp_path) -> 
         parse_endpoint(str(source)),
         parse_endpoint("maybe://doc/R_orders"),
         registry,
-        CliOptions(if_exists="append"),
+        CliOptions(if_exists="append", token="explicit-write-token"),
     )
 
     assert summary.rows_read == 1
@@ -242,6 +242,10 @@ def test_google_sheets_to_maybesheet_import_sends_jsonl_to_process(tmp_path) -> 
     assert summary.source_receipt is not None
     assert summary.destination_receipt is not None
     assert summary.destination_receipt.vendor_receipt_ref == "write-ref"
+    assert process.calls[0][1] == {"access_token": "explicit-write-token"}
+    assert "explicit-write-token" not in repr(process.calls[0][0])
+    assert "explicit-write-token" not in process.stdin_payload
+    assert "explicit-write-token" not in repr(summary.destination_receipt.to_wire())
     assert process.calls[0][0] == (
         "mbs", "db-table", "write", "--uri", "maybe://doc/R_orders",
         "--target", "R_orders", "--input", "-",

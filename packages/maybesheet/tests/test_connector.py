@@ -86,6 +86,26 @@ def test_maybesheet_write_sends_jsonl_to_process() -> None:
     assert result.receipt.vendor_receipt_ref == "safe-ref"
 
 
+def test_maybesheet_write_passes_explicit_credentials_without_serializing_them() -> None:
+    process = Process()
+    access_token = "explicit-write-token"
+    result = MaybeSheetConnector(process).write(
+        TableWriteRequest(
+            TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"),
+            pl.DataFrame({"id": ["1"]}),
+            table="R_orders",
+            if_exists="append",
+        ),
+        credentials={"access_token": access_token},
+    )
+
+    assert process.calls[0][1] == {"access_token": access_token}
+    assert access_token not in repr(process.calls[0][0])
+    assert access_token not in process.calls[0][2]
+    assert access_token not in repr(result)
+    assert access_token not in repr(result.receipt.to_wire())
+
+
 @pytest.mark.parametrize("if_exists", ["replace", "error"])
 def test_maybesheet_rejects_unsupported_write_policies(if_exists) -> None:
     process = Process()
@@ -127,7 +147,7 @@ def test_maybesheet_unexpected_process_errors_do_not_expose_access_tokens(operat
             table="R_orders",
             if_exists="append",
         )
-        invoke = lambda: connector.write(request)
+        invoke = lambda: connector.write(request, credentials={"access_token": access_token})
 
     with pytest.raises(ConnectorError) as error:
         invoke()

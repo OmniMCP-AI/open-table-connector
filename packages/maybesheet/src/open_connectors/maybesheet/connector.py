@@ -86,7 +86,12 @@ class MaybeSheetConnector:
             {"capability": capability},
         )
 
-    def write(self, request: TableWriteRequest) -> TableWriteResult:
+    def write(
+        self,
+        request: TableWriteRequest,
+        *,
+        credentials: Mapping[str, str] | None = None,
+    ) -> TableWriteResult:
         if request.if_exists in {"replace", "error"}:
             raise ConnectorError(
                 ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
@@ -121,10 +126,10 @@ class MaybeSheetConnector:
             "-",
         )
         try:
-            response = self._process.run(argv, credentials=None, stdin=payload)
+            response = self._process.run(argv, credentials=credentials, stdin=payload)
         except ConnectorError:
             raise
-        except Exception as exc:
+        except Exception:
             raise ConnectorError(
                 ConnectorErrorCode.EXECUTION_FAILED,
                 "MaybeSheet process operation failed",
@@ -180,7 +185,7 @@ class MaybeSheetConnector:
             payload = self._process.run(argv, credentials=request.credentials)
         except ConnectorError:
             raise
-        except Exception as exc:
+        except Exception:
             raise ConnectorError(
                 ConnectorErrorCode.EXECUTION_FAILED,
                 "MaybeSheet process operation failed",

@@ -60,3 +60,38 @@ The generic exception handlers in `MaybeSheetConnector.write` and `_read` copied
 ## Concerns and deviations
 
 - No known concerns. Process-originated `ConnectorError` values continue to propagate unchanged as required; only unexpected exception messages are redacted.
+
+# Final-Review Credential-Precedence Fix Report
+
+Status: complete
+
+## Root cause
+
+`MaybeSheetAdapter.write` received `CliOptions.token` but did not pass it into `TableWriteRequest` or the connector. `MaybeSheetConnector.write` therefore always invoked `ProcessClient.run` with `credentials=None`, allowing the subprocess environment to win even when the CLI supplied an explicit token.
+
+## Changed files
+
+- `packages/maybesheet/src/open_connectors/maybesheet/connector.py`
+  - Added a keyword-only optional `credentials` mapping to `write`, preserving one-argument `TableWriter` callers.
+  - Forwarded the mapping only to `ProcessClient.run`; credentials remain absent from argv, stdin, receipt fields, and error details.
+- `packages/maybesheet/tests/test_connector.py`
+  - Added explicit write-credential precedence and non-serialization assertions.
+  - Extended the unexpected-process-error regression to exercise an explicit write credential and verify token-free error representations.
+- `packages/cli/src/open_connectors/cli/adapters.py`
+  - Passed `options.token` to MaybeSheet writes as the credential-safe `access_token` mapping.
+- `packages/cli/tests/test_pipeline.py`
+  - Added CLI import coverage proving the explicit token reaches the injected process and is absent from command, stdin, and destination receipt data.
+
+## Commits
+
+- `fix: pass explicit credentials to MaybeSheet writes`
+
+## Tests
+
+- `uv run python -m pytest packages/maybesheet/tests -q` — 10 passed.
+- `uv run python -m pytest packages/cli/tests/test_commands.py packages/cli/tests/test_registry.py packages/cli/tests/test_pipeline.py -q` — 42 passed.
+- `git diff --check` — passed before commit.
+
+## Concerns and deviations
+
+- No known concerns. One-argument connector writes remain supported, explicit CLI tokens override environment credentials in the subprocess client, and credentials are not included in URI, stdin, receipts, or error payloads.

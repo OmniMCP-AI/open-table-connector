@@ -223,7 +223,8 @@ class MaybeSheetAdapter:
 
     def write(self, endpoint: Endpoint, table: pa.Table, options: CliOptions) -> TableWriteResult:
         request = TableWriteRequest(_uri(endpoint), _frame(table), options.if_exists, self._target(endpoint, options))
-        return self.connector.write(request)
+        credentials = None if options.token is None else {"access_token": options.token}
+        return self.connector.write(request, credentials=credentials)
 
 
 @dataclass
