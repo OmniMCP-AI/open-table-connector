@@ -194,3 +194,80 @@ Output:
 ### Concerns
 
 - `open_connectors.cli.__main__` still needs the later task before the console scripts are runnable.
+
+## Final Review Fix Report
+
+### Outcome
+
+The final-review endpoint validation gap is fixed within the CLI model and test scope.
+
+### Commit
+
+- `8c72f6f` - `fix: validate file endpoints through table uri`
+
+### Files changed
+
+- `packages/cli/src/open_connectors/cli/model.py`
+- `packages/cli/tests/test_model.py`
+- `.superpowers/sdd/2026-08-27-open-table-connector-cli/task-1-report.md`
+
+### What changed
+
+- `parse_endpoint` now constructs `TableURI(value)` for `file:` URIs before reading the path, so relative paths and credential-bearing query or userinfo forms are rejected by the shared URI validation.
+- The path is normalized with `url2pathname` from the validated URI value.
+- Added regression coverage for `file:///tmp/x?token=secret` and `file:relative`; the credential-bearing test verifies the exception text does not contain the supplied secret.
+- Bare local paths, Windows drive-letter paths, stdin (`-`), and opaque non-file connector URIs remain on their existing branches.
+
+### Verification
+
+Command:
+
+```bash
+uv sync --all-packages --group dev
+```
+
+Output:
+
+```text
+Resolved 28 packages in 36ms
+Checked 27 packages in 13ms
+```
+
+Command:
+
+```bash
+uv run pytest packages/cli/tests/test_model.py -q
+```
+
+Output:
+
+```text
+......                                                                   [100%]
+6 passed in 0.34s
+```
+
+Command:
+
+```bash
+uv run pytest packages/cli/tests -q
+```
+
+Output:
+
+```text
+........................................................................ [ 81%]
+................                                                         [100%]
+88 passed in 4.00s
+```
+
+Command:
+
+```bash
+git diff --check
+```
+
+Output: no output; exit code `0`.
+
+### Concerns
+
+- `open_connectors.cli.__main__` remains a later-task follow-up, so the declared console scripts are not expected to be runnable until that task implements the entry point.
