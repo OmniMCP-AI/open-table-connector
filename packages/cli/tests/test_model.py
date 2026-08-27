@@ -17,6 +17,12 @@ def test_parse_endpoint_normalizes_file_uri_to_path() -> None:
     assert endpoint.path == Path("/tmp/orders.csv")
 
 
+def test_parse_endpoint_treats_windows_drive_path_as_local_path() -> None:
+    endpoint = parse_endpoint(r"C:\tmp\orders.csv")
+    assert endpoint.uri is None
+    assert endpoint.path == Path(r"C:\tmp\orders.csv")
+
+
 def test_parse_format_defaults_to_auto_and_rejects_unknown_values() -> None:
     assert parse_format(None) is FormatName.AUTO
     with pytest.raises(ValueError, match="unsupported format"):

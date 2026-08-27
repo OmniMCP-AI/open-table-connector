@@ -40,9 +40,16 @@ class Endpoint:
             raise ValueError("endpoint cannot have both a uri and a path")
 
 
+def _looks_like_windows_drive_path(value: str) -> bool:
+    return len(value) >= 2 and value[1] == ":" and value[0].isalpha()
+
+
 def parse_endpoint(value: str) -> Endpoint:
     if value == "-":
         return Endpoint(raw=value, uri=None, path=None, is_stdio=True)
+
+    if _looks_like_windows_drive_path(value):
+        return Endpoint(raw=value, uri=None, path=Path(value), is_stdio=False)
 
     parsed = urlsplit(value)
     if parsed.scheme:
@@ -113,4 +120,3 @@ class PipelineSummary:
     rows_written: int | None = None
     source_receipt: Any | None = None
     destination_receipt: Any | None = None
-
