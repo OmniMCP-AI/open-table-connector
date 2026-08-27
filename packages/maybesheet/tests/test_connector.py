@@ -104,6 +104,40 @@ def test_maybesheet_rejects_unsupported_write_policies(if_exists) -> None:
     assert process.calls == []
 
 
+@pytest.mark.parametrize("operation", ["read", "write"])
+def test_maybesheet_unexpected_process_errors_do_not_expose_access_tokens(operation) -> None:
+    access_token = "access-token-secret"
+
+    class ExplodingProcess:
+        def run(self, *_args, **_kwargs):
+            raise RuntimeError(f"process failed with access_token={access_token}")
+
+    connector = MaybeSheetConnector(ExplodingProcess())
+    if operation == "read":
+        request = MaybeSheetReadRequest(
+            TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"),
+            TableMode.BASE,
+            "R_orders",
+        )
+        invoke = lambda: connector.read_polars(request)
+    else:
+        request = TableWriteRequest(
+            TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"),
+            pl.DataFrame({"id": ["1"]}),
+            table="R_orders",
+            if_exists="append",
+        )
+        invoke = lambda: connector.write(request)
+
+    with pytest.raises(ConnectorError) as error:
+        invoke()
+
+    assert error.value.code is ConnectorErrorCode.EXECUTION_FAILED
+    assert access_token not in repr(error.value)
+    assert access_token not in repr(error.value.safe_details)
+    assert access_token not in repr(error.value.to_wire())
+
+
 def test_maybesheet_subprocess_transport_maps_timeouts_to_stable_connector_error(monkeypatch) -> None:
     def fake_run(*_args, **_kwargs):
         raise subprocess.TimeoutExpired("mbs", 1)

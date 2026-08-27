@@ -128,7 +128,7 @@ class MaybeSheetConnector:
             raise ConnectorError(
                 ConnectorErrorCode.EXECUTION_FAILED,
                 "MaybeSheet process operation failed",
-                {"reason": str(exc)},
+                {"reason": "unexpected process-client exception"},
             ) from None
         revision = "sha256:" + sha256(json.dumps(response, sort_keys=True, default=str).encode()).hexdigest()
         table = request.frame.to_arrow()
@@ -184,7 +184,7 @@ class MaybeSheetConnector:
             raise ConnectorError(
                 ConnectorErrorCode.EXECUTION_FAILED,
                 "MaybeSheet process operation failed",
-                {"reason": str(exc)},
+                {"reason": "unexpected process-client exception"},
             ) from None
         table = _payload_table(payload)
         source = str(payload.get("source_revision") or "sha256:" + sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest())
