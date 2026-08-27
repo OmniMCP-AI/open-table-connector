@@ -95,3 +95,68 @@ Result:
 - The HTTP recording fixture cycles deterministic page payloads so repeated
   reads can replay the same multi-page response. URL and page-token assertions
   remain responsible for detecting incorrect pagination requests.
+
+## Fix Round 1
+
+Date: 2026-08-28
+
+This round supersedes the original selection-recording and cyclic-replay
+concerns above.
+
+### Implementation Commit
+
+`931386e2d686135496a32ea25261166f18a558fe` — `test: tighten universal table conformance`
+
+### Reviewer Findings Addressed
+
+- Feishu projection is now observed where the real adapter reads provider field
+  values. The fixture includes an unselected `internal_only` field, and the
+  tests require exactly `name`, `score`, and `note` to be consumed and exposed.
+- Google, Feishu, and MaybeSheet assertions now match complete fixture URLs,
+  endpoints, queries, argv, flags, targets, and literal fixture credentials.
+- Google failure coverage now injects a raw non-`ConnectorError` through
+  `UrllibSheetsTransport` and verifies adapter mapping and credential safety.
+- Sheet coordinates are scenario-specific, collection parameters no longer
+  construct live connector cases at import time, and HTTP response queues fail
+  closed when their explicit replay budget is exhausted.
+- Provider state uses typed HTTP/process fixture handles with explicit raw
+  failure probes instead of the generic recording union and untyped hook.
+
+### TDD Evidence
+
+Red:
+
+```text
+uv run python -m pytest specification/conformance/universal/test_table_connectors.py -q
+3 failed, 59 passed in 0.79s
+```
+
+The failures were the missing Feishu field-use observation, cyclic HTTP
+over-consumption, and the already-normalized Google failure fixture.
+
+Green:
+
+```text
+uv run python -m pytest specification/conformance/universal/test_table_connectors.py -q
+62 passed in 0.61s
+```
+
+### Verification
+
+- Focused table/contract/discovery tests: `128 passed in 1.21s`.
+- Universal suite: `128 passed in 1.22s`.
+- Google Sheets, Feishu Bitable, MaybeSheet, and local-files regressions:
+  `40 passed in 0.67s`.
+- Full workspace suite: `314 passed in 4.61s`.
+- `uv run python -m compileall -q specification/conformance/universal` — passed.
+- `git diff --check` — passed.
+
+### Concerns
+
+- Production connectors were intentionally unchanged. Feishu projection remains
+  client-side, so the conformance boundary records the provider field values
+  consumed by the production projection function rather than claiming the
+  provider URL carries unsupported projection parameters.
+- Replay remains finite and deterministic: current fixtures explicitly budget
+  three Google reads and three Feishu page pairs for same-case contract checks;
+  any additional response consumption raises an assertion.
