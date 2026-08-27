@@ -2,9 +2,10 @@
 
 ## Status
 
-Approved direction: agent-first command line interface, with a human-readable
-mode and a capability-driven import pipeline. The repository and project name
-will become `open-table-connector`; the short executable name is `otc`.
+Version 2. Approved direction: agent-first command line interface, with a
+human-readable mode and a capability-driven import pipeline. The repository
+and project name will become `open-table-connector`; the short executable name
+is `otc`.
 
 ## Goals
 
@@ -32,16 +33,23 @@ command, but is not the new repository or package name.
 
 ```text
 otc list
-otc inspect SOURCE
-otc read SOURCE [--output-format jsonl|json|csv|table]
-otc convert SOURCE --to json|jsonl|csv --output FILE
-otc import SOURCE DESTINATION [--if-exists append|replace|error]
+otc inspect --from SOURCE
+otc read --from SOURCE [--output-format jsonl|json|csv|table]
+otc convert --from SOURCE --to DESTINATION [--from-format ...] [--to-format ...]
+otc import --from SOURCE --to DESTINATION [--if-exists append|replace|error]
 ```
 
-`SOURCE` and `DESTINATION` can be connector URIs or local paths. Connector
-selection is inferred from the URI scheme. Local format selection is inferred
-from file extensions and can be overridden with `--input-format` or
-`--output-format`.
+`--from` and `--to` are the canonical endpoint flags for all commands that
+move or inspect table data. Their values can be connector URIs or local paths.
+Connector selection is inferred from the URI scheme. Local format selection is
+inferred from file extensions and can be overridden with `--from-format` and
+`--to-format`. The CLI may accept positional source/destination arguments as
+a human convenience, but agent-facing documentation and examples use the
+explicit flags.
+
+`--from-format` and `--to-format` accept `auto`, `csv`, `json`, `jsonl`, and
+`table`. `auto` is the default. For a connector endpoint, the format is the
+connector’s table interface and the corresponding format override is invalid.
 
 The default output is JSONL. A read emits row events followed by one summary
 event:
@@ -49,6 +57,15 @@ event:
 ```json
 {"event":"row","row":{"id":"a","amount":1}}
 {"event":"summary","status":"completed","rows":1,"receipt":{}}
+```
+
+Canonical conversion and import examples:
+
+```text
+otc convert --from orders.csv --to orders.json
+otc convert --from orders.csv --to - --to-format jsonl
+otc import --from orders.csv --to gsheets://SPREADSHEET/Orders --if-exists replace
+otc import --from gsheets://SPREADSHEET/Orders --to maybe://DOCUMENT/TARGET --if-exists append
 ```
 
 An import emits one completion event containing source and destination
@@ -102,7 +119,7 @@ large-table implementations do not change the command contract.
 - JSON: array of objects; object keys form the union of columns.
 - JSONL: one object per non-empty line.
 - table: aligned human-readable output and Markdown pipe tables as input. A
-  Markdown separator row is optional when `--input-format table` is explicit.
+  Markdown separator row is optional when `--from-format table` is explicit.
 
 Values that cannot be represented natively in a flat table are serialized as
 JSON strings. Codec failures use `execution_failed` with the input path and
@@ -132,6 +149,11 @@ through its existing credential-safe environment mechanism and returns the
 process JSON response as a neutral receipt. The CLI can therefore route Google
 Sheets reads to MaybeSheet writes without knowing MaybeSheet’s subprocess
 details.
+
+The CLI-facing MaybeSheet destination form is `maybe://DOCUMENT/TARGET`; the
+registry adapter converts the document and target parts into the existing
+MaybeSheet request fields. A real MaybeSheet HTTPS URI may also be accepted
+when the target is supplied with `--target`.
 
 MaybeSheet `replace` semantics must be rejected unless the process protocol
 provides an explicit replace operation; `append` and `error` must have
