@@ -1,0 +1,57 @@
+import pytest
+
+from open_connectors.cli.model import CliOptions, parse_endpoint
+from open_connectors.cli.registry import build_default_registry
+from open_connectors.contract import ConnectorError, ConnectorErrorCode
+
+
+class Transport:
+    def __init__(self, payload):
+        self.payload = payload
+        self.calls = []
+
+    def request(self, method, url, *, headers, body=None, timeout=None):
+        self.calls.append((method, url, headers, body, timeout))
+        return self.payload
+
+
+def test_default_registry_lists_all_supported_adapter_schemes() -> None:
+    schemes = {scheme for adapter in build_default_registry(env={}).list() for scheme in adapter.schemes}
+    assert {"gsheets", "https", "feishu", "feishu_bitable", "maybe", "file"}.issubset(schemes)
+
+
+def test_registry_dispatches_google_sheet_uri() -> None:
+    adapter = build_default_registry(env={}).connector_for(parse_endpoint("gsheets://book/Orders"))
+    assert adapter.identity.connector_id == "google_sheets"
+
+
+def test_registry_reports_unsupported_capability_before_writing() -> None:
+    registry = build_default_registry(env={})
+    with pytest.raises(ConnectorError) as error:
+        registry.require_capability(parse_endpoint("maybe://doc/target"), "table.replace")
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+
+
+def test_google_adapter_translates_options_and_uses_cli_token() -> None:
+    transport = Transport({"values": [["id"], ["1"]]})
+    registry = build_default_registry(
+        env={"GOOGLE_SHEETS_ACCESS_TOKEN": "env-secret"},
+        transports={"google_sheets": transport},
+    )
+
+    result = registry.connector_for(parse_endpoint("gsheets://book/Orders")).read(
+        parse_endpoint("gsheets://book/Orders"),
+        CliOptions(token="cli-secret", range="A1:B2", sheet="Orders"),
+    )
+
+    assert result.table.to_pylist() == [{"id": "1"}]
+    assert transport.calls[0][2] == {"Authorization": "Bearer cli-secret"}
+    assert "/values/A1%3AB2" in transport.calls[0][1]
+
+
+def test_https_dispatch_rejects_unknown_hosts_without_calling_transport() -> None:
+    registry = build_default_registry(env={})
+    with pytest.raises(ConnectorError) as error:
+        registry.connector_for(parse_endpoint("https://example.com/table"))
+    assert error.value.code is ConnectorErrorCode.INVALID_URI
+    assert error.value.safe_details == {"scheme": "https", "host": "example.com"}
