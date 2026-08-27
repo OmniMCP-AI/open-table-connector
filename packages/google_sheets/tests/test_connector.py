@@ -33,6 +33,8 @@ def test_google_sheets_reads_values_and_builds_receipt() -> None:
     assert transport.calls[0][0] == "GET"
     assert "sheet-123" in transport.calls[0][1]
     assert transport.calls[0][2]["Authorization"] == "Bearer token"
+    assert transport.calls[0][3] is None
+    assert result.receipt.vendor_receipt_ref is None
 
 
 def test_google_sheets_uses_credentials_and_writes_values() -> None:
@@ -50,6 +52,7 @@ def test_google_sheets_uses_credentials_and_writes_values() -> None:
     assert "Orders%21A1" in url
     assert headers["Authorization"] == "Bearer token"
     assert body == {"range": "Orders!A1", "majorDimension": "ROWS", "values": [["id", "amount"], ["a", 3]]}
+    assert result.receipt.vendor_receipt_ref is None
 
 
 def test_google_sheets_inspection_reports_sheet_convention() -> None:

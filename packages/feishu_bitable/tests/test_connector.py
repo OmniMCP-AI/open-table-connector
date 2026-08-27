@@ -38,7 +38,9 @@ def test_feishu_reads_records_and_preserves_record_ids() -> None:
         {"_record_id": "rec_2", "name": "Lin", "score": 9},
     ]
     assert transport.calls[0][2]["Authorization"] == "Bearer tenant-token"
+    assert transport.calls[0][3] is None
     assert result.receipt.mode.value == "base"
+    assert result.receipt.vendor_receipt_ref is None
 
 
 def test_feishu_writes_batch_records() -> None:
@@ -54,6 +56,7 @@ def test_feishu_writes_batch_records() -> None:
     assert url.endswith("/records/batch_create")
     assert headers["Authorization"] == "Bearer tenant-token"
     assert body == {"records": [{"fields": {"name": "Ada", "score": 10}}]}
+    assert result.receipt.vendor_receipt_ref is None
 
 
 def test_feishu_inspection_reports_base_identity() -> None:

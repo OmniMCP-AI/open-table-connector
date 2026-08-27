@@ -89,8 +89,23 @@ def test_auth_error_is_safe_json_on_stderr(fake_registry) -> None:
     )
     payload = json.loads(err.getvalue())
     assert code == 4
+    assert out.getvalue() == ""
     assert payload["code"] == "authentication"
     assert "token" not in err.getvalue().casefold()
+
+
+def test_provider_auth_failure_maps_to_exit_code_four(fake_registry) -> None:
+    out, err = io.StringIO(), io.StringIO()
+    code = run_command(
+        type("Args", (), {"command": "read", "from_value": "gsheets://book/Orders", "output_format": "jsonl"})(),
+        fake_registry,
+        out,
+        err,
+    )
+
+    assert code == 4
+    assert out.getvalue() == ""
+    assert "must not be emitted" not in out.getvalue() + err.getvalue()
 
 
 @pytest.mark.parametrize(
@@ -107,3 +122,13 @@ def test_error_exit_codes_are_stable_and_safe(error, expected_code) -> None:
     payload = json.loads(err.getvalue())
     assert payload["code"] in {"execution", "execution_failed", "conflict"}
     assert "credential-bearing" not in err.getvalue()
+
+
+def test_connector_error_output_contains_no_access_token() -> None:
+    error = ConnectorError.authentication(
+        "authentication failed", safe_details={"token": "access-token"}
+    )
+    output = io.StringIO()
+
+    assert emit_error(error, output) == 4
+    assert "access-token" not in output.getvalue()

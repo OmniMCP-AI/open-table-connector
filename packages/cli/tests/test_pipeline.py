@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass
 
 import pyarrow as pa
 import pytest
@@ -16,6 +17,38 @@ from open_connectors.contract import (
     TableURI,
     TableWriteResult,
 )
+
+
+@dataclass
+class RecordedCall:
+    method: str
+    url: str
+    headers: dict[str, str]
+    body: dict | None
+    timeout: int | None
+
+
+class RecordingTransport:
+    def __init__(self, responses: dict[str, dict]) -> None:
+        self.responses = responses
+        self.calls: list[RecordedCall] = []
+
+    def request(self, method, url, *, headers, body=None, timeout=None):
+        self.calls.append(RecordedCall(method, url, dict(headers), body, timeout))
+        return self.responses[method]
+
+
+class RecordingProcess:
+    def __init__(self) -> None:
+        self.calls: list[tuple[tuple[str, ...], object, str | None]] = []
+        self.stdin_payload: str | None = None
+
+    def run(self, argv, *, credentials=None, stdin=None):
+        self.calls.append((argv, credentials, stdin))
+        self.stdin_payload = stdin
+        if argv[2] == "write":
+            return {"rows_written": 1, "receipt_id": "write-ref"}
+        return {"rows": [{"id": "a"}], "receipt_id": "read-ref"}
 
 
 def test_convert_csv_to_json_writes_union_rows(tmp_path) -> None:
@@ -160,3 +193,106 @@ def test_import_rejects_local_destination_before_read(tmp_path) -> None:
 
     assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
     assert adapter.read_calls == 0
+
+
+def test_csv_to_google_sheets_import_sends_header_and_rows(tmp_path) -> None:
+    source = tmp_path / "orders.csv"
+    source.write_text("id,amount\na,1\n")
+    transport = RecordingTransport({"GET": {"values": [["unused"]]}, "PUT": {"updatedRows": 2}})
+    registry = build_default_registry(
+        env={"GOOGLE_SHEETS_ACCESS_TOKEN": "token"}, transports={"google_sheets": transport}
+    )
+
+    summary = import_endpoint(
+        parse_endpoint(str(source)),
+        parse_endpoint("gsheets://book/Orders"),
+        registry,
+        CliOptions(if_exists="replace"),
+    )
+
+    assert summary.rows_read == 1
+    assert summary.rows_written == 1
+    assert summary.source_receipt is not None
+    assert summary.destination_receipt is not None
+    assert transport.calls[0].method == "PUT"
+    assert transport.calls[0].body == {
+        "range": "Orders",
+        "majorDimension": "ROWS",
+        "values": [["id", "amount"], ["a", "1"]],
+    }
+
+
+def test_google_sheets_to_maybesheet_import_sends_jsonl_to_process(tmp_path) -> None:
+    source = tmp_path / "orders.jsonl"
+    source.write_text('{"id":"a"}\n')
+    process = RecordingProcess()
+    registry = build_default_registry(
+        env={"MAYBESHEET_ACCESS_TOKEN": "token"}, transports={"maybesheet": process}
+    )
+
+    summary = import_endpoint(
+        parse_endpoint(str(source)),
+        parse_endpoint("maybe://doc/R_orders"),
+        registry,
+        CliOptions(if_exists="append"),
+    )
+
+    assert summary.rows_read == 1
+    assert summary.rows_written == 1
+    assert summary.source_receipt is not None
+    assert summary.destination_receipt is not None
+    assert summary.destination_receipt.vendor_receipt_ref == "write-ref"
+    assert process.calls[0][0] == (
+        "mbs", "db-table", "write", "--uri", "maybe://doc/R_orders",
+        "--target", "R_orders", "--input", "-",
+    )
+    assert process.stdin_payload == '{"id":"a"}\n'
+
+
+def test_feishu_to_jsonl_preserves_record_id(tmp_path) -> None:
+    destination = tmp_path / "records.jsonl"
+    transport = RecordingTransport({
+        "GET": {"code": 0, "data": {"items": [{"record_id": "rec_1", "fields": {"name": "Ada"}}], "has_more": False}}
+    })
+    registry = build_default_registry(
+        env={"FEISHU_TENANT_ACCESS_TOKEN": "token"}, transports={"feishu_bitable": transport}
+    )
+
+    summary = convert_endpoint(
+        parse_endpoint("feishu://app/table"), parse_endpoint(str(destination)), registry, CliOptions()
+    )
+
+    assert summary.rows_read == 1
+    assert summary.rows_written == 1
+    assert summary.source_receipt is not None
+    assert [json.loads(line) for line in destination.read_text().splitlines()] == [
+        {"_record_id": "rec_1", "name": "Ada"}
+    ]
+    assert transport.calls[0].body is None
+
+
+def test_row_limit_is_applied_before_destination_write(tmp_path) -> None:
+    transport = RecordingTransport({
+        "GET": {"code": 0, "data": {"items": [
+            {"record_id": "rec_1", "fields": {"id": "a"}},
+            {"record_id": "rec_2", "fields": {"id": "b"}},
+        ], "has_more": False}},
+        "PUT": {"updatedRows": 1},
+    })
+    registry = build_default_registry(
+        env={"FEISHU_TENANT_ACCESS_TOKEN": "token", "GOOGLE_SHEETS_ACCESS_TOKEN": "token"},
+        transports={"feishu_bitable": transport, "google_sheets": transport},
+    )
+
+    summary = import_endpoint(
+        parse_endpoint("feishu://app/table"), parse_endpoint("gsheets://book/Orders"), registry,
+        CliOptions(limit=1, if_exists="replace"),
+    )
+
+    assert summary.rows_read == 1
+    assert summary.rows_written == 1
+    assert transport.calls[0].method == "GET"
+    assert transport.calls[1].body == {
+        "range": "Orders", "majorDimension": "ROWS",
+        "values": [["_record_id", "id"], ["rec_1", "a"]],
+    }

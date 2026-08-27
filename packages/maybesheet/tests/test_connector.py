@@ -24,6 +24,11 @@ def test_maybesheet_has_explicit_base_and_sheet_argv_and_receipts() -> None:
 
     assert result.frame.to_dicts() == [{"id": "1", "amount": "2.50"}]
     assert process.calls[0][0][:3] == ("mbs", "db-table", "read")
+    assert process.calls[0][0] == (
+        "mbs", "db-table", "read", "--uri",
+        "https://www.maybe.ai/docs/spreadsheets/d/doc", "--target", "R_orders",
+    )
+    assert process.calls[0][1] == {}
     assert result.receipt.vendor_receipt_ref == "safe-ref"
 
 

@@ -104,3 +104,18 @@ def test_maybesheet_sheet_capability_is_rejected_before_process_io() -> None:
     assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
     assert error.value.safe_details == {"scheme": "maybe", "capability": "sheet.read"}
     assert process.calls == []
+
+
+def test_registry_injects_maybesheet_process_transport() -> None:
+    process = Process()
+    registry = build_default_registry(transports={"maybesheet": process})
+
+    adapter = registry.connector_for(parse_endpoint("maybe://doc/R_orders"))
+    result = adapter.read(parse_endpoint("maybe://doc/R_orders"), CliOptions(token="cli-secret", limit=1))
+
+    assert result.table.to_pylist() == [{"id": "1"}]
+    assert process.calls[0] == (
+        ("mbs", "db-table", "read", "--uri", "maybe://doc/R_orders", "--target", "R_orders", "--limit", "1"),
+        {"access_token": "cli-secret"},
+        None,
+    )
