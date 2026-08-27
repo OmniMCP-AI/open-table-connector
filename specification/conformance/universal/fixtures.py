@@ -134,6 +134,11 @@ def build_fixture_bundle(root: Path) -> UniversalFixtureBundle:
         "insert into orders values (?, ?)",
         [("a", "1.00"), ("b", None)],
     )
+    connection.execute('create table "main.table" (id text, amount text)')
+    connection.executemany(
+        'insert into "main.table" values (?, ?)',
+        [("a", "1.00"), ("b", None)],
+    )
     connection.commit()
     connection.close()
 

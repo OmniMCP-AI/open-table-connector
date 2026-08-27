@@ -90,6 +90,8 @@ from .fixtures import (
 @dataclass(frozen=True)
 class CapabilityBinding:
     capability: str
+    identity: CapabilityIdentity | None = None
+    expected_mode: TableMode | None = None
     make_request: Callable[[ResourceLimits], object] | None = None
     read_arrow: Callable[[ResourceLimits], ArrowReadResult] | None = None
     read_polars: Callable[[ResourceLimits], PolarsReadResult] | None = None
@@ -100,6 +102,8 @@ class CapabilityBinding:
     def __post_init__(self) -> None:
         if not isinstance(self.capability, str) or not self.capability.strip():
             raise ValueError("capability binding requires a non-empty capability ID")
+        if self.identity is not None and self.identity.capability_id != self.capability:
+            raise ValueError("capability binding identity does not match capability ID")
         if all(
             helper is None
             for helper in (
@@ -154,6 +158,8 @@ class ConnectorCase:
         for capability, binding in bindings.items():
             if binding.capability != capability:
                 raise ValueError(f"{self.name} binding key does not match capability {capability}")
+            if binding.expected_mode is not None and binding.expected_mode not in self.modes:
+                raise ValueError(f"{self.name} binding mode does not match case modes")
         object.__setattr__(self, "capability_bindings", MappingProxyType(bindings))
 
     def capability_binding(self, capability: str) -> CapabilityBinding:
@@ -188,6 +194,7 @@ def _capabilities(*items: CapabilityIdentity) -> frozenset[str]:
 def _binding(
     capability: CapabilityIdentity | str,
     *,
+    expected_mode: TableMode | None = None,
     make_request: Callable[[ResourceLimits], object] | None = None,
     read_arrow: Callable[[ResourceLimits], ArrowReadResult] | None = None,
     read_polars: Callable[[ResourceLimits], PolarsReadResult] | None = None,
@@ -198,6 +205,8 @@ def _binding(
     capability_id = capability if isinstance(capability, str) else capability.capability_id
     return CapabilityBinding(
         capability=capability_id,
+        identity=capability if isinstance(capability, CapabilityIdentity) else None,
+        expected_mode=expected_mode,
         make_request=make_request,
         read_arrow=read_arrow,
         read_polars=read_polars,
@@ -224,16 +233,19 @@ def _local_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
         ),
         "table.read.arrow": _binding(
             "table.read.arrow",
+            expected_mode=TableMode.SHEET,
             make_request=make_read_request,
             read_arrow=lambda resource_limits: connector.read_arrow(make_read_request(resource_limits)),
         ),
         "table.read.polars": _binding(
             "table.read.polars",
+            expected_mode=TableMode.SHEET,
             make_request=make_read_request,
             read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
         ),
         "table.inspect": _binding(
             "table.inspect",
+            expected_mode=TableMode.SHEET,
             make_request=make_inspect_request,
             inspect=lambda resource_limits: connector.inspect(make_inspect_request(resource_limits)),
         ),
@@ -292,21 +304,25 @@ def _google_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
         ),
         "table.read.arrow": _binding(
             "table.read.arrow",
+            expected_mode=TableMode.SHEET,
             make_request=make_read_request,
             read_arrow=lambda resource_limits: connector.read_arrow(make_read_request(resource_limits)),
         ),
         "table.read.polars": _binding(
             "table.read.polars",
+            expected_mode=TableMode.SHEET,
             make_request=make_read_request,
             read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
         ),
         "table.inspect": _binding(
             "table.inspect",
+            expected_mode=TableMode.SHEET,
             make_request=make_inspect_request,
             inspect=lambda resource_limits: connector.inspect(make_inspect_request(resource_limits)),
         ),
         "table.write": _binding(
             "table.write",
+            expected_mode=TableMode.SHEET,
             write=lambda frame, if_exists: connector.write(make_write_request(frame, if_exists)),
         ),
     }
@@ -372,21 +388,25 @@ def _feishu_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
         ),
         "table.read.arrow": _binding(
             "table.read.arrow",
+            expected_mode=TableMode.BASE,
             make_request=make_read_request,
             read_arrow=lambda resource_limits: connector.read_arrow(make_read_request(resource_limits)),
         ),
         "table.read.polars": _binding(
             "table.read.polars",
+            expected_mode=TableMode.BASE,
             make_request=make_read_request,
             read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
         ),
         "table.inspect": _binding(
             "table.inspect",
+            expected_mode=TableMode.BASE,
             make_request=make_inspect_request,
             inspect=lambda resource_limits: connector.inspect(make_inspect_request(resource_limits)),
         ),
         "table.write": _binding(
             "table.write",
+            expected_mode=TableMode.BASE,
             write=lambda frame, if_exists: connector.write(make_write_request(frame, if_exists)),
         ),
     }
@@ -441,28 +461,33 @@ def _maybe_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
     capability_bindings = {
         "base.read": _binding(
             BASE_READ_CAPABILITY,
+            expected_mode=TableMode.BASE,
             make_request=make_base_read_request,
             read_arrow=lambda resource_limits: connector.read_arrow(make_base_read_request(resource_limits)),
             read_polars=lambda resource_limits: connector.read_polars(make_base_read_request(resource_limits)),
         ),
         "base.inspect": _binding(
             BASE_INSPECT_CAPABILITY,
+            expected_mode=TableMode.BASE,
             make_request=make_base_read_request,
             inspect=lambda resource_limits: connector.inspect(make_base_read_request(resource_limits)),
         ),
         "sheet.read": _binding(
             SHEET_READ_CAPABILITY,
+            expected_mode=TableMode.SHEET,
             make_request=make_sheet_read_request,
             read_arrow=lambda resource_limits: connector.read_arrow(make_sheet_read_request(resource_limits)),
             read_polars=lambda resource_limits: connector.read_polars(make_sheet_read_request(resource_limits)),
         ),
         "sheet.inspect": _binding(
             SHEET_INSPECT_CAPABILITY,
+            expected_mode=TableMode.SHEET,
             make_request=make_sheet_read_request,
             inspect=lambda resource_limits: connector.inspect(make_sheet_read_request(resource_limits)),
         ),
         "table.write": _binding(
             MAYBE_TABLE_WRITE_CAPABILITY,
+            expected_mode=TableMode.BASE,
             write=lambda frame, if_exists: connector.write(make_write_request(frame, if_exists)),
         ),
     }
@@ -512,16 +537,19 @@ def _sqlite_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
     capability_bindings = {
         "table.read.arrow": _binding(
             SQLITE_READ_ARROW_CAPABILITY,
+            expected_mode=TableMode.BASE,
             make_request=make_read_request,
             read_arrow=lambda resource_limits: connector.read_arrow(make_read_request(resource_limits)),
         ),
         "table.read.polars": _binding(
             SQLITE_READ_POLARS_CAPABILITY,
+            expected_mode=TableMode.BASE,
             make_request=make_read_request,
             read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
         ),
         "table.inspect": _binding(
             SQLITE_INSPECT_CAPABILITY,
+            expected_mode=TableMode.BASE,
             make_request=make_inspect_request,
             inspect=lambda resource_limits: connector.inspect(make_inspect_request(resource_limits)),
         ),
@@ -537,6 +565,7 @@ def _sqlite_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
         ),
         "table.write": _binding(
             SQLITE_WRITE_CAPABILITY,
+            expected_mode=TableMode.BASE,
             write=lambda frame, if_exists: connector.write(make_write_request(frame, if_exists)),
         ),
     }
@@ -590,16 +619,19 @@ def _postgres_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
     capability_bindings = {
         "table.read.arrow": _binding(
             POSTGRES_READ_ARROW_CAPABILITY,
+            expected_mode=TableMode.BASE,
             make_request=make_read_request,
             read_arrow=lambda resource_limits: connector.read_arrow(make_read_request(resource_limits)),
         ),
         "table.read.polars": _binding(
             POSTGRES_READ_POLARS_CAPABILITY,
+            expected_mode=TableMode.BASE,
             make_request=make_read_request,
             read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
         ),
         "table.inspect": _binding(
             POSTGRES_INSPECT_CAPABILITY,
+            expected_mode=TableMode.BASE,
             make_request=make_inspect_request,
             inspect=lambda resource_limits: connector.inspect(make_inspect_request(resource_limits)),
         ),
@@ -615,6 +647,7 @@ def _postgres_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
         ),
         "table.write": _binding(
             POSTGRES_WRITE_CAPABILITY,
+            expected_mode=TableMode.BASE,
             write=lambda frame, if_exists: connector.write(make_write_request(frame, if_exists)),
         ),
     }

@@ -15,6 +15,9 @@ from specification.conformance.universal import cases as cases_module
 from specification.conformance.universal.cases import ConnectorCase, all_cases, case
 
 _CASE_NAMES = tuple(item.name for item in all_cases())
+_MANIFESTLESS_CASE_NAMES = tuple(
+    item.name for item in all_cases() if getattr(item.connector, "manifest", None) is None
+)
 
 
 def test_all_current_connectors_have_named_cases() -> None:
@@ -81,6 +84,28 @@ def test_manifest_capability_wire_shape_is_closed(
         assert set(wire) == {"capability_id", "capability_version"}
 
 
+@pytest.mark.parametrize(
+    "connector_case", _MANIFESTLESS_CASE_NAMES, ids=str, indirect=True
+)
+def test_manifestless_capabilities_use_public_binding_identities(
+    connector_case: ConnectorCase,
+    capability_identities: tuple[CapabilityIdentity, ...],
+) -> None:
+    binding_identities = tuple(
+        connector_case.capability_binding(capability).identity
+        for capability in connector_case.capability_bindings
+    )
+
+    assert all(
+        actual is declared
+        for actual, declared in zip(
+            capability_identities,
+            binding_identities,
+            strict=True,
+        )
+    )
+
+
 def test_all_advertised_capabilities_have_case_bindings() -> None:
     for connector_case in all_cases():
         assert set(connector_case.capability_bindings) == connector_case.capabilities
@@ -93,7 +118,6 @@ def test_case_modes_are_closed_to_contract_values(
 ) -> None:
     assert set(connector_case.modes).issubset(set(TableMode))
     if capability_manifest is None:
-        assert len(connector_case.modes) == len(set(connector_case.modes))
         if connector_case.name == "dbt":
             assert connector_case.modes == frozenset()
         return

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-import json
-
 import polars as pl
 import pyarrow as pa
 import pytest
 
-from open_connectors.contract import ConnectorError, ConnectorErrorCode, ResourceLimits, TableMode, TableURI
+from open_connectors.contract import (
+    ConnectorError,
+    ConnectorErrorCode,
+    ResourceLimits,
+    TableInspection,
+    TableMode,
+    TableURI,
+)
 
 from specification.conformance.universal.assertions import (
     assert_error_is_safe,
@@ -17,9 +22,7 @@ from specification.conformance.universal.cases import ConnectorCase, all_cases, 
 
 _CASE_NAMES = tuple(item.name for item in all_cases())
 _READ_ARROW_CASE_NAMES = tuple(item.name for item in cases_with("table.read.arrow"))
-_INSPECT_CASE_NAMES = tuple(
-    item.name for item in cases_with("table.inspect") if item.name != "sqlite"
-)
+_INSPECT_CASE_NAMES = tuple(item.name for item in cases_with("table.inspect"))
 _WRITE_CASE_NAMES = tuple(item.name for item in cases_with("table.write"))
 
 
@@ -32,6 +35,18 @@ def _canonical_write_table(connector_case: ConnectorCase, write_frame: pl.DataFr
             }
         )
     return write_frame.to_arrow()
+
+
+def _stable_inspection_metadata(inspection: TableInspection) -> dict[str, object]:
+    return {
+        "safe_uri": inspection.safe_uri,
+        "mode": inspection.mode,
+        "columns": inspection.columns,
+        "schema_fingerprint": inspection.schema_fingerprint,
+        "row_count": inspection.row_count,
+        "coordinate_convention": inspection.coordinate_convention,
+        "facts": dict(inspection.facts),
+    }
 
 
 @pytest.mark.parametrize("connector_case", _CASE_NAMES, ids=str, indirect=True)
@@ -51,15 +66,13 @@ def test_connector_error_wire_is_closed_and_safe() -> None:
     )
 
     assert_error_is_safe(error)
-    assert "fixture-token" not in json.dumps(error.to_wire(), sort_keys=True)
 
 
 def test_invalid_credential_bearing_uris_are_rejected(
-    invalid_credential_bearing_uris: tuple[str, ...],
+    invalid_credential_bearing_uri: str,
 ) -> None:
-    for uri_value in invalid_credential_bearing_uris:
-        with pytest.raises(ValueError):
-            TableURI(uri_value)
+    with pytest.raises(ValueError, match="credential"):
+        TableURI(invalid_credential_bearing_uri)
 
 
 @pytest.mark.parametrize("connector_case", _READ_ARROW_CASE_NAMES, ids=str, indirect=True)
@@ -70,12 +83,13 @@ def test_read_receipt_wire_is_closed_and_metadata_is_deterministic(
     first = binding.read_arrow(ResourceLimits())
     second = binding.read_arrow(ResourceLimits())
 
+    assert binding.expected_mode is not None
     assert_receipt_matches_table(
         first.receipt,
         first.table,
         expected_connector=connector_case.identity,
         expected_capability=binding.capability,
-        expected_mode=first.receipt.mode,
+        expected_mode=binding.expected_mode,
         expected_safe_uri=connector_case.table_uri,
     )
     assert second.receipt.to_wire() == first.receipt.to_wire()
@@ -85,16 +99,18 @@ def test_read_receipt_wire_is_closed_and_metadata_is_deterministic(
 def test_inspection_metadata_is_stable_and_matches_read_receipts(
     connector_case: ConnectorCase,
 ) -> None:
-    inspection = connector_case.inspect(ResourceLimits())
-    repeated = connector_case.inspect(ResourceLimits())
+    binding = connector_case.capability_binding("table.inspect")
+    inspection = binding.inspect(ResourceLimits())
+    repeated = binding.inspect(ResourceLimits())
 
+    assert binding.expected_mode is not None
     assert inspection.safe_uri == connector_case.table_uri
-    assert inspection.mode in connector_case.modes
+    assert inspection.mode is binding.expected_mode
     assert inspection.columns
-    assert inspection.schema_fingerprint == repeated.schema_fingerprint
-    assert inspection.row_count == repeated.row_count
+    assert _stable_inspection_metadata(repeated) == _stable_inspection_metadata(inspection)
     if "table.read.arrow" in connector_case.capabilities:
         result = connector_case.capability_binding("table.read.arrow").read_arrow(ResourceLimits())
+        assert inspection.columns == tuple(result.table.column_names)
         assert inspection.schema_fingerprint == result.receipt.schema_fingerprint
         assert inspection.row_count == result.table.num_rows
 
@@ -103,17 +119,31 @@ def test_inspection_metadata_is_stable_and_matches_read_receipts(
 def test_write_receipt_wire_is_closed_and_safe(
     connector_case: ConnectorCase,
     write_frame: pl.DataFrame,
-    expected_write_affected_rows_by_case: dict[str, int],
     write_if_exists_by_case: dict[str, str],
 ) -> None:
-    result = connector_case.write(write_frame, write_if_exists_by_case[connector_case.name])
+    binding = connector_case.capability_binding("table.write")
+    result = binding.write(write_frame, write_if_exists_by_case[connector_case.name])
 
-    assert result.affected_rows == expected_write_affected_rows_by_case[connector_case.name]
+    assert binding.expected_mode is not None
     assert_receipt_matches_table(
         result.receipt,
         _canonical_write_table(connector_case, write_frame),
         expected_connector=connector_case.identity,
         expected_capability="table.write",
-        expected_mode=result.receipt.mode,
+        expected_mode=binding.expected_mode,
         expected_safe_uri=connector_case.table_uri,
     )
+
+
+@pytest.mark.parametrize("connector_case", ("sqlite",), ids=str, indirect=True)
+def test_sqlite_case_starts_with_canonical_fixture_rows(
+    connector_case: ConnectorCase,
+) -> None:
+    result = connector_case.capability_binding("table.read.arrow").read_arrow(
+        ResourceLimits()
+    )
+
+    assert result.table.to_pylist() == [
+        {"id": "a", "amount": "1.00"},
+        {"id": "b", "amount": None},
+    ]

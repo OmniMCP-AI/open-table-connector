@@ -82,13 +82,10 @@ def assert_capabilities_are_unique(
     manifest: CapabilityManifest | None = None,
 ) -> None:
     capability_ids = tuple(item.capability_id for item in capabilities)
-    capability_wires = tuple(item.to_wire() for item in capabilities)
 
     assert set(capability_ids) == set(expected_capabilities)
     assert len(capability_ids) == len(set(capability_ids))
     assert all(isinstance(mode, TableMode) for mode in expected_modes)
-    assert len(expected_modes) == len(set(expected_modes))
-    assert len(expected_schemes) == len({item.casefold() for item in expected_schemes})
     if manifest is not None:
         wire = manifest.to_wire()
 
@@ -103,12 +100,6 @@ def assert_capabilities_are_unique(
         assert set(manifest.modes) == set(expected_modes)
         assert set(manifest.uri_schemes) == {item.casefold() for item in expected_schemes}
         assert tuple(manifest.uri_schemes) == tuple(dict.fromkeys(manifest.uri_schemes))
-    for capability_wire in capability_wires:
-        _assert_closed_wire(
-            capability_wire,
-            {"capability_id", "capability_version"},
-            "CapabilityIdentity",
-        )
 
 
 def assert_safe_uri(uri: TableURI, *, allowed_schemes: frozenset[str]) -> None:

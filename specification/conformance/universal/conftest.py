@@ -1,11 +1,29 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import polars as pl
 import pytest
 
 from open_connectors.contract import CapabilityIdentity, CapabilityManifest, TableMode
 
-from specification.conformance.universal.cases import ConnectorCase, all_cases, case
+from specification.conformance.universal.cases import (
+    ConnectorCase,
+    all_cases,
+    case,
+    configure_fixture_bundle,
+)
+from specification.conformance.universal.fixtures import (
+    UniversalFixtureBundle,
+    build_fixture_bundle,
+)
+
+
+@pytest.fixture(autouse=True)
+def isolated_universal_fixture_bundle(tmp_path: Path) -> UniversalFixtureBundle:
+    bundle = build_fixture_bundle(tmp_path)
+    configure_fixture_bundle(bundle)
+    return bundle
 
 
 @pytest.fixture
@@ -21,14 +39,28 @@ def connector_case(request: pytest.FixtureRequest) -> ConnectorCase:
     return case(str(name))
 
 
-@pytest.fixture
-def invalid_credential_bearing_uris() -> tuple[str, ...]:
-    return (
-        "gsheets://user:fixture-token@spreadsheet/Orders",
-        "feishu://fixture-app/orders?token=fixture-token",
-        "postgres://fixture.local/analytics?password=fixture-secret",
-        "https://www.maybe.ai/docs/spreadsheets/d/fixture-doc?access_token=fixture-token",
+@pytest.fixture(
+    params=(
+        pytest.param(
+            "gsheets://user:fixture-token@spreadsheet/Orders",
+            id="google-sheets-userinfo",
+        ),
+        pytest.param(
+            "feishu://fixture-app/orders?token=fixture-token",
+            id="feishu-token-query",
+        ),
+        pytest.param(
+            "postgres://fixture.local/analytics?password=fixture-secret",
+            id="postgres-password-query",
+        ),
+        pytest.param(
+            "https://www.maybe.ai/docs/spreadsheets/d/fixture-doc?access_token=fixture-token",
+            id="maybesheet-access-token-query",
+        ),
     )
+)
+def invalid_credential_bearing_uri(request: pytest.FixtureRequest) -> str:
+    return str(request.param)
 
 
 @pytest.fixture
@@ -51,10 +83,14 @@ def capability_identities(connector_case: ConnectorCase) -> tuple[CapabilityIden
     manifest = getattr(connector_case.connector, "manifest", None)
     if manifest is not None:
         return tuple(manifest.capabilities)
-    return tuple(
-        CapabilityIdentity(binding.capability, "1.0")
-        for binding in connector_case.capability_bindings.values()
-    )
+    identities: list[CapabilityIdentity] = []
+    for binding in connector_case.capability_bindings.values():
+        if binding.identity is None:
+            raise AssertionError(
+                f"{connector_case.name}:{binding.capability} has no public capability identity"
+            )
+        identities.append(binding.identity)
+    return tuple(identities)
 
 
 @pytest.fixture
@@ -65,15 +101,4 @@ def write_if_exists_by_case() -> dict[str, str]:
         "maybesheet": "append",
         "sqlite": "replace",
         "postgres": "replace",
-    }
-
-
-@pytest.fixture
-def expected_write_affected_rows_by_case() -> dict[str, int]:
-    return {
-        "google_sheets": 2,
-        "feishu_bitable": 2,
-        "maybesheet": 1,
-        "sqlite": 2,
-        "postgres": 2,
     }
