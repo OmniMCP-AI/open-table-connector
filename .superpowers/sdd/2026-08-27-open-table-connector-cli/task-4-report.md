@@ -96,3 +96,45 @@ Concerns:
 Deviations:
 
 - No output, command, packaging, or provider package files were changed.
+
+## Final re-review limits and MaybeSheet URL fix
+
+Status: complete
+
+Changed files:
+
+- `packages/cli/src/open_connectors/cli/adapters.py`
+- `packages/cli/tests/test_pipeline.py`
+- `packages/cli/tests/test_registry.py`
+- `packages/google_sheets/src/open_connectors/google_sheets/connector.py`
+- `packages/google_sheets/tests/test_connector.py`
+
+Changes:
+
+- Local adapter reads now apply `CliOptions.limit` before returning the Arrow table, so local receipts, pipeline row counts, and destination writes reflect the limited table.
+- Google Sheets connector reads now apply `ResourceLimits.max_rows` after header parsing and before receipt construction, so direct reads and imports report and write only the limited rows.
+- MaybeSheet HTTPS document URLs now require explicit `options.target`; missing targets produce safe `INVALID_URI` errors before source or process I/O. The opaque `maybe://DOCUMENT/TARGET` grammar remains unchanged.
+- Preserved the explicit MaybeSheet write credential path introduced by `826879e`.
+- Added focused registry, pipeline, and provider regressions for all three fixes.
+
+Commit:
+
+- `370d962 fix: enforce adapter row limits and maybe targets`
+
+Tests and results:
+
+- Red focused missing-target import regression: `uv run python -m pytest packages/cli/tests/test_pipeline.py::test_maybesheet_https_missing_target_is_rejected_before_source_or_process_io -q` — failed because source read count was 1 instead of 0.
+- Green focused run: `uv run python -m pytest packages/cli/tests/test_registry.py packages/cli/tests/test_pipeline.py packages/google_sheets/tests/test_connector.py -q` — 39 passed
+- `uv run python -m pytest packages/cli/tests -q` — 66 passed
+- `uv run python -m pytest packages/google_sheets/tests packages/feishu_bitable/tests packages/maybesheet/tests -q` — 19 passed
+- `uv run python -m compileall -q packages/cli/src/open_connectors/cli packages/google_sheets/src/open_connectors/google_sheets` — passed
+- `git diff --check` — passed
+
+Concerns:
+
+- Local and Google limits are applied after the underlying codec/provider response is fetched, then before the returned table and receipt are built; returned/imported row counts are bounded as required.
+- The direct `uv run pytest` executable remains unavailable in this environment; equivalent `uv run python -m pytest` invocations passed.
+
+Deviations:
+
+- No output, command, or packaging files were changed. The Google connector source and tests were updated because the requested limit behavior is part of its public read path.
