@@ -91,10 +91,17 @@ class RecordingProcessClient:
         if len(argv) < 3:
             raise KeyError(f"missing MaybeSheet operation in argv: {argv!r}")
         operation = argv[2]
+        operation_key = f"{argv[1]}:{operation}"
         try:
-            return _copy_payload(self._responses[operation])
-        except KeyError as exc:
-            raise KeyError(f"missing recorded process response for operation {operation!r}") from exc
+            payload = self._responses[operation_key]
+        except KeyError:
+            try:
+                payload = self._responses[operation]
+            except KeyError as exc:
+                raise KeyError(
+                    f"missing recorded process response for operation {operation_key!r}"
+                ) from exc
+        return _copy_payload(payload)
 
 
 @dataclass(frozen=True)

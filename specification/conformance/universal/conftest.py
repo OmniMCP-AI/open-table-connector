@@ -1,22 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from _pytest.tmpdir import TempPathFactory
 import pytest
 
-from specification.conformance.universal.cases import (
-    all_cases,
-    case,
-    configure_fixture_bundle,
-)
-from specification.conformance.universal.fixtures import build_fixture_bundle
-
-
-def pytest_configure(config: pytest.Config) -> None:
-    factory = TempPathFactory.from_config(config, _ispytest=True)
-    root = factory.mktemp("universal-conformance")
-    configure_fixture_bundle(build_fixture_bundle(Path(root)))
+from specification.conformance.universal.cases import all_cases, case
 
 
 @pytest.fixture
