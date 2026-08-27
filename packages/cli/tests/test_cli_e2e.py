@@ -58,6 +58,20 @@ def test_read_defaults_to_jsonl_for_module_and_otc(tmp_path) -> None:
         assert output[1]["rows"] == 1
 
 
+def test_list_accepts_jsonl_output_format_without_endpoints() -> None:
+    result = subprocess.run(
+        ["otc", "list", "--output-format", "jsonl"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    output = [json.loads(line) for line in result.stdout.splitlines()]
+    assert output
+    assert all("connector_id" in connector for connector in output)
+
+
 def test_module_and_alias_help_commands_exit_successfully() -> None:
     for command in (
         [sys.executable, "-m", "open_connectors.cli", "--help"],

@@ -35,7 +35,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="otc", description="Move and inspect tables through Open Connectors.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("list", help="list available connectors")
+    list_parser = subparsers.add_parser("list", help="list available connectors")
+    list_parser.add_argument("--output-format", choices=_FORMATS, default="jsonl")
     inspect_parser = subparsers.add_parser("inspect", help="inspect a table")
     _add_options(inspect_parser, require_from=True, require_to=False)
     read_parser = subparsers.add_parser("read", help="read a table")
