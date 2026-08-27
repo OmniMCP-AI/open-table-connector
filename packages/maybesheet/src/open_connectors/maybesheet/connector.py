@@ -10,15 +10,15 @@ from typing import Any, Mapping, Protocol
 import polars as pl
 import pyarrow as pa
 
-from open_connectors.contract import BaseConvention, ConnectorError, ConnectorErrorCode, NeutralReceipt, PolarsReadResult, ResourceLimits, SheetConvention, TableMode, TableURI
+from open_connectors.contract import BaseConvention, ConnectorError, ConnectorErrorCode, NeutralReceipt, PolarsReadResult, ResourceLimits, SheetConvention, TableMode, TableURI, TableWriteRequest, TableWriteResult
 from open_connectors.contract.fingerprints import arrow_content_fingerprint, arrow_schema_fingerprint, operation_identity
 
-from .identity import BASE_READ_CAPABILITY, CONNECTOR_IDENTITY, SHEET_READ_CAPABILITY
+from .identity import BASE_READ_CAPABILITY, CONNECTOR_IDENTITY, SHEET_READ_CAPABILITY, TABLE_WRITE_CAPABILITY
 from .process import SubprocessProcessClient
 
 
 class ProcessClient(Protocol):
-    def run(self, argv: tuple[str, ...], *, credentials: Mapping[str, str] | None = None) -> Mapping[str, Any]: ...
+    def run(self, argv: tuple[str, ...], *, credentials: Mapping[str, str] | None = None, stdin: str | None = None) -> Mapping[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -86,11 +86,78 @@ class MaybeSheetConnector:
             {"capability": capability},
         )
 
-    def write(self, request: Any) -> None:
-        """Explicit placeholder until governed Base/Sheet writes are ported."""
-
-        del request
-        self._unsupported("table.write")
+    def write(self, request: TableWriteRequest) -> TableWriteResult:
+        if request.if_exists in {"replace", "error"}:
+            raise ConnectorError(
+                ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+                "MaybeSheet table writes support append only",
+                {"if_exists": request.if_exists},
+            )
+        if request.if_exists != "append":
+            raise ConnectorError(
+                ConnectorErrorCode.INVALID_URI,
+                "if_exists must be append for MaybeSheet table writes",
+                {"if_exists": request.if_exists},
+            )
+        if request.table is None or not request.table.strip():
+            raise ConnectorError(
+                ConnectorErrorCode.INVALID_URI,
+                "MaybeSheet table writes require an explicit table",
+                {},
+            )
+        payload = "".join(
+            json.dumps(row, separators=(",", ":"), default=str) + "\n"
+            for row in request.frame.to_dicts()
+        )
+        argv = (
+            "mbs",
+            "db-table",
+            "write",
+            "--uri",
+            request.uri.value,
+            "--target",
+            request.table,
+            "--input",
+            "-",
+        )
+        try:
+            response = self._process.run(argv, credentials=None, stdin=payload)
+        except ConnectorError:
+            raise
+        except Exception as exc:
+            raise ConnectorError(
+                ConnectorErrorCode.EXECUTION_FAILED,
+                "MaybeSheet process operation failed",
+                {"reason": str(exc)},
+            ) from None
+        revision = "sha256:" + sha256(json.dumps(response, sort_keys=True, default=str).encode()).hexdigest()
+        table = request.frame.to_arrow()
+        schema = arrow_schema_fingerprint(table.schema)
+        content = arrow_content_fingerprint(table)
+        operation = operation_identity(
+            connector=CONNECTOR_IDENTITY,
+            capability=TABLE_WRITE_CAPABILITY,
+            uri=request.uri,
+            source_revision=revision,
+            schema_fingerprint=schema,
+            content_fingerprint=content,
+            parameters={"table": request.table, "if_exists": request.if_exists},
+        )
+        receipt = NeutralReceipt(
+            connector=CONNECTOR_IDENTITY,
+            capability=TABLE_WRITE_CAPABILITY,
+            operation_id=operation,
+            safe_uri=request.uri,
+            mode=TableMode.BASE,
+            source_revision=revision,
+            schema_fingerprint=schema,
+            content_fingerprint=content,
+            coordinate_convention=BaseConvention(ordinal_snapshot_id=revision),
+            row_count=request.frame.height,
+            batch_count=1,
+            vendor_receipt_ref=str(response["receipt_id"]) if response.get("receipt_id") is not None else None,
+        )
+        return TableWriteResult(receipt=receipt, affected_rows=int(response.get("rows_written", request.frame.height)))
 
     def calculate_formulas(self, request: Any) -> None:
         """MaybeSheet formula calculation remains outside this read slice."""

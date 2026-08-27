@@ -2,14 +2,16 @@ import subprocess
 
 import pytest
 
-from open_connectors.contract import ConnectorError, ConnectorErrorCode, TableMode, TableURI
+import polars as pl
+
+from open_connectors.contract import ConnectorError, ConnectorErrorCode, TableMode, TableURI, TableWriteRequest
 from open_connectors.maybesheet import MaybeSheetConnector, MaybeSheetReadRequest, SubprocessProcessClient
 
 
 class Process:
     def __init__(self): self.calls = []
-    def run(self, argv, *, credentials=None):
-        self.calls.append((argv, credentials))
+    def run(self, argv, *, credentials=None, stdin=None):
+        self.calls.append((argv, credentials, stdin))
         return {"rows": [{"id": "1", "amount": "2.50"}], "source_revision": "rev-1", "receipt_id": "safe-ref"}
 
 
@@ -41,12 +43,60 @@ def test_maybesheet_subprocess_transport_redacts_diagnostics_and_prefixes_creden
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     payload = SubprocessProcessClient(binary="mbs", timeout_seconds=3).run(
-        ("mbs", "db-table", "read"), credentials={"access_token": "hidden"}
+        ("mbs", "db-table", "read"),
+        credentials={"access_token": "hidden"},
+        stdin='{"id":"1"}\n',
     )
 
     assert payload == {"ok": True}
     assert seen["env"]["MAYBESHEET_ACCESS_TOKEN"] == "hidden"
+    assert seen["input"] == '{"id":"1"}\n'
     assert "stderr" not in repr(seen)
+
+
+def test_maybesheet_write_sends_jsonl_to_process() -> None:
+    process = Process()
+    result = MaybeSheetConnector(process).write(
+        TableWriteRequest(
+            TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"),
+            pl.DataFrame({"id": ["1"]}),
+            table="R_orders",
+            if_exists="append",
+        )
+    )
+
+    assert process.calls[0][0] == (
+        "mbs",
+        "db-table",
+        "write",
+        "--uri",
+        "https://www.maybe.ai/docs/spreadsheets/d/doc",
+        "--target",
+        "R_orders",
+        "--input",
+        "-",
+    )
+    assert process.calls[0][2] == '{"id":"1"}\n'
+    assert result.affected_rows == 1
+    assert result.receipt.vendor_receipt_ref == "safe-ref"
+
+
+@pytest.mark.parametrize("if_exists", ["replace", "error"])
+def test_maybesheet_rejects_unsupported_write_policies(if_exists) -> None:
+    process = Process()
+    with pytest.raises(ConnectorError) as error:
+        MaybeSheetConnector(process).write(
+            TableWriteRequest(
+                TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"),
+                pl.DataFrame({"id": ["1"]}),
+                table="R_orders",
+                if_exists=if_exists,
+            )
+        )
+
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+    assert error.value.safe_details == {"if_exists": if_exists}
+    assert process.calls == []
 
 
 def test_maybesheet_subprocess_transport_maps_timeouts_to_stable_connector_error(monkeypatch) -> None:

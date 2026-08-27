@@ -24,6 +24,7 @@ class SubprocessProcessClient:
         argv: tuple[str, ...],
         *,
         credentials: Mapping[str, str] | None = None,
+        stdin: str | None = None,
     ) -> Mapping[str, Any]:
         command = tuple(argv)
         if not command or command[0] != self.binary:
@@ -42,6 +43,7 @@ class SubprocessProcessClient:
                 check=False,
                 capture_output=True,
                 text=True,
+                input=stdin,
                 timeout=self.timeout_seconds,
                 env=env,
             )
