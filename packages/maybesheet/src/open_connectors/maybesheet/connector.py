@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 import inspect
 import json
+import math
 from typing import Any, Mapping, Protocol
 
 import polars as pl
@@ -47,6 +48,16 @@ class MaybeSheetReadRequest:
 
 def _cell(value: Any) -> str | None:
     return None if value is None else value if isinstance(value, str) else str(value)
+
+
+def _strict_json_value(value: Any) -> Any:
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, Mapping):
+        return {str(key): _strict_json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_strict_json_value(item) for item in value]
+    return value
 
 
 def _payload_table(payload: Mapping[str, Any]) -> pa.Table:
@@ -118,10 +129,23 @@ class MaybeSheetConnector:
                 "MaybeSheet table writes require an explicit table",
                 {},
             )
-        payload = "".join(
-            json.dumps(row, separators=(",", ":"), default=str) + "\n"
-            for row in request.frame.to_dicts()
-        )
+        try:
+            payload = "".join(
+                json.dumps(
+                    _strict_json_value(row),
+                    allow_nan=False,
+                    separators=(",", ":"),
+                    default=str,
+                )
+                + "\n"
+                for row in request.frame.to_dicts()
+            )
+        except Exception:
+            raise ConnectorError(
+                ConnectorErrorCode.EXECUTION_FAILED,
+                "MaybeSheet table write serialization failed",
+                {"reason": "unexpected serialization exception"},
+            ) from None
         argv = (
             "mbs",
             "db-table",

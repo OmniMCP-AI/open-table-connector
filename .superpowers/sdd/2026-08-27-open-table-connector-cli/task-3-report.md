@@ -95,3 +95,24 @@ Status: complete
 ## Concerns and deviations
 
 - No known concerns. One-argument connector writes remain supported, explicit CLI tokens override environment credentials in the subprocess client, and credentials are not included in URI, stdin, receipts, or error payloads.
+
+# Process-Wire Strict JSON Follow-up
+
+Status: complete
+
+## Root cause and fix
+
+- MaybeSheet row serialization used Python's permissive JSON default, which emitted bare `NaN`, `Infinity`, and `-Infinity` tokens into process JSONL.
+- Table-write rows now recursively normalize non-finite floats to JSON `null`, matching the repository's strict-JSON semantics, and serialize with `allow_nan=False` as a final guard. Finite values are preserved.
+- Unexpected serialization failures are mapped before process invocation to a fixed-detail `EXECUTION_FAILED` error so source values and credentials cannot leak through exception text.
+
+## Regression coverage
+
+- Added strict JSONL parsing coverage for finite, NaN, positive-infinity, and negative-infinity values.
+- Added coverage proving serialization failures skip process invocation and return secret-safe connector errors.
+
+## Tests
+
+- `uv run python -m pytest packages/maybesheet/tests/test_connector.py -q` — 15 passed.
+- `uv run python -m pytest packages/cli/tests/test_pipeline.py -q` — 24 passed.
+- `uv run python -m pytest -q` — 186 passed.

@@ -1,3 +1,4 @@
+import json
 import subprocess
 
 import pytest
@@ -126,6 +127,60 @@ def test_maybesheet_write_sends_jsonl_to_process() -> None:
     assert process.calls[0][2] == '{"id":"1"}\n'
     assert result.affected_rows == 1
     assert result.receipt.vendor_receipt_ref == "safe-ref"
+
+
+def test_maybesheet_write_normalizes_non_finite_floats_to_strict_json() -> None:
+    process = Process()
+
+    MaybeSheetConnector(process).write(
+        TableWriteRequest(
+            TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"),
+            pl.DataFrame({"value": [1.25, float("nan"), float("inf"), float("-inf")]}),
+            table="R_orders",
+            if_exists="append",
+        )
+    )
+
+    rows = [
+        json.loads(
+            line,
+            parse_constant=lambda constant: pytest.fail(
+                f"non-standard JSON constant emitted: {constant}"
+            ),
+        )
+        for line in process.calls[0][2].splitlines()
+    ]
+    assert rows == [
+        {"value": 1.25},
+        {"value": None},
+        {"value": None},
+        {"value": None},
+    ]
+
+
+def test_maybesheet_write_serialization_errors_are_secret_safe_and_skip_process() -> None:
+    process = Process()
+    secret = "serialization-secret"
+
+    class Unserializable:
+        def __str__(self) -> str:
+            raise RuntimeError(f"cannot serialize {secret}")
+
+    request = TableWriteRequest(
+        TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"),
+        pl.DataFrame({"value": pl.Series([Unserializable()], dtype=pl.Object)}),
+        table="R_orders",
+        if_exists="append",
+    )
+
+    with pytest.raises(ConnectorError) as error:
+        MaybeSheetConnector(process).write(request)
+
+    assert error.value.code is ConnectorErrorCode.EXECUTION_FAILED
+    assert secret not in repr(error.value)
+    assert secret not in repr(error.value.safe_details)
+    assert secret not in repr(error.value.to_wire())
+    assert process.calls == []
 
 
 def test_maybesheet_write_passes_explicit_credentials_without_serializing_them() -> None:
