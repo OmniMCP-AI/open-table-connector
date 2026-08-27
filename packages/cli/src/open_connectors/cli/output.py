@@ -13,7 +13,7 @@ import pyarrow as pa
 
 from open_connectors.contract import ArrowReadResult, ConnectorError, ConnectorErrorCode
 
-from .formats import json_safe_value, write_local
+from .formats import json_safe_value, write_local, write_markdown_table
 from .model import FormatName, PipelineSummary
 
 
@@ -66,21 +66,26 @@ def _display(value: Any) -> str:
     return str(value).replace("\n", "\\n").replace("|", "\\|")
 
 
+def _table_display(value: Any) -> str:
+    value = _wire(value)
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    return str(value)
+
+
 def emit_table(headers: Sequence[str], rows: Iterable[Sequence[Any]], out: TextIO) -> None:
     """Emit a small deterministic Markdown table for human-readable output."""
     names = [str(header) for header in headers]
-    values = [[_display(value) for value in row] for row in rows]
-    if any(len(row) != len(names) for row in values):
-        raise ValueError("table rows must match the header width")
-    widths = [max([len(name), 3] + [len(row[index]) for row in values]) for index, name in enumerate(names)]
-
-    def row_line(row: Sequence[str]) -> str:
-        return "| " + " | ".join(value.ljust(widths[index]) for index, value in enumerate(row)) + " |\n"
-
-    out.write(row_line(names))
-    out.write(row_line(["-" * width for width in widths]))
-    for row in values:
-        out.write(row_line(row))
+    values = ([_table_display(value) for value in row] for row in rows)
+    write_markdown_table(names, values, out)
 
 
 def _record_columns(records: Sequence[dict[str, Any]], headers: Sequence[str] | None) -> list[str]:

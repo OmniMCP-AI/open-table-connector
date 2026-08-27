@@ -141,3 +141,25 @@ backstop.
 ### Commit
 
 - This report is included with `fix: emit strict cli json`.
+
+## Human-readable table escaping fix
+
+### Status
+
+Complete. Local table conversion and command table output now share one
+aligned Markdown renderer. It escapes pipes and backslashes, renders embedded
+line breaks as visible `\\n`, and calculates column widths after escaping.
+CSV, JSON, JSONL, and existing headers are unchanged.
+
+### Tests/results
+
+- Red phase: both focused special-character regressions failed against the
+  previous divergent renderers.
+- Focused format/command tests: **36 passed**.
+- Full CLI suite: **103 passed**.
+- Full workspace suite: **181 passed**.
+- `git diff --check` and CLI source compilation: passed.
+
+### Commit
+
+- This report is included with `fix: safely render cli tables`.

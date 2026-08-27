@@ -326,6 +326,41 @@ def test_inspect_table_output_is_aligned_human_table(fake_registry) -> None:
     assert "| schema_fingerprint" in out.getvalue()
 
 
+def test_inspect_table_output_escapes_special_characters(fake_registry) -> None:
+    inspection = type(
+        "Inspection",
+        (),
+        {
+            "safe_uri": TableURI("gsheets://book/Orders"),
+            "mode": TableMode.BASE,
+            "columns": ("id",),
+            "schema_fingerprint": "left|right\\path\nnext",
+            "row_count": 1,
+            "coordinate_convention": BaseConvention(ordinal_snapshot_id="local"),
+            "facts": {"provider": "fake"},
+        },
+    )()
+    fake_registry.list()[0].inspect = lambda endpoint, options: inspection
+    out, err = io.StringIO(), io.StringIO()
+    args = type(
+        "Args",
+        (),
+        {
+            "command": "inspect",
+            "from_value": "gsheets://book/Orders",
+            "output_format": "table",
+        },
+    )()
+
+    assert run_command(args, fake_registry, out, err) == 0
+
+    lines = out.getvalue().splitlines()
+    assert err.getvalue() == ""
+    assert len(lines) == 9
+    assert len({len(line) for line in lines}) == 1
+    assert any(r"left\|right\\path\nnext" in line for line in lines)
+
+
 @pytest.mark.parametrize("format_name", ("json", "csv"))
 def test_inspect_structured_output_format_is_truthful(format_name, fake_registry) -> None:
     inspection = type(

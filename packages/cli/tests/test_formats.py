@@ -71,6 +71,23 @@ def test_jsonl_writer_emits_one_object_per_line() -> None:
     assert stream.getvalue() == '{"amount":1,"id":"a"}\n'
 
 
+def test_table_writer_escapes_special_characters_and_keeps_rows_aligned() -> None:
+    stream = io.StringIO()
+    table = pa.table({"value": ["left|right", r"C:\temp", "line1\nline2"]})
+
+    write_local(table, parse_endpoint("-"), FormatName.TABLE, stream)
+
+    lines = stream.getvalue().splitlines()
+    assert lines == [
+        "| value        |",
+        "| ------------ |",
+        r"| left\|right  |",
+        r"| C:\\temp     |",
+        r"| line1\nline2 |",
+    ]
+    assert len({len(line) for line in lines}) == 1
+
+
 @pytest.mark.parametrize("format_name", (FormatName.JSON, FormatName.JSONL))
 def test_json_writers_normalize_arrow_scalars_to_strict_json(format_name) -> None:
     table = pa.table(

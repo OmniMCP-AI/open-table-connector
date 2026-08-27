@@ -10,7 +10,7 @@ import sys
 import re
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Iterable, Mapping, TextIO
+from typing import Iterable, Mapping, Sequence, TextIO
 
 import pyarrow as pa
 
@@ -297,15 +297,29 @@ def _write_jsonl(table: pa.Table, stream: TextIO) -> None:
 def _write_markdown_table(table: pa.Table, stream: TextIO) -> None:
     rows = _table_rows(table)
     names = list(table.column_names)
+    string_rows = [[_stringify_cell(row.get(name)) for name in names] for row in rows]
+    write_markdown_table(names, string_rows, stream)
+
+
+def write_markdown_table(
+    headers: Sequence[str], rows: Iterable[Sequence[str]], stream: TextIO
+) -> None:
+    """Write an aligned Markdown table with escaped single-line cells."""
+    names = [_escape_markdown_cell(str(header)) for header in headers]
     if not names:
         return
-    string_rows = [[_stringify_cell(row.get(name)) for name in names] for row in rows]
-    widths = [max([len(name)] + [len(row[index]) for row in string_rows]) for index, name in enumerate(names)]
+    values = [[_escape_markdown_cell(str(value)) for value in row] for row in rows]
+    if any(len(row) != len(names) for row in values):
+        raise ValueError("table rows must match the header width")
+    widths = [
+        max([len(name), 3] + [len(row[index]) for row in values])
+        for index, name in enumerate(names)
+    ]
     stream.write(_format_markdown_row(names, widths))
     stream.write("\n")
     stream.write(_format_markdown_separator(widths))
     stream.write("\n")
-    for row in string_rows:
+    for row in values:
         stream.write(_format_markdown_row(row, widths))
         stream.write("\n")
 
@@ -387,6 +401,16 @@ def _is_separator_row(row: list[str]) -> bool:
     return bool(row) and all(_MARKDOWN_SEPARATOR_RE.fullmatch(cell) is not None for cell in row)
 
 
+def _escape_markdown_cell(value: str) -> str:
+    return (
+        value.replace("\\", "\\\\")
+        .replace("|", "\\|")
+        .replace("\r\n", "\\n")
+        .replace("\r", "\\n")
+        .replace("\n", "\\n")
+    )
+
+
 def _format_markdown_row(cells: list[str], widths: list[int]) -> str:
     padded = [cell.ljust(widths[index]) for index, cell in enumerate(cells)]
     return "| " + " | ".join(padded) + " |"
@@ -401,4 +425,4 @@ def _endpoint_path(endpoint: Endpoint) -> str | None:
     return None if endpoint.path is None else str(endpoint.path)
 
 
-__all__ = ["infer_format", "read_local", "write_local"]
+__all__ = ["infer_format", "read_local", "write_local", "write_markdown_table"]
