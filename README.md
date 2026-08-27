@@ -31,3 +31,15 @@ The first workspace packages are:
 
 The `open_connectors` Python namespace is PEP 420 based; framework packages
 are never dependencies of the neutral packages.
+
+## Command-line interface
+
+Install the CLI package to use `otc` (or the equivalent
+`open-table-connector` command):
+
+```console
+otc convert --from orders.csv --to - --to-format jsonl
+otc read --from gsheets://SPREADSHEET/Orders --output-format json
+```
+
+`open-connectors` remains available as a deprecated compatibility alias.
