@@ -220,3 +220,39 @@ Concerns:
 Deviations:
 
 - No output, command, packaging, or provider package files were changed; this fix was confined to the CLI adapter and registry tests plus this report.
+
+## Final re-review registry scheme classification fix
+
+Status: complete
+
+Changed files:
+
+- `packages/cli/src/open_connectors/cli/registry.py`
+- `packages/cli/tests/test_registry.py`
+- `.superpowers/sdd/2026-08-27-open-table-connector-cli/task-4-report.md`
+
+Changes:
+
+- `ConnectorRegistry.connector_for` now tracks whether any adapter advertises the endpoint scheme. An entirely unknown scheme raises `UNSUPPORTED_CAPABILITY`, which maps to exit code 3, with only the safe scheme detail.
+- Known schemes that fail provider-specific host or URI validation still raise `INVALID_URI`; the existing safe HTTPS host detail behavior is preserved.
+- Added regression coverage for unknown connector schemes and retained the unknown-HTTPS-host regression.
+
+Commit:
+
+- `637e7b3 fix: classify unknown connector schemes`
+
+Tests and results:
+
+- Red regression: `uv run python -m pytest packages/cli/tests/test_registry.py::test_registry_reports_unknown_connector_scheme_as_unsupported_capability -q` — failed with `INVALID_URI` before the registry distinction was implemented.
+- Green focused registry run: `uv run python -m pytest packages/cli/tests/test_registry.py -q` — 23 passed.
+- Full CLI suite: `uv run python -m pytest packages/cli/tests -q` — 88 passed.
+- `git diff --check` — passed.
+
+Concerns:
+
+- Pre-existing changes to `packages/cli/src/open_connectors/cli/model.py` and `packages/cli/tests/test_model.py` remain in the worktree and were intentionally not staged or modified by this fix.
+- The direct `uv run pytest` executable remains unavailable in this environment; equivalent `uv run python -m pytest` commands passed.
+
+Deviations:
+
+- No output, command, packaging, adapter, or provider files were changed; this fix was confined to the CLI registry, registry tests, and this report.
