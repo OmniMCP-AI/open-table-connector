@@ -1,7 +1,9 @@
 import io
 
 import pyarrow as pa
+import pytest
 
+from open_connectors.contract import ConnectorError
 from open_connectors.cli.formats import infer_format, read_local, write_local
 from open_connectors.cli.model import Endpoint, FormatName, parse_endpoint
 
@@ -34,6 +36,23 @@ def test_markdown_table_reader_accepts_separator_row(tmp_path) -> None:
     source = tmp_path / "rows.table"
     source.write_text("| id | amount |\n| --- | ---: |\n| a | 1 |\n", encoding="utf-8")
     assert read_local(parse_endpoint(str(source)), FormatName.TABLE).to_pylist() == [{"id": "a", "amount": "1"}]
+
+
+def test_markdown_table_reader_rejects_separator_row_with_wrong_width(tmp_path) -> None:
+    source = tmp_path / "rows.table"
+    source.write_text("| a | b |\n| --- |\n| 1 | 2 |\n", encoding="utf-8")
+    with pytest.raises(ConnectorError, match="inconsistent column count") as excinfo:
+        read_local(parse_endpoint(str(source)), FormatName.TABLE)
+    assert excinfo.value.safe_details["line"] == 2
+
+
+def test_markdown_table_reader_treats_invalid_separator_grammar_as_data(tmp_path) -> None:
+    source = tmp_path / "rows.table"
+    source.write_text("| a | b |\n| ::- | --- |\n| 1 | 2 |\n", encoding="utf-8")
+    assert read_local(parse_endpoint(str(source)), FormatName.TABLE).to_pylist() == [
+        {"a": "::-", "b": "---"},
+        {"a": "1", "b": "2"},
+    ]
 
 
 def test_jsonl_writer_emits_one_object_per_line() -> None:

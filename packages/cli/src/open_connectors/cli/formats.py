@@ -6,6 +6,7 @@ import csv
 import io
 import json
 import sys
+import re
 from typing import Iterable, Mapping, TextIO
 
 import pyarrow as pa
@@ -16,6 +17,7 @@ from .model import Endpoint, FormatName
 
 
 _MARKDOWN_SUFFIXES = {".table", ".md", ".markdown"}
+_MARKDOWN_SEPARATOR_RE = re.compile(r":?-+:?")
 
 
 def infer_format(endpoint: Endpoint, explicit: FormatName) -> FormatName:
@@ -223,10 +225,17 @@ def _read_markdown_table(text: str, source: Endpoint) -> pa.Table:
         for index, line in enumerate(lines)
     ]
     _, header = rows[0]
-    body = rows[1:]
-    if body and _is_separator_row(body[0][1]):
-        body = body[1:]
-    for line_number, row in body:
+    body_start = 1
+    if len(rows) > 1 and _is_separator_row(rows[1][1]):
+        separator_line, separator_row = rows[1]
+        if len(separator_row) != len(header):
+            raise ConnectorError(
+                ConnectorErrorCode.EXECUTION_FAILED,
+                "Markdown table row has an inconsistent column count",
+                {"path": _endpoint_path(source), "line": separator_line},
+            )
+        body_start = 2
+    for line_number, row in rows[body_start:]:
         if len(row) != len(header):
             raise ConnectorError(
                 ConnectorErrorCode.EXECUTION_FAILED,
@@ -235,7 +244,7 @@ def _read_markdown_table(text: str, source: Endpoint) -> pa.Table:
             )
     data_rows = [
         {header[index]: _normalize_table_cell(value) for index, value in enumerate(row)}
-        for _, row in body
+        for _, row in rows[body_start:]
         if row and not _is_separator_row(row)
     ]
     return _rows_to_table(data_rows, header)
@@ -318,7 +327,7 @@ def _split_markdown_row(line: str, *, line_number: int, source: Endpoint) -> lis
 
 
 def _is_separator_row(row: list[str]) -> bool:
-    return bool(row) and all(cell and all(ch in "-:" for ch in cell) and "-" in cell for cell in row)
+    return bool(row) and all(_MARKDOWN_SEPARATOR_RE.fullmatch(cell) is not None for cell in row)
 
 
 def _format_markdown_row(cells: list[str], widths: list[int]) -> str:
