@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from argparse import Namespace
+from contextlib import redirect_stdout
 from typing import Any, TextIO
 
 from .model import CliOptions, FormatName, parse_endpoint, parse_format
-from .output import _wire, emit_error, emit_read, emit_summary
+from .output import _wire, emit_error, emit_read, emit_summary, emit_table
 from .pipeline import convert_endpoint, import_endpoint, inspect_endpoint, read_endpoint
 from .registry import ConnectorRegistry
 
@@ -42,16 +43,26 @@ def _manifest(adapter: Any) -> tuple[Any, tuple[Any, ...], tuple[Any, ...], tupl
     return manifest, capabilities, modes, schemes
 
 
-def _emit_list(registry: ConnectorRegistry, out: TextIO) -> None:
+def _emit_list(
+    registry: ConnectorRegistry, out: TextIO, output_format: FormatName = FormatName.JSONL
+) -> None:
+    rows = []
     for adapter in registry.list():
         manifest, capabilities, modes, schemes = _manifest(adapter)
         identity = getattr(manifest, "connector", getattr(adapter, "identity", None))
-        _emit_json({
+        payload = {
             "connector_id": identity.connector_id,
             "schemes": list(schemes),
             "capabilities": [_wire_item(item) for item in capabilities],
             "modes": [_wire_item(item) for item in modes],
-        }, out)
+        }
+        if output_format is FormatName.TABLE:
+            rows.append((payload["connector_id"], ",".join(payload["schemes"]),
+                         payload["capabilities"], ",".join(payload["modes"])))
+        else:
+            _emit_json(payload, out)
+    if output_format is FormatName.TABLE:
+        emit_table(("connector_id", "schemes", "capabilities", "modes"), rows, out)
 
 
 def _wire_item(value: Any) -> Any:
@@ -70,13 +81,13 @@ def run_command(args: Namespace, registry: ConnectorRegistry, out: TextIO, err: 
     try:
         command = getattr(args, "command", None)
         if command == "list":
-            _emit_list(registry, out)
+            _emit_list(registry, out, parse_format(getattr(args, "output_format", None)))
             return 0
         options = _options(args)
         source = parse_endpoint(getattr(args, "from_value"))
         if command == "inspect":
             inspection = inspect_endpoint(source, registry, options)
-            _emit_json({
+            payload = {
                 "safe_uri": _wire_item(inspection.safe_uri),
                 "mode": _wire_item(inspection.mode),
                 "columns": list(inspection.columns),
@@ -84,16 +95,26 @@ def run_command(args: Namespace, registry: ConnectorRegistry, out: TextIO, err: 
                 "row_count": inspection.row_count,
                 "coordinate_convention": _wire(inspection.coordinate_convention),
                 "facts": _wire(dict(inspection.facts)),
-            }, out)
+            }
+            if options.output_format is FormatName.TABLE:
+                emit_table(("field", "value"), payload.items(), out)
+            else:
+                _emit_json(payload, out)
         elif command == "read":
             result = read_endpoint(source, registry, options)
             emit_read(result, options.output_format, out)
         elif command in ("convert", "import"):
             destination = parse_endpoint(getattr(args, "to_value"))
-            summary = (convert_endpoint if command == "convert" else import_endpoint)(
-                source, destination, registry, options
-            )
-            emit_summary(summary, out)
+            operation = convert_endpoint if command == "convert" else import_endpoint
+            if command == "convert" and destination.is_stdio:
+                with redirect_stdout(out):
+                    summary = operation(source, destination, registry, options)
+            else:
+                summary = operation(source, destination, registry, options)
+            # A conversion to stdio owns stdout for its selected codec. A JSON
+            # summary there would corrupt JSON, JSONL, CSV, and table streams.
+            if not (command == "convert" and destination.is_stdio):
+                emit_summary(summary, out, options.output_format)
         else:
             raise ValueError("unsupported command")
         return 0

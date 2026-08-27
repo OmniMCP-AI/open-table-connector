@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import fields, is_dataclass
 from enum import Enum
+from collections.abc import Iterable, Sequence
 from typing import Any, TextIO
 
 import pyarrow as pa
@@ -49,6 +50,32 @@ def _write_json(value: Any, out: TextIO) -> None:
     out.write(json.dumps(_wire(value), ensure_ascii=False, default=str) + "\n")
 
 
+def _display(value: Any) -> str:
+    value = _wire(value)
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return str(value).replace("\n", "\\n").replace("|", "\\|")
+
+
+def emit_table(headers: Sequence[str], rows: Iterable[Sequence[Any]], out: TextIO) -> None:
+    """Emit a small deterministic Markdown table for human-readable output."""
+    names = [str(header) for header in headers]
+    values = [[_display(value) for value in row] for row in rows]
+    if any(len(row) != len(names) for row in values):
+        raise ValueError("table rows must match the header width")
+    widths = [max([len(name), 3] + [len(row[index]) for row in values]) for index, name in enumerate(names)]
+
+    def row_line(row: Sequence[str]) -> str:
+        return "| " + " | ".join(value.ljust(widths[index]) for index, value in enumerate(row)) + " |\n"
+
+    out.write(row_line(names))
+    out.write(row_line(["-" * width for width in widths]))
+    for row in values:
+        out.write(row_line(row))
+
+
 def _rows(table: pa.Table) -> list[dict[str, Any]]:
     return [{str(key): _wire(value) for key, value in row.items()} for row in table.to_pylist()]
 
@@ -80,7 +107,21 @@ def _stream_endpoint(output_format: FormatName):
     return Endpoint(raw="-", uri=None, path=None, is_stdio=True)
 
 
-def emit_summary(summary: PipelineSummary, out: TextIO) -> None:
+def emit_summary(
+    summary: PipelineSummary, out: TextIO, output_format: FormatName = FormatName.JSONL
+) -> None:
+    if output_format is FormatName.TABLE:
+        rows: list[tuple[str, Any]] = [("status", summary.status)]
+        if summary.rows_read is not None:
+            rows.append(("rows_read", summary.rows_read))
+        if summary.rows_written is not None:
+            rows.append(("rows_written", summary.rows_written))
+        if summary.source_receipt is not None:
+            rows.append(("source_receipt", summary.source_receipt))
+        if summary.destination_receipt is not None:
+            rows.append(("destination_receipt", summary.destination_receipt))
+        emit_table(("field", "value"), rows, out)
+        return
     payload: dict[str, Any] = {"status": summary.status}
     if summary.rows_read is not None:
         payload["rows_read"] = summary.rows_read
@@ -112,4 +153,4 @@ def emit_error(error: BaseException, err: TextIO) -> int:
     return code
 
 
-__all__ = ["emit_error", "emit_read", "emit_summary"]
+__all__ = ["emit_error", "emit_read", "emit_summary", "emit_table"]

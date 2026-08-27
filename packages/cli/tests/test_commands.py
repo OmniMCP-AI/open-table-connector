@@ -1,5 +1,6 @@
 import io
 import json
+import csv
 
 import pyarrow as pa
 import pytest
@@ -132,3 +133,103 @@ def test_connector_error_output_contains_no_access_token() -> None:
 
     assert emit_error(error, output) == 4
     assert "access-token" not in output.getvalue()
+
+
+@pytest.mark.parametrize("format_name", ("json", "jsonl", "csv", "table"))
+def test_convert_to_stdout_contains_only_selected_codec(format_name, fake_registry, tmp_path) -> None:
+    source = tmp_path / "source.csv"
+    source.write_text("id\na\n")
+    out, err = io.StringIO(), io.StringIO()
+    args = type(
+        "Args",
+        (),
+        {
+            "command": "convert",
+            "from_value": str(source),
+            "to_value": "-",
+            "to_format": format_name,
+            "output_format": "jsonl",
+        },
+    )()
+
+    assert run_command(args, fake_registry, out, err) == 0
+    assert err.getvalue() == ""
+    if format_name == "json":
+        assert json.loads(out.getvalue()) == [{"id": "a", "amount": 1}]
+    elif format_name == "jsonl":
+        assert [json.loads(line) for line in out.getvalue().splitlines()] == [
+            {"id": "a", "amount": 1}
+        ]
+    elif format_name == "csv":
+        assert list(csv.reader(io.StringIO(out.getvalue()))) == [
+            ["id", "amount"], ["a", "1"]
+        ]
+    else:
+        assert "| id" in out.getvalue()
+        assert "| amount" in out.getvalue()
+        assert "summary" not in out.getvalue()
+
+
+def test_list_table_output_is_aligned_human_table(fake_registry) -> None:
+    out, err = io.StringIO(), io.StringIO()
+    args = type("Args", (), {"command": "list", "output_format": "table"})()
+
+    assert run_command(args, fake_registry, out, err) == 0
+    assert err.getvalue() == ""
+    assert out.getvalue().splitlines()[0].startswith("| connector_id")
+    assert "| fake" in out.getvalue()
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(out.getvalue())
+
+
+def test_inspect_table_output_is_aligned_human_table(fake_registry) -> None:
+    out, err = io.StringIO(), io.StringIO()
+    args = type(
+        "Args",
+        (),
+        {"command": "inspect", "from_value": "gsheets://book/Orders", "output_format": "table"},
+    )()
+
+    # The fake adapter's inspection seam is intentionally replaced for this
+    # output test so command routing can be tested without provider I/O.
+    inspection = type(
+        "Inspection",
+        (),
+        {
+            "safe_uri": TableURI("gsheets://book/Orders"),
+            "mode": TableMode.BASE,
+            "columns": ("id",),
+            "schema_fingerprint": "schema",
+            "row_count": 1,
+            "coordinate_convention": BaseConvention(ordinal_snapshot_id="local"),
+            "facts": {"provider": "fake"},
+        },
+    )()
+    fake_registry.list()[0].inspect = lambda endpoint, options: inspection
+
+    assert run_command(args, fake_registry, out, err) == 0
+    assert err.getvalue() == ""
+    assert "| safe_uri" in out.getvalue()
+    assert "| schema_fingerprint" in out.getvalue()
+
+
+def test_convert_summary_table_is_not_json(fake_registry, tmp_path) -> None:
+    source = tmp_path / "source.csv"
+    destination = tmp_path / "destination.json"
+    source.write_text("id\na\n")
+    out, err = io.StringIO(), io.StringIO()
+    args = type(
+        "Args",
+        (),
+        {
+            "command": "convert",
+            "from_value": str(source),
+            "to_value": str(destination),
+            "output_format": "table",
+        },
+    )()
+
+    assert run_command(args, fake_registry, out, err) == 0
+    assert err.getvalue() == ""
+    assert "| field" in out.getvalue()
+    assert "| rows_read" in out.getvalue()
