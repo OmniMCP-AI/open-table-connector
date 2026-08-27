@@ -9,6 +9,11 @@ description = "Open Table Connector CLI"
 requires-python = ">=3.11"
 dependencies = [
   "open-connectors-contract==0.1.0",
+  "open-connectors-google-sheets==0.1.0",
+  "open-connectors-feishu-bitable==0.1.0",
+  "open-connectors-maybesheet==0.1.0",
+  "polars>=1.0,<2",
+  "pyarrow>=14,<20",
 ]
 
 [project.scripts]
@@ -18,6 +23,9 @@ open-connectors = "open_connectors.cli.__main__:main"
 
 [tool.uv.sources]
 open-connectors-contract = { workspace = true }
+open-connectors-google-sheets = { workspace = true }
+open-connectors-feishu-bitable = { workspace = true }
+open-connectors-maybesheet = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]

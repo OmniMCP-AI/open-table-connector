@@ -205,10 +205,22 @@ version = "0.1.0"
 source = { editable = "packages/cli" }
 dependencies = [
     { name = "open-connectors-contract" },
+    { name = "open-connectors-feishu-bitable" },
+    { name = "open-connectors-google-sheets" },
+    { name = "open-connectors-maybesheet" },
+    { name = "polars" },
+    { name = "pyarrow" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "open-connectors-contract", editable = "packages/contract" }]
+requires-dist = [
+    { name = "open-connectors-contract", editable = "packages/contract" },
+    { name = "open-connectors-feishu-bitable", editable = "packages/feishu_bitable" },
+    { name = "open-connectors-google-sheets", editable = "packages/google_sheets" },
+    { name = "open-connectors-maybesheet", editable = "packages/maybesheet" },
+    { name = "polars", specifier = ">=1.0,<2" },
+    { name = "pyarrow", specifier = ">=14,<20" },
+]
 
 [[package]]
 name = "open-table-connector-workspace"
