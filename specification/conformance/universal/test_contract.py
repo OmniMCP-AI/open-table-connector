@@ -37,6 +37,11 @@ _READ_ARROW_CASE_NAMES = (
     "postgres",
 )
 _INSPECT_CASE_NAMES = _READ_ARROW_CASE_NAMES
+_SHARED_INSPECT_READ_CASE_NAMES = (
+    "local_files",
+    "google_sheets",
+    "feishu_bitable",
+)
 _WRITE_CASE_NAMES = (
     "google_sheets",
     "feishu_bitable",
@@ -116,7 +121,7 @@ def test_read_receipt_wire_is_closed_and_metadata_is_deterministic(
 
 
 @pytest.mark.parametrize("connector_case", _INSPECT_CASE_NAMES, ids=str, indirect=True)
-def test_inspection_metadata_is_stable_and_matches_read_receipts(
+def test_inspection_metadata_is_stable(
     connector_case: ConnectorCase,
 ) -> None:
     binding = connector_case.capability_binding("table.inspect")
@@ -128,11 +133,27 @@ def test_inspection_metadata_is_stable_and_matches_read_receipts(
     assert inspection.mode is binding.expected_mode
     assert inspection.columns
     assert _stable_inspection_metadata(repeated) == _stable_inspection_metadata(inspection)
-    if "table.read.arrow" in connector_case.capabilities:
-        result = connector_case.capability_binding("table.read.arrow").read_arrow(ResourceLimits())
-        assert inspection.columns == tuple(result.table.column_names)
-        assert inspection.schema_fingerprint == result.receipt.schema_fingerprint
-        assert inspection.row_count == result.table.num_rows
+
+
+@pytest.mark.parametrize(
+    "connector_case",
+    _SHARED_INSPECT_READ_CASE_NAMES,
+    ids=str,
+    indirect=True,
+)
+def test_inspection_matches_the_case_read_resource(
+    connector_case: ConnectorCase,
+) -> None:
+    inspection = connector_case.capability_binding("table.inspect").inspect(
+        ResourceLimits()
+    )
+    result = connector_case.capability_binding("table.read.arrow").read_arrow(
+        ResourceLimits()
+    )
+
+    assert inspection.columns == tuple(result.table.column_names)
+    assert inspection.schema_fingerprint == result.receipt.schema_fingerprint
+    assert inspection.row_count == result.table.num_rows
 
 
 @pytest.mark.parametrize("connector_case", _WRITE_CASE_NAMES, ids=str, indirect=True)

@@ -22,7 +22,11 @@ from open_connectors.postgres import (
     PostgresReadOptions,
     PostgresTableReadRequest,
 )
-from open_connectors.sqlite import SQLiteReadOptions, SQLiteTableReadRequest
+from open_connectors.sqlite import (
+    SQLiteConnector,
+    SQLiteReadOptions,
+    SQLiteTableReadRequest,
+)
 
 from specification.conformance.universal.assertions import (
     assert_error_is_safe,
@@ -66,6 +70,33 @@ def _postgres_fixture(connector_case: ConnectorCase):
     return fixture
 
 
+def _recorded_calls(connection):
+    return [call for cursor in connection.cursors for call in cursor.calls]
+
+
+class _RecordingSQLiteConnection:
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        self._connection = connection
+        self.close_calls = 0
+
+    def __getattr__(self, name: str):
+        return getattr(self._connection, name)
+
+    def close(self) -> None:
+        self.close_calls += 1
+        self._connection.close()
+
+
+class _RecordingSQLiteFactory:
+    def __init__(self) -> None:
+        self.connections: list[_RecordingSQLiteConnection] = []
+
+    def __call__(self, path: str) -> _RecordingSQLiteConnection:
+        connection = _RecordingSQLiteConnection(sqlite3.connect(path))
+        self.connections.append(connection)
+        return connection
+
+
 @pytest.mark.parametrize("case_name", _DATABASE_CASE_NAMES, ids=str)
 def test_database_uri_resolution_is_base_mode_and_connection_free(
     case_name: str,
@@ -95,6 +126,31 @@ def test_database_uri_resolution_is_base_mode_and_connection_free(
         assert _postgres_fixture(connector_case).connection_factory.calls == []
 
 
+@pytest.mark.parametrize(
+    "scheme",
+    ("postgres", "postgresql"),
+    ids=("postgres", "postgresql-alias"),
+)
+def test_postgres_uri_aliases_resolve_with_the_same_connection_details(
+    scheme: str,
+) -> None:
+    connector_case = case("postgres")
+    context = ResolveContext(credentials=_POSTGRES_CREDENTIALS)
+
+    resolved = connector_case.connector.resolve(
+        TableURI(f"{scheme}://fixture.local/analytics"),
+        context,
+    )
+
+    assert resolved.mode is TableMode.BASE
+    assert resolved.resource.connect_kwargs == {
+        "host": "fixture.local",
+        "dbname": "analytics",
+        **_POSTGRES_CREDENTIALS,
+    }
+    assert _postgres_fixture(connector_case).connection_factory.calls == []
+
+
 @pytest.mark.parametrize("case_name", _DATABASE_CASE_NAMES, ids=str)
 def test_database_reads_honor_max_rows(case_name: str) -> None:
     connector_case = _database_case_with("table.read.arrow", case_name)
@@ -116,10 +172,12 @@ def test_database_reads_honor_max_rows(case_name: str) -> None:
             }
         ]
         connection = fixture.connection_factory.connections[-1]
-        assert connection.cursor_value.fetchmany_sizes == [1]
-        assert connection.cursor_value.description_reads == 1
+        assert connection.cursors[0].fetchmany_sizes == [1]
+        assert connection.cursors[0].description_reads == 1
         assert connection.closed
         assert connection.close_calls == 1
+        assert all(cursor.closed for cursor in connection.cursors)
+        assert all(cursor.close_calls == 1 for cursor in connection.cursors)
 
 
 @pytest.mark.parametrize("case_name", _DATABASE_CASE_NAMES, ids=str)
@@ -150,22 +208,34 @@ def test_database_arrow_and_polars_reads_have_value_and_receipt_parity(
 def test_database_inspection_agrees_with_reads(case_name: str) -> None:
     connector_case = _database_case_with("table.inspect", case_name)
     inspect_binding = connector_case.capability_binding("table.inspect")
-    read_binding = connector_case.capability_binding("table.read.arrow")
     assert inspect_binding.inspect is not None
-    assert read_binding.read_arrow is not None
     limits = ResourceLimits()
 
     inspection = inspect_binding.inspect(limits)
-    result = read_binding.read_arrow(limits)
+    if case_name == "sqlite":
+        result = connector_case.connector.read_arrow(
+            SQLiteTableReadRequest(connector_case.table_uri, limits)
+        )
+    else:
+        result = connector_case.connector.read_arrow(
+            PostgresTableReadRequest(
+                connector_case.table_uri,
+                resource_limits=limits,
+                credentials=_POSTGRES_CREDENTIALS,
+            )
+        )
 
     assert inspection.safe_uri == connector_case.table_uri
     assert inspection.mode is TableMode.BASE
     assert inspection.columns == tuple(result.table.column_names)
     assert inspection.schema_fingerprint == result.receipt.schema_fingerprint
-    assert inspection.row_count == result.table.num_rows == 2
+    assert result.table.to_pylist() == [
+        {"default_id": "default-a", "label": "default resource"}
+    ]
+    assert inspection.row_count == result.table.num_rows == 1
     if case_name == "postgres":
         fixture = _postgres_fixture(connector_case)
-        inspect_call = fixture.connection_factory.connections[0].cursor_value.calls[0]
+        inspect_call = fixture.connection_factory.connections[0].cursors[0].calls[0]
         assert inspect_call.statement == "SELECT * FROM public.table"
         assert inspect_call.parameters == ()
 
@@ -197,7 +267,7 @@ def test_database_table_options_select_the_declared_table(case_name: str) -> Non
     assert result.receipt.coordinate_convention.record_id_field == "id"
     if case_name == "postgres":
         fixture = _postgres_fixture(connector_case)
-        call = fixture.connection_factory.connections[-1].cursor_value.calls[0]
+        call = fixture.connection_factory.connections[-1].cursors[0].calls[0]
         assert call.statement == "SELECT * FROM public.orders"
         assert call.parameters == ()
 
@@ -232,7 +302,7 @@ def test_database_sql_options_execute_exact_statement_and_parameters(
     assert result.receipt.coordinate_convention.key_fields == ("id",)
     if case_name == "postgres":
         fixture = _postgres_fixture(connector_case)
-        call = fixture.connection_factory.connections[-1].cursor_value.calls[0]
+        call = fixture.connection_factory.connections[-1].cursors[0].calls[0]
         assert call.statement == "SELECT id, amount FROM orders WHERE id = %s"
         assert call.parameters == ("b",)
 
@@ -283,14 +353,19 @@ def test_database_writes_accept_append_and_replace_with_exact_sql(
                 "VALUES (%s, %s)",
             ]
         )
-        assert [call.statement for call in connection.cursor_value.calls] == (
-            expected_statements
-        )
-        assert connection.cursor_value.calls[-1].kind == "executemany"
-        assert connection.cursor_value.calls[-1].parameters == (
+        calls = _recorded_calls(connection)
+        assert [call.statement for call in calls] == expected_statements
+        assert calls[-1].kind == "executemany"
+        assert calls[-1].parameters == (
             ("write-1", "3.50"),
             ("write-2", "4.00"),
         )
+        assert len(connection.cursors) == len(expected_statements)
+        assert len({id(cursor) for cursor in connection.cursors}) == len(
+            connection.cursors
+        )
+        assert all(cursor.closed for cursor in connection.cursors)
+        assert all(cursor.close_calls == 1 for cursor in connection.cursors)
         assert connection.commits == 1
         assert connection.closed
 
@@ -322,9 +397,11 @@ def test_database_error_policy_fails_on_existing_table_without_commit(
         connection = fixture.connection_factory.connections[-1]
         assert connection.commits == 0
         assert connection.closed
-        assert [call.statement for call in connection.cursor_value.calls] == [
+        assert [call.statement for call in _recorded_calls(connection)] == [
             'CREATE TABLE "public"."orders" ("id" TEXT, "amount" TEXT)'
         ]
+        assert all(cursor.closed for cursor in connection.cursors)
+        assert all(cursor.close_calls == 1 for cursor in connection.cursors)
 
 
 @pytest.mark.parametrize("case_name", _DATABASE_CASE_NAMES, ids=str)
@@ -364,14 +441,16 @@ def test_database_execute_commits_and_closes_outside_transactions(
     else:
         fixture = _postgres_fixture(connector_case)
         connection = fixture.connection_factory.connections[-1]
-        assert connection.cursor_value.calls == [
+        assert _recorded_calls(connection) == [
             RecordedSqlCall(
                 "UPDATE public.orders SET amount = %s WHERE id = %s",
                 ("2.00", "a"),
                 "execute",
             )
         ]
-        assert connection.cursor_value.rowcount_reads == 2
+        assert connection.cursors[0].rowcount_reads == 2
+        assert all(cursor.closed for cursor in connection.cursors)
+        assert all(cursor.close_calls == 1 for cursor in connection.cursors)
         assert connection.commits == 1
         assert connection.rollbacks == 0
         assert connection.closed
@@ -398,6 +477,8 @@ def test_database_transactions_defer_close_until_commit(case_name: str) -> None:
         connection = fixture.connection_factory.connections[-1]
         assert connection.commits == 0
         assert not connection.closed
+        assert all(cursor.closed for cursor in connection.cursors)
+        assert all(cursor.close_calls == 1 for cursor in connection.cursors)
 
     connector.commit()
 
@@ -410,6 +491,8 @@ def test_database_transactions_defer_close_until_commit(case_name: str) -> None:
         assert connection.rollbacks == 0
         assert connection.closed
         assert connection.close_calls == 1
+        assert all(cursor.closed for cursor in connection.cursors)
+        assert all(cursor.close_calls == 1 for cursor in connection.cursors)
 
 
 @pytest.mark.parametrize("case_name", _DATABASE_CASE_NAMES, ids=str)
@@ -439,6 +522,8 @@ def test_database_transactions_rollback_and_close_on_abort(case_name: str) -> No
         assert connection.rollbacks == 1
         assert connection.closed
         assert connection.close_calls == 1
+        assert all(cursor.closed for cursor in connection.cursors)
+        assert all(cursor.close_calls == 1 for cursor in connection.cursors)
 
 
 @pytest.mark.parametrize("case_name", _DATABASE_CASE_NAMES, ids=str)
@@ -525,7 +610,9 @@ def test_postgres_fixture_never_opens_an_external_connection() -> None:
 
 
 def test_postgres_authentication_failures_are_stable_and_safe() -> None:
-    raw_failure = RuntimeError("recorded authentication rejection")
+    raw_failure = RuntimeError(
+        "recorded authentication rejection for fixture-password"
+    )
     factory = RecordingPostgresFactory(connection_failure=raw_failure)
     connector = PostgresConnector(connection_factory=factory)
     uri = TableURI("postgres://fixture.local/analytics")
@@ -540,7 +627,7 @@ def test_postgres_authentication_failures_are_stable_and_safe() -> None:
 
     assert raised.value.code is ConnectorErrorCode.AUTHENTICATION
     assert raised.value.message == "PostgreSQL connection failed"
-    assert raised.value.safe_details == {"reason": "recorded authentication rejection"}
+    assert "authentication rejection" in raised.value.safe_details["reason"]
     assert_error_is_safe(raised.value, forbidden_values=("fixture-password",))
     assert factory.calls == [
         {
@@ -553,7 +640,7 @@ def test_postgres_authentication_failures_are_stable_and_safe() -> None:
 
 
 def test_postgres_execution_failures_are_stable_and_close_connections() -> None:
-    raw_failure = RuntimeError("recorded cursor rejection")
+    raw_failure = RuntimeError("recorded cursor rejection for fixture-password")
     factory = RecordingPostgresFactory(execution_failure=raw_failure)
     connector = PostgresConnector(connection_factory=factory)
     request = PostgresTableReadRequest(
@@ -567,42 +654,46 @@ def test_postgres_execution_failures_are_stable_and_close_connections() -> None:
 
     assert raised.value.code is ConnectorErrorCode.EXECUTION_FAILED
     assert raised.value.message == "PostgreSQL read failed"
-    assert raised.value.safe_details == {"reason": "recorded cursor rejection"}
+    assert "cursor rejection" in raised.value.safe_details["reason"]
     assert_error_is_safe(raised.value, forbidden_values=("fixture-password",))
     connection = factory.connections[-1]
-    assert connection.cursor_value.calls[0].statement == (
+    assert connection.cursors[0].calls[0].statement == (
         "SELECT id, amount FROM orders"
     )
     assert connection.closed
+    assert all(cursor.closed for cursor in connection.cursors)
+    assert all(cursor.close_calls == 1 for cursor in connection.cursors)
 
 
 def test_sqlite_execution_failures_are_stable_and_close_the_database(
     isolated_universal_fixture_bundle: UniversalFixtureBundle,
 ) -> None:
     connector_case = _database_case_with("table.read.arrow", "sqlite")
+    factory = _RecordingSQLiteFactory()
+    connector = SQLiteConnector(connection_factory=factory)
     request = SQLiteTableReadRequest(
         connector_case.table_uri,
         options=SQLiteReadOptions(table="missing_orders"),
     )
 
     with pytest.raises(ConnectorError) as raised:
-        connector_case.connector.read_arrow(request)
+        connector.read_arrow(request)
 
     assert raised.value.code is ConnectorErrorCode.EXECUTION_FAILED
     assert raised.value.message == "SQLite read failed"
     assert "no such table" in raised.value.safe_details["reason"]
     assert_error_is_safe(raised.value)
-    connection = sqlite3.connect(isolated_universal_fixture_bundle.sqlite_path)
-    try:
-        assert connection.execute("SELECT count(*) FROM orders").fetchone()[0] == 2
-    finally:
-        connection.close()
+    assert len(factory.connections) == 1
+    assert factory.connections[0].close_calls == 1
 
 
-def test_postgres_recording_dbapi_fails_closed_on_unexpected_sql_and_close_use() -> None:
+def test_postgres_recording_dbapi_returns_distinct_cursors_and_fails_closed() -> None:
     factory = RecordingPostgresFactory()
     connection = factory(host="fixture.local", dbname="analytics")
     cursor = connection.cursor()
+    second_cursor = connection.cursor()
+
+    assert second_cursor is not cursor
 
     with pytest.raises(AssertionError, match="unexpected recorded SQL"):
         cursor.execute("DELETE FROM public.orders", ())
@@ -613,6 +704,7 @@ def test_postgres_recording_dbapi_fails_closed_on_unexpected_sql_and_close_use()
     with pytest.raises(AssertionError, match="closed cursor"):
         cursor.fetchmany(1)
 
+    second_cursor.close()
     connection.close()
     with pytest.raises(AssertionError, match="closed connection"):
         connection.commit()

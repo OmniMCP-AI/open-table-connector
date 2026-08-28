@@ -98,6 +98,28 @@ def _rows_to_arrow(description: Any, rows: list[tuple[Any, ...]]) -> pa.Table:
     return pa.Table.from_arrays(columns, names=names)
 
 
+def _safe_provider_reason(
+    exc: BaseException,
+    connect_kwargs: Mapping[str, Any],
+) -> str:
+    reason = str(exc)
+    password = connect_kwargs.get("password")
+    if password is not None:
+        secret = str(password)
+        if secret:
+            reason = reason.replace(secret, "[REDACTED]")
+    return reason
+
+
+def _close_cursor(cursor: Any | None) -> None:
+    if cursor is None:
+        return
+    try:
+        cursor.close()
+    except Exception:
+        pass
+
+
 class PostgresConnector(
     URIResolver,
     TableInspector,
@@ -161,12 +183,17 @@ class PostgresConnector(
         try:
             return factory(**resource.connect_kwargs)
         except Exception as exc:
-            raise ConnectorError(ConnectorErrorCode.AUTHENTICATION, "PostgreSQL connection failed", {"reason": str(exc)}) from None
+            raise ConnectorError(
+                ConnectorErrorCode.AUTHENTICATION,
+                "PostgreSQL connection failed",
+                {"reason": _safe_provider_reason(exc, resource.connect_kwargs)},
+            ) from None
 
     def _read(self, request: PostgresTableReadRequest) -> tuple[pa.Table, str, PostgresReadOptions]:
         resolved = self.resolve(request.uri, ResolveContext(resource_limits=request.resource_limits, credentials=request.credentials))
         resource: ResolvedPostgres = resolved.resource
         connection = self._transaction_connection or self._connect(resource)
+        cursor = None
         try:
             cursor = connection.cursor()
             options = request.options
@@ -185,8 +212,13 @@ class PostgresConnector(
         except ConnectorError:
             raise
         except Exception as exc:
-            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "PostgreSQL read failed", {"reason": str(exc)}) from None
+            raise ConnectorError(
+                ConnectorErrorCode.EXECUTION_FAILED,
+                "PostgreSQL read failed",
+                {"reason": _safe_provider_reason(exc, resource.connect_kwargs)},
+            ) from None
         finally:
+            _close_cursor(cursor)
             if connection is not self._transaction_connection:
                 try:
                     connection.close()
@@ -215,6 +247,7 @@ class PostgresConnector(
     def execute(self, request: ExecutionRequest) -> ExecutionResult:
         resolved = self.resolve(request.uri, ResolveContext(resource_limits=request.resource_limits))
         connection = self._transaction_connection or self._connect(resolved.resource)
+        cursor = None
         try:
             cursor = connection.cursor()
             cursor.execute(request.statement, request.parameters)
@@ -225,8 +258,13 @@ class PostgresConnector(
         except ConnectorError:
             raise
         except Exception as exc:
-            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "PostgreSQL statement failed", {"reason": str(exc)}) from None
+            raise ConnectorError(
+                ConnectorErrorCode.EXECUTION_FAILED,
+                "PostgreSQL statement failed",
+                {"reason": _safe_provider_reason(exc, resolved.resource.connect_kwargs)},
+            ) from None
         finally:
+            _close_cursor(cursor)
             if connection is not self._transaction_connection:
                 try:
                     connection.close()
@@ -242,6 +280,7 @@ class PostgresConnector(
             raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "cannot write a frame without columns", {})
         resolved = self.resolve(request.uri, ResolveContext())
         connection = self._transaction_connection or self._connect(resolved.resource)
+        cursors: list[Any] = []
         quoted_table = self._quote(request.table)
         columns = tuple(request.frame.columns)
         quoted_columns = ", ".join(self._quote(column) for column in columns)
@@ -252,14 +291,25 @@ class PostgresConnector(
         placeholders = ", ".join("%s" for _ in columns)
         try:
             if request.if_exists == "replace":
-                connection.cursor().execute(f"DROP TABLE IF EXISTS {quoted_table}", ())
+                cursor = connection.cursor()
+                cursors.append(cursor)
+                cursor.execute(f"DROP TABLE IF EXISTS {quoted_table}", ())
             if request.if_exists in {"append", "replace"}:
-                connection.cursor().execute(f"CREATE TABLE IF NOT EXISTS {quoted_table} ({definitions})", ())
+                cursor = connection.cursor()
+                cursors.append(cursor)
+                cursor.execute(
+                    f"CREATE TABLE IF NOT EXISTS {quoted_table} ({definitions})",
+                    (),
+                )
             else:
-                connection.cursor().execute(f"CREATE TABLE {quoted_table} ({definitions})", ())
+                cursor = connection.cursor()
+                cursors.append(cursor)
+                cursor.execute(f"CREATE TABLE {quoted_table} ({definitions})", ())
             rows = [tuple(value for value in row) for row in request.frame.rows()]
             if rows:
-                connection.cursor().executemany(
+                cursor = connection.cursor()
+                cursors.append(cursor)
+                cursor.executemany(
                     f"INSERT INTO {quoted_table} ({quoted_columns}) VALUES ({placeholders})",
                     rows,
                 )
@@ -295,8 +345,14 @@ class PostgresConnector(
         except ConnectorError:
             raise
         except Exception as exc:
-            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "PostgreSQL table write failed", {"reason": str(exc)}) from None
+            raise ConnectorError(
+                ConnectorErrorCode.EXECUTION_FAILED,
+                "PostgreSQL table write failed",
+                {"reason": _safe_provider_reason(exc, resolved.resource.connect_kwargs)},
+            ) from None
         finally:
+            for cursor in cursors:
+                _close_cursor(cursor)
             if connection is not self._transaction_connection:
                 try:
                     connection.close()

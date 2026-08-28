@@ -266,10 +266,12 @@ def build_fixture_bundle(root: Path) -> UniversalFixtureBundle:
         "insert into orders values (?, ?)",
         [("a", "1.00"), ("b", None)],
     )
-    connection.execute('create table "main.table" (id text, amount text)')
+    connection.execute(
+        'create table "main.table" (default_id text, label text)'
+    )
     connection.executemany(
         'insert into "main.table" values (?, ?)',
-        [("a", "1.00"), ("b", None)],
+        [("default-a", "default resource")],
     )
     connection.commit()
     connection.close()
@@ -320,11 +322,13 @@ class RecordingPostgresCursor:
         self,
         rows: Iterable[tuple[Any, ...]],
         *,
+        default_rows: Iterable[tuple[Any, ...]],
         connection_is_closed: Callable[[], bool],
         execution_failure: BaseException | None = None,
     ) -> None:
         self._description = [("id",), ("amount",)]
         self._rows = [tuple(row) for row in rows]
+        self._default_rows = [tuple(row) for row in default_rows]
         self._remaining: list[tuple[Any, ...]] | None = None
         self._connection_is_closed = connection_is_closed
         self._execution_failure = execution_failure
@@ -359,7 +363,12 @@ class RecordingPostgresCursor:
         if self._execution_failure is not None:
             raise self._execution_failure
         if statement in _POSTGRES_SELECT_STATEMENTS:
-            rows = list(self._rows)
+            if statement == "SELECT * FROM public.table":
+                self._description = [("default_id",), ("label",)]
+                rows = list(self._default_rows)
+            else:
+                self._description = [("id",), ("amount",)]
+                rows = list(self._rows)
             if statement == "SELECT id, amount FROM orders WHERE id = %s":
                 if len(normalized_parameters) != 1:
                     raise AssertionError(
@@ -423,6 +432,7 @@ class RecordingPostgresConnection:
         self,
         rows: Iterable[tuple[Any, ...]],
         *,
+        default_rows: Iterable[tuple[Any, ...]],
         execution_failure: BaseException | None = None,
     ) -> None:
         self.commits = 0
@@ -430,11 +440,10 @@ class RecordingPostgresConnection:
         self.cursor_calls = 0
         self.close_calls = 0
         self.closed = False
-        self.cursor_value = RecordingPostgresCursor(
-            rows,
-            connection_is_closed=lambda: self.closed,
-            execution_failure=execution_failure,
-        )
+        self._rows = [tuple(row) for row in rows]
+        self._default_rows = [tuple(row) for row in default_rows]
+        self._execution_failure = execution_failure
+        self.cursors: list[RecordingPostgresCursor] = []
 
     def _ensure_open(self) -> None:
         if self.closed:
@@ -443,7 +452,14 @@ class RecordingPostgresConnection:
     def cursor(self) -> RecordingPostgresCursor:
         self._ensure_open()
         self.cursor_calls += 1
-        return self.cursor_value
+        cursor = RecordingPostgresCursor(
+            self._rows,
+            default_rows=self._default_rows,
+            connection_is_closed=lambda: self.closed,
+            execution_failure=self._execution_failure,
+        )
+        self.cursors.append(cursor)
+        return cursor
 
     def commit(self) -> None:
         self._ensure_open()
@@ -464,10 +480,14 @@ class RecordingPostgresFactory:
         self,
         rows: Iterable[tuple[Any, ...]] = (("a", "1.00"), ("b", None)),
         *,
+        default_rows: Iterable[tuple[Any, ...]] = (
+            ("default-a", "default resource"),
+        ),
         connection_failure: BaseException | None = None,
         execution_failure: BaseException | None = None,
     ) -> None:
         self._rows = [tuple(row) for row in rows]
+        self._default_rows = [tuple(row) for row in default_rows]
         self._connection_failure = connection_failure
         self._execution_failure = execution_failure
         self.calls: list[dict[str, Any]] = []
@@ -496,6 +516,7 @@ class RecordingPostgresFactory:
             raise self._connection_failure
         connection = RecordingPostgresConnection(
             self._rows,
+            default_rows=self._default_rows,
             execution_failure=self._execution_failure,
         )
         self.connections.append(connection)
