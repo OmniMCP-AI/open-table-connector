@@ -1,4 +1,4 @@
-# Open Connectors CLI
+# Open Table Connector CLI
 
 `otc` and `open-table-connector` are the canonical command names for the Open Table Connector CLI.
 

@@ -1,6 +1,6 @@
-# Open Connectors
+# Open Table Connector
 
-Open Connectors are independently released, framework-neutral integrations
+Open Table Connector packages are independently released, framework-neutral integrations
 for physical data systems. This workspace is intentionally independent of
 FinClaw and Open Time Series.
 
