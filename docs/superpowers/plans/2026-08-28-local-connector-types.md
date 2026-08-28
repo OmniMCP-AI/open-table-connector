@@ -304,7 +304,7 @@ git commit -m "feat: preserve local files as format facade"
 - Consumes: concrete connector classes and manifests from Task 2, `LocalFilesConnector` from Task 3, and the existing `ConnectorAdapter` protocol.
 - Produces: `CsvAdapter`, `ExcelAdapter`, `MarkdownAdapter`, and the compatibility `LocalAdapter`; `build_adapters()` registers all four local identities; `csv://`, `excel://`, and `md://` are routable CLI endpoints.
 
-- [ ] **Step 1: Write failing registry and CLI tests**
+- [x] **Step 1: Write failing registry and CLI tests**
 
 ```python
 def test_cli_lists_concrete_local_connector_types() -> None:
@@ -356,7 +356,7 @@ Run: `uv run pytest packages/cli/tests/test_local_format_adapters.py packages/cl
 
 Expected: FAIL because the CLI currently registers only `local_files`, treats only paths/stdin as local conversion destinations, and does not depend on the local-files distribution.
 
-- [ ] **Step 2: Implement concrete adapters and registry routing**
+- [x] **Step 2: Implement concrete adapters and registry routing**
 
 Add the local-files workspace dependency to `packages/cli/pyproject.toml`. Each explicit adapter converts its endpoint URI into an absolute `Path`, builds its format-specific request, delegates reads/inspection to the corresponding connector, and uses the neutral local writer for conversion targets. Add `FormatName.EXCEL`, map `.xlsx` and `excel://` to it, and implement `write_excel(table, path, sheet)` in `excel_writer.py` with openpyxl: create one workbook, write headers and rows to the selected sheet (default `Sheet1`), save it, and map file errors to the existing execution error. The compatibility `LocalAdapter` continues to own `file` and bare-path routing.
 
@@ -364,13 +364,13 @@ Make `_is_local` recognize `file`, `csv`, `excel`, and `md` endpoints for `conve
 
 Register explicit adapters before the compatibility adapter so scheme routing is deterministic. Ensure `https` provider host restrictions are unaffected and `list` emits the concrete local manifests.
 
-- [ ] **Step 3: Run CLI tests and smoke commands**
+- [x] **Step 3: Run CLI tests and smoke commands**
 
 Run: `uv run pytest packages/cli/tests/test_local_format_adapters.py packages/cli/tests/test_registry.py packages/cli/tests/test_pipeline.py packages/cli/tests/test_commands.py packages/cli/tests/test_cli_e2e.py -q && uv run otc --help && uv run otc list --output-format jsonl`
 
 Expected: PASS; list output contains `csv`, `excel`, `md`, and `local_files`, explicit reads route to the concrete adapters, and existing provider CLI behavior remains green.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add packages/cli packages/cli/pyproject.toml
