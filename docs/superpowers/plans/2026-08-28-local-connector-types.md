@@ -468,7 +468,7 @@ git commit -m "test: cover concrete local connector types"
 - Consumes: all completed connector, facade, CLI, and conformance work.
 - Produces: a locked, buildable workspace with the four local connector identities and no CLI-to-neutral dependency cycle.
 
-- [ ] **Step 1: Refresh and validate the lockfile**
+- [x] **Step 1: Refresh and validate the lockfile**
 
 Run:
 
@@ -479,7 +479,7 @@ uv lock --check
 
 Expected: the environment installs the existing local-files distribution and the lockfile reports no drift.
 
-- [ ] **Step 2: Run focused and full verification**
+- [x] **Step 2: Run focused and full verification**
 
 Run:
 
@@ -493,7 +493,7 @@ git diff --check
 
 Expected: all tests pass, compilation succeeds, and `git diff --check` is silent.
 
-- [ ] **Step 3: Build every workspace package and run CLI smoke checks**
+- [x] **Step 3: Build every workspace package and run CLI smoke checks**
 
 Run:
 
@@ -506,7 +506,7 @@ uv run open-table-connector --help
 
 Expected: every package builds successfully; list output contains `csv`, `excel`, `md`, and `local_files`; all help commands exit zero.
 
-- [ ] **Step 4: Review tracked old-name and compatibility surfaces**
+- [x] **Step 4: Review tracked old-name and compatibility surfaces**
 
 Run:
 
