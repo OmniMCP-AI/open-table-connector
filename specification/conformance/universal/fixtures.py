@@ -297,68 +297,214 @@ class RecordedSqlCall:
     kind: str
 
 
+_POSTGRES_SELECT_STATEMENTS = {
+    "SELECT id, amount FROM orders",
+    "SELECT id, amount FROM orders WHERE id = %s",
+    "SELECT * FROM public.orders",
+    "SELECT * FROM public.table",
+}
+_POSTGRES_EXECUTE_STATEMENTS = {
+    "UPDATE public.orders SET amount = %s WHERE id = %s",
+    'DROP TABLE IF EXISTS "public"."orders"',
+    'CREATE TABLE IF NOT EXISTS "public"."orders" '
+    '("id" TEXT, "amount" TEXT)',
+    'CREATE TABLE "public"."orders" ("id" TEXT, "amount" TEXT)',
+}
+_POSTGRES_EXECUTEMANY_STATEMENTS = {
+    'INSERT INTO "public"."orders" ("id", "amount") VALUES (%s, %s)',
+}
+
+
 class RecordingPostgresCursor:
-    def __init__(self, rows: Iterable[tuple[Any, ...]]) -> None:
-        self.description = [("id",), ("amount",)]
+    def __init__(
+        self,
+        rows: Iterable[tuple[Any, ...]],
+        *,
+        connection_is_closed: Callable[[], bool],
+        execution_failure: BaseException | None = None,
+    ) -> None:
+        self._description = [("id",), ("amount",)]
         self._rows = [tuple(row) for row in rows]
-        self._remaining = list(self._rows)
+        self._remaining: list[tuple[Any, ...]] | None = None
+        self._connection_is_closed = connection_is_closed
+        self._execution_failure = execution_failure
         self.calls: list[RecordedSqlCall] = []
-        self._rowcount = 0
+        self.fetchmany_sizes: list[int] = []
+        self.description_reads = 0
+        self.rowcount_reads = 0
+        self.close_calls = 0
+        self.closed = False
+        self._rowcount = -1
+
+    def _ensure_open(self) -> None:
+        if self.closed:
+            raise AssertionError("recorded DB-API used a closed cursor")
+        if self._connection_is_closed():
+            raise AssertionError("recorded DB-API used a closed connection")
+
+    @property
+    def description(self) -> list[tuple[str, ...]]:
+        self._ensure_open()
+        self.description_reads += 1
+        return list(self._description)
 
     def execute(self, statement: str, parameters: tuple[Any, ...]) -> None:
-        self.calls.append(RecordedSqlCall(statement, tuple(parameters), "execute"))
-        if statement.lstrip().casefold().startswith(("select", "with")):
-            self._remaining = list(self._rows)
-            self._rowcount = len(self._rows)
-        else:
-            self._rowcount = 1
+        self._ensure_open()
+        normalized_parameters = tuple(parameters)
+        self.calls.append(
+            RecordedSqlCall(statement, normalized_parameters, "execute")
+        )
+        if statement not in _POSTGRES_SELECT_STATEMENTS | _POSTGRES_EXECUTE_STATEMENTS:
+            raise AssertionError(f"unexpected recorded SQL: {statement!r}")
+        if self._execution_failure is not None:
+            raise self._execution_failure
+        if statement in _POSTGRES_SELECT_STATEMENTS:
+            rows = list(self._rows)
+            if statement == "SELECT id, amount FROM orders WHERE id = %s":
+                if len(normalized_parameters) != 1:
+                    raise AssertionError(
+                        "recorded filtered SELECT requires exactly one parameter"
+                    )
+                rows = [row for row in rows if row[0] == normalized_parameters[0]]
+            elif normalized_parameters:
+                raise AssertionError(
+                    f"recorded SELECT did not expect parameters: {statement!r}"
+                )
+            self._remaining = rows
+            self._rowcount = len(rows)
+            return
+        if normalized_parameters and statement != (
+            "UPDATE public.orders SET amount = %s WHERE id = %s"
+        ):
+            raise AssertionError(
+                f"recorded statement did not expect parameters: {statement!r}"
+            )
+        if statement == 'CREATE TABLE "public"."orders" ("id" TEXT, "amount" TEXT)':
+            raise RuntimeError('relation "public.orders" already exists')
+        self._remaining = None
+        self._rowcount = 1
 
     def executemany(self, statement: str, rows: Iterable[tuple[Any, ...]]) -> None:
-        materialized = [tuple(row) for row in rows]
-        self.calls.append(RecordedSqlCall(statement, tuple(materialized), "executemany"))
+        self._ensure_open()
+        materialized = tuple(tuple(row) for row in rows)
+        self.calls.append(RecordedSqlCall(statement, materialized, "executemany"))
+        if statement not in _POSTGRES_EXECUTEMANY_STATEMENTS:
+            raise AssertionError(f"unexpected recorded SQL: {statement!r}")
+        if self._execution_failure is not None:
+            raise self._execution_failure
+        self._remaining = None
         self._rowcount = len(materialized)
 
     def fetchmany(self, size: int) -> list[tuple[Any, ...]]:
+        self._ensure_open()
+        if self._remaining is None:
+            raise AssertionError("recorded fetchmany requires a preceding SELECT")
+        if not isinstance(size, int) or size <= 0 or size > 1000:
+            raise AssertionError(f"unexpected recorded fetchmany size: {size!r}")
+        self.fetchmany_sizes.append(size)
         batch = self._remaining[:size]
         self._remaining = self._remaining[size:]
         return batch
 
     @property
     def rowcount(self) -> int:
+        self._ensure_open()
+        self.rowcount_reads += 1
         return self._rowcount
+
+    def close(self) -> None:
+        self._ensure_open()
+        self.close_calls += 1
+        self.closed = True
 
 
 class RecordingPostgresConnection:
-    def __init__(self, rows: Iterable[tuple[Any, ...]]) -> None:
-        self.cursor_value = RecordingPostgresCursor(rows)
+    def __init__(
+        self,
+        rows: Iterable[tuple[Any, ...]],
+        *,
+        execution_failure: BaseException | None = None,
+    ) -> None:
         self.commits = 0
         self.rollbacks = 0
+        self.cursor_calls = 0
+        self.close_calls = 0
         self.closed = False
+        self.cursor_value = RecordingPostgresCursor(
+            rows,
+            connection_is_closed=lambda: self.closed,
+            execution_failure=execution_failure,
+        )
+
+    def _ensure_open(self) -> None:
+        if self.closed:
+            raise AssertionError("recorded DB-API used a closed connection")
 
     def cursor(self) -> RecordingPostgresCursor:
+        self._ensure_open()
+        self.cursor_calls += 1
         return self.cursor_value
 
     def commit(self) -> None:
+        self._ensure_open()
         self.commits += 1
 
     def rollback(self) -> None:
+        self._ensure_open()
         self.rollbacks += 1
 
     def close(self) -> None:
+        self._ensure_open()
+        self.close_calls += 1
         self.closed = True
 
 
 class RecordingPostgresFactory:
-    def __init__(self, rows: Iterable[tuple[Any, ...]] = (("a", "1.00"), ("b", None))) -> None:
+    def __init__(
+        self,
+        rows: Iterable[tuple[Any, ...]] = (("a", "1.00"), ("b", None)),
+        *,
+        connection_failure: BaseException | None = None,
+        execution_failure: BaseException | None = None,
+    ) -> None:
         self._rows = [tuple(row) for row in rows]
+        self._connection_failure = connection_failure
+        self._execution_failure = execution_failure
         self.calls: list[dict[str, Any]] = []
         self.connections: list[RecordingPostgresConnection] = []
 
     def __call__(self, **kwargs: Any) -> RecordingPostgresConnection:
-        self.calls.append(dict(kwargs))
-        connection = RecordingPostgresConnection(self._rows)
+        recorded_kwargs = dict(kwargs)
+        self.calls.append(recorded_kwargs)
+        unexpected_keys = set(recorded_kwargs) - {
+            "host",
+            "port",
+            "dbname",
+            "user",
+            "password",
+            "sslmode",
+        }
+        if unexpected_keys:
+            raise AssertionError(
+                f"unexpected recorded connection arguments: {sorted(unexpected_keys)!r}"
+            )
+        if recorded_kwargs.get("host") != "fixture.local":
+            raise AssertionError(
+                f"recording Postgres factory refuses external host: {recorded_kwargs.get('host')!r}"
+            )
+        if self._connection_failure is not None:
+            raise self._connection_failure
+        connection = RecordingPostgresConnection(
+            self._rows,
+            execution_failure=self._execution_failure,
+        )
         self.connections.append(connection)
         return connection
+
+
+@dataclass(frozen=True)
+class DatabaseProviderFixture:
+    connection_factory: RecordingPostgresFactory
 
 
 @dataclass(frozen=True)

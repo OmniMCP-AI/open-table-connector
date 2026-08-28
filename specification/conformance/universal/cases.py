@@ -82,6 +82,7 @@ from open_connectors.sqlite import (
 )
 
 from .fixtures import (
+    DatabaseProviderFixture,
     HttpProviderFixture,
     ProcessProviderFixture,
     ProviderFailureProbe,
@@ -146,6 +147,7 @@ class ConnectorCase:
     capability_bindings: Mapping[str, CapabilityBinding] = field(default_factory=dict)
     http_fixture: HttpProviderFixture | None = None
     process_fixture: ProcessProviderFixture | None = None
+    database_fixture: DatabaseProviderFixture | None = None
 
     def __post_init__(self) -> None:
         connector_identity = getattr(self.connector, "identity", None)
@@ -794,6 +796,11 @@ def _postgres_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
     factory = RecordingPostgresFactory()
     connector = PostgresConnector(connection_factory=factory)
     table_uri = TableURI("postgres://fixture.local/analytics")
+    credentials = {
+        "user": "fixture-user",
+        "password": "fixture-password",
+        "sslmode": "require",
+    }
 
     def make_read_request(resource_limits: ResourceLimits) -> PostgresTableReadRequest:
         return PostgresTableReadRequest(
@@ -803,6 +810,7 @@ def _postgres_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
                 query="SELECT id, amount FROM orders",
                 key_fields=("id",),
             ),
+            credentials=credentials,
         )
 
     def make_inspect_request(resource_limits: ResourceLimits) -> InspectRequest:
@@ -869,6 +877,7 @@ def _postgres_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
         inspect=capability_bindings["table.inspect"].inspect,
         write=capability_bindings["table.write"].write,
         capability_bindings=capability_bindings,
+        database_fixture=DatabaseProviderFixture(connection_factory=factory),
     )
 
 
