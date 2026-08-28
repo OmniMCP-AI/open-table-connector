@@ -61,6 +61,49 @@ def _fixture_adapter(
     )
 
 
+def _assert_full_receipt_wire(
+    actual: object,
+    *,
+    connector_id: str,
+    capability_id: str,
+    operation_id: str,
+    safe_uri: str,
+    source_revision: str,
+    vendor_receipt_ref: str,
+) -> None:
+    assert actual == {
+        "contract_version": "1.0",
+        "connector": {
+            "connector_id": connector_id,
+            "connector_version": "1.0.0",
+            "contract_version": "1.0",
+        },
+        "capability": {
+            "capability_id": capability_id,
+            "capability_version": "1.0",
+        },
+        "operation_id": operation_id,
+        "safe_uri": {"value": safe_uri},
+        "mode": "base",
+        "source_revision": source_revision,
+        "schema_fingerprint": (
+            "0afe7a8a0c00e61680aa9e698490be97b75ab686535aab8f19870bdd5c209527"
+        ),
+        "content_fingerprint": (
+            "6da705858d0c6d7797bce085687db86659938e2db56edd2e2d1e314743e083b6"
+        ),
+        "coordinate_convention": {
+            "mode": "base",
+            "record_id_field": None,
+            "key_fields": [],
+            "ordinal_snapshot_id": source_revision,
+        },
+        "row_count": 2,
+        "batch_count": 1,
+        "vendor_receipt_ref": vendor_receipt_ref,
+    }
+
+
 def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() -> None:
     bridge = build_cli_registry_bridge()
 
@@ -423,6 +466,50 @@ def test_cli_convert_explicit_format_overrides_allow_extensionless_paths(tmp_pat
     )
 
 
+def test_cli_convert_preserves_complete_source_receipt_wire(tmp_path) -> None:
+    source = _fixture_adapter(
+        connector_id="convert_source_fixture",
+        schemes=("convert-source",),
+        vendor_receipt_ref="convert-source-fixture-receipt",
+    )
+    destination = tmp_path / "converted.json"
+
+    result = run_cli_command(
+        _args(
+            "convert",
+            from_value="convert-source://fixture/orders",
+            to_value=str(destination),
+            output_format="json",
+        ),
+        ConnectorRegistry([source]),
+    )
+
+    payload = strict_json_loads(result.stdout)
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert set(payload) == {
+        "status",
+        "rows_read",
+        "rows",
+        "rows_written",
+        "source_receipt",
+        "receipt",
+    }
+    _assert_full_receipt_wire(
+        payload["source_receipt"],
+        connector_id="convert_source_fixture",
+        capability_id="table.read.arrow",
+        operation_id="convert_source_fixture-read-operation",
+        safe_uri="convert-source://fixture/orders",
+        source_revision="convert_source_fixture-read-revision",
+        vendor_receipt_ref="convert-source-fixture-receipt",
+    )
+    assert payload["receipt"] == payload["source_receipt"]
+    assert strict_json_loads(destination.read_text(encoding="utf-8")) == list(
+        _TABLE_ROWS
+    )
+
+
 def test_cli_import_preserves_exact_source_and_destination_receipts() -> None:
     source = _fixture_adapter(
         connector_id="source_fixture",
@@ -461,69 +548,25 @@ def test_cli_import_preserves_exact_source_and_destination_receipts() -> None:
         "receipt",
         "destination_receipt",
     }
-    assert payload["source_receipt"] == {
-        "contract_version": "1.0",
-        "connector": {
-            "connector_id": "source_fixture",
-            "connector_version": "1.0.0",
-            "contract_version": "1.0",
-        },
-        "capability": {
-            "capability_id": "table.read.arrow",
-            "capability_version": "1.0",
-        },
-        "operation_id": "source_fixture-read-operation",
-        "safe_uri": {"value": "source://fixture/orders"},
-        "mode": "base",
-        "source_revision": "source_fixture-read-revision",
-        "schema_fingerprint": (
-            "0afe7a8a0c00e61680aa9e698490be97b75ab686535aab8f19870bdd5c209527"
-        ),
-        "content_fingerprint": (
-            "6da705858d0c6d7797bce085687db86659938e2db56edd2e2d1e314743e083b6"
-        ),
-        "coordinate_convention": {
-            "mode": "base",
-            "record_id_field": None,
-            "key_fields": [],
-            "ordinal_snapshot_id": "source_fixture-read-revision",
-        },
-        "row_count": 2,
-        "batch_count": 1,
-        "vendor_receipt_ref": "source-fixture-receipt",
-    }
+    _assert_full_receipt_wire(
+        payload["source_receipt"],
+        connector_id="source_fixture",
+        capability_id="table.read.arrow",
+        operation_id="source_fixture-read-operation",
+        safe_uri="source://fixture/orders",
+        source_revision="source_fixture-read-revision",
+        vendor_receipt_ref="source-fixture-receipt",
+    )
     assert payload["receipt"] == payload["source_receipt"]
-    assert payload["destination_receipt"] == {
-        "contract_version": "1.0",
-        "connector": {
-            "connector_id": "destination_fixture",
-            "connector_version": "1.0.0",
-            "contract_version": "1.0",
-        },
-        "capability": {
-            "capability_id": "table.write",
-            "capability_version": "1.0",
-        },
-        "operation_id": "destination_fixture-write-operation",
-        "safe_uri": {"value": "destination://fixture/archive"},
-        "mode": "base",
-        "source_revision": "destination_fixture-write-revision",
-        "schema_fingerprint": (
-            "0afe7a8a0c00e61680aa9e698490be97b75ab686535aab8f19870bdd5c209527"
-        ),
-        "content_fingerprint": (
-            "6da705858d0c6d7797bce085687db86659938e2db56edd2e2d1e314743e083b6"
-        ),
-        "coordinate_convention": {
-            "mode": "base",
-            "record_id_field": None,
-            "key_fields": [],
-            "ordinal_snapshot_id": "destination_fixture-write-revision",
-        },
-        "row_count": 2,
-        "batch_count": 1,
-        "vendor_receipt_ref": "destination-fixture-receipt",
-    }
+    _assert_full_receipt_wire(
+        payload["destination_receipt"],
+        connector_id="destination_fixture",
+        capability_id="table.write",
+        operation_id="destination_fixture-write-operation",
+        safe_uri="destination://fixture/archive",
+        source_revision="destination_fixture-write-revision",
+        vendor_receipt_ref="destination-fixture-receipt",
+    )
     assert source.read_calls[0].endpoint.raw == "source://fixture/orders"
     assert destination.preflight_calls[0].endpoint.raw == "destination://fixture/archive"
     assert destination.write_calls[0].endpoint.raw == "destination://fixture/archive"
