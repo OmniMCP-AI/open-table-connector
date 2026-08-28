@@ -30,3 +30,10 @@ def test_unsupported_content_fails_with_structured_error(tmp_path: Path) -> None
         detect_format(source)
 
     assert raised.value.code is ConnectorErrorCode.INVALID_URI
+
+
+def test_probe_detects_markdown(tmp_path: Path) -> None:
+    source = tmp_path / "orders.md"
+    source.write_text("| id |\n| --- |\n| 1 |\n", encoding="utf-8")
+
+    assert detect_format(source) is LocalFormat.MARKDOWN

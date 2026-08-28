@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-import re
 
 from open_table_connector.contract.errors import ConnectorError, ConnectorErrorCode
+from .markdown_reader import is_markdown_payload
 
 
 class LocalFormat(StrEnum):
     CSV = "csv"
     EXCEL = "excel"
+    MARKDOWN = "md"
 
 
 XLSX_ZIP_SIGNATURE = b"PK\x03\x04"
@@ -41,8 +42,10 @@ def detect_format(path: Path) -> LocalFormat:
         for delimiter in (",", "\t", ";"):
             if delimiter in lines[0] and lines[0].count(delimiter) == lines[1].count(delimiter):
                 return LocalFormat.CSV
+        if is_markdown_payload(text):
+            return LocalFormat.MARKDOWN
     raise ConnectorError(
         ConnectorErrorCode.INVALID_URI,
-        "local file has no supported CSV or XLSX signature",
+        "local file has no supported CSV, Markdown, or XLSX signature",
         {"path": str(path), "suffix": path.suffix.casefold()},
     )
