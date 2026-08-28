@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from open_connectors.cli.model import FormatName, parse_endpoint, parse_format
+from open_table_connector.cli.model import FormatName, parse_endpoint, parse_format
 
 
 def test_parse_endpoint_keeps_connector_uri_opaque() -> None:

@@ -4,13 +4,13 @@ Status: complete
 
 ## Changed files
 
-- `packages/maybesheet/src/open_connectors/maybesheet/process.py`
+- `packages/maybesheet/src/open_table_connector/maybesheet/process.py`
   - Added optional stdin to `ProcessClient` transport and passed it to `subprocess.run` as input.
-- `packages/maybesheet/src/open_connectors/maybesheet/connector.py`
+- `packages/maybesheet/src/open_table_connector/maybesheet/connector.py`
   - Implemented append-only `TableWriteRequest` handling with compact JSONL stdin, the specified `mbs db-table write` argv, safe policy validation, process error mapping, and neutral write receipts.
-- `packages/maybesheet/src/open_connectors/maybesheet/identity.py`
+- `packages/maybesheet/src/open_table_connector/maybesheet/identity.py`
   - Added `TABLE_WRITE_CAPABILITY`.
-- `packages/maybesheet/src/open_connectors/maybesheet/__init__.py`
+- `packages/maybesheet/src/open_table_connector/maybesheet/__init__.py`
   - Exported `TABLE_WRITE_CAPABILITY`.
 - `packages/maybesheet/tests/test_connector.py`
   - Added writer, policy rejection, and stdin transport coverage; updated the process test double for the compatible stdin parameter.
@@ -42,7 +42,7 @@ The generic exception handlers in `MaybeSheetConnector.write` and `_read` copied
 
 ## Changed files
 
-- `packages/maybesheet/src/open_connectors/maybesheet/connector.py`
+- `packages/maybesheet/src/open_table_connector/maybesheet/connector.py`
   - Replaced both raw exception messages with the fixed safe reason `unexpected process-client exception`, preserving `EXECUTION_FAILED` and unchanged `ConnectorError` propagation.
 - `packages/maybesheet/tests/test_connector.py`
   - Added read/write regression coverage using an exception containing an access token and asserting the token is absent from error details, wire output, and repr.
@@ -71,13 +71,13 @@ Status: complete
 
 ## Changed files
 
-- `packages/maybesheet/src/open_connectors/maybesheet/connector.py`
+- `packages/maybesheet/src/open_table_connector/maybesheet/connector.py`
   - Added a keyword-only optional `credentials` mapping to `write`, preserving one-argument `TableWriter` callers.
   - Forwarded the mapping only to `ProcessClient.run`; credentials remain absent from argv, stdin, receipt fields, and error details.
 - `packages/maybesheet/tests/test_connector.py`
   - Added explicit write-credential precedence and non-serialization assertions.
   - Extended the unexpected-process-error regression to exercise an explicit write credential and verify token-free error representations.
-- `packages/cli/src/open_connectors/cli/adapters.py`
+- `packages/cli/src/open_table_connector/cli/adapters.py`
   - Passed `options.token` to MaybeSheet writes as the credential-safe `access_token` mapping.
 - `packages/cli/tests/test_pipeline.py`
   - Added CLI import coverage proving the explicit token reaches the injected process and is absent from command, stdin, and destination receipt data.

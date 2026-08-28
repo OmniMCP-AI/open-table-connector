@@ -3,18 +3,18 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "open-connectors-conformance"
+name = "open-table-connector-conformance"
 version = "0.1.0"
 description = "Reusable conformance tests for neutral Connectors"
 requires-python = ">=3.11"
 dependencies = [
-  "open-connectors-contract==0.1.0",
+  "open-table-connector-contract==0.1.0",
 ]
 
 [tool.uv.sources]
-open-connectors-contract = { workspace = true }
+open-table-connector-contract = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["open_connectors.conformance*"]
+include = ["open_table_connector.conformance*"]
 namespaces = true

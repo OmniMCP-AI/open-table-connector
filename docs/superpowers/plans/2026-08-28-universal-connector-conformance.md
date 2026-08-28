@@ -6,7 +6,7 @@
 
 **Architecture:** Add a dedicated \`specification/conformance/universal/\` test package with a small case registry and fixture protocol. Shared assertions consume normalized connector cases; provider-specific fixture adapters own only deterministic setup and protocol details. The suite tests declared capabilities rather than forcing unsupported operations onto connectors that do not advertise them.
 
-**Tech Stack:** Python 3.12, pytest 9, PyArrow, Polars, temporary files/databases, recording transports/process clients, and the existing \`open_connectors.contract\` interfaces.
+**Tech Stack:** Python 3.12, pytest 9, PyArrow, Polars, temporary files/databases, recording transports/process clients, and the existing \`open_table_connector.contract\` interfaces.
 
 **Spec:** \`docs/superpowers/specs/2026-08-28-universal-connector-conformance-design.md\`
 

@@ -3,15 +3,15 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "open-connectors-sqlite"
+name = "open-table-connector-sqlite"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["open-connectors-contract==0.1.0", "polars>=1.0,<2", "pyarrow>=14,<20"]
+dependencies = ["open-table-connector-contract==0.1.0", "polars>=1.0,<2", "pyarrow>=14,<20"]
 
 [tool.uv.sources]
-open-connectors-contract = { workspace = true }
+open-table-connector-contract = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["open_connectors.sqlite*"]
+include = ["open_table_connector.sqlite*"]
 namespaces = true

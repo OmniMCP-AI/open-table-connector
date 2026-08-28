@@ -3,7 +3,7 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
-from open_connectors.contract import (
+from open_table_connector.contract import (
     ConnectorError,
     ConnectorErrorCode,
     InspectRequest,
@@ -11,8 +11,8 @@ from open_connectors.contract import (
     TableURI,
     TableWriteRequest,
 )
-from open_connectors.feishu_bitable import FeishuBitableConnector, FeishuBitableReadOptions, FeishuBitableTableReadRequest
-from open_connectors.feishu_bitable.connector import UrllibFeishuTransport
+from open_table_connector.feishu_bitable import FeishuBitableConnector, FeishuBitableReadOptions, FeishuBitableTableReadRequest
+from open_table_connector.feishu_bitable.connector import UrllibFeishuTransport
 
 
 class FakeTransport:
@@ -44,7 +44,7 @@ def test_feishu_transport_redacts_credentials_from_provider_errors(
         raise RuntimeError(f"provider rejected credential {credential}")
 
     monkeypatch.setattr(
-        "open_connectors.feishu_bitable.connector.urlopen",
+        "open_table_connector.feishu_bitable.connector.urlopen",
         fail_request,
     )
 

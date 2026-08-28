@@ -97,21 +97,21 @@ that invoke a CLI subprocess used an environment with
 
 `uv build --all-packages` reported successful sdist and wheel builds for:
 
-- `open_connectors_conformance-0.1.0`
-- `open_connectors_contract-0.1.0`
-- `open_connectors_dbt-0.1.0`
-- `open_connectors_feishu_bitable-0.1.0`
-- `open_connectors_google_sheets-0.1.0`
-- `open_connectors_local_files-0.1.0`
-- `open_connectors_maybesheet-0.1.0`
-- `open_connectors_postgres-0.1.0`
-- `open_connectors_sqlite-0.1.0`
+- `open_table_connector_conformance-0.1.0`
+- `open_table_connector_contract-0.1.0`
+- `open_table_connector_dbt-0.1.0`
+- `open_table_connector_feishu_bitable-0.1.0`
+- `open_table_connector_google_sheets-0.1.0`
+- `open_table_connector_local_files-0.1.0`
+- `open_table_connector_maybesheet-0.1.0`
+- `open_table_connector_postgres-0.1.0`
+- `open_table_connector_sqlite-0.1.0`
 - `open_table_connector-0.1.0`
 - `open_table_connector_workspace-0.1.0`
 
 Each package produced `.tar.gz` and `-py3-none-any.whl` artifacts. The
 successful-build list above comes from this command's output; pre-existing
-`dist/open_connectors_workspace-0.1.0*` files were not reported by the final
+`dist/open_table_connector_workspace-0.1.0*` files were not reported by the final
 build and are not counted as final build evidence.
 
 ## Concerns

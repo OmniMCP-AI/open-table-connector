@@ -5,7 +5,7 @@ import importlib
 
 import pytest
 
-from open_connectors.contract import CapabilityIdentity, CapabilityManifest, ResourceLimits, TableMode
+from open_table_connector.contract import CapabilityIdentity, CapabilityManifest, ResourceLimits, TableMode
 
 from specification.conformance.universal.assertions import (
     assert_capabilities_are_unique,

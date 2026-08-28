@@ -4,8 +4,8 @@ from pathlib import Path
 
 import openpyxl
 
-from open_connectors.contract import TableURI
-from open_connectors.local_files import LocalFilesConnector, LocalReadOptions, LocalTableReadRequest
+from open_table_connector.contract import TableURI
+from open_table_connector.local_files import LocalFilesConnector, LocalReadOptions, LocalTableReadRequest
 
 
 ROOT = Path(__file__).parent

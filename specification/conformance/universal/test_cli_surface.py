@@ -6,11 +6,11 @@ import subprocess
 import pyarrow as pa
 import pytest
 
-from open_connectors.cli.adapters import GoogleSheetsAdapter
-from open_connectors.cli.model import CliOptions, FormatName
-from open_connectors.cli.registry import ConnectorRegistry
-from open_connectors.contract import ConnectorError, ConnectorErrorCode
-from open_connectors.google_sheets import GoogleSheetsConnector
+from open_table_connector.cli.adapters import GoogleSheetsAdapter
+from open_table_connector.cli.model import CliOptions, FormatName
+from open_table_connector.cli.registry import ConnectorRegistry
+from open_table_connector.contract import ConnectorError, ConnectorErrorCode
+from open_table_connector.google_sheets import GoogleSheetsConnector
 
 from specification.conformance.universal.assertions import (
     parse_csv_records,

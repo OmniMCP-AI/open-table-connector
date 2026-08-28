@@ -5,9 +5,9 @@ import pytest
 
 import polars as pl
 
-from open_connectors.contract import ConnectorError, ConnectorErrorCode, ResourceLimits, TableMode, TableURI, TableWriteRequest
-from open_connectors.contract.fingerprints import arrow_content_fingerprint, arrow_schema_fingerprint
-from open_connectors.maybesheet import MaybeSheetConnector, MaybeSheetReadRequest, SubprocessProcessClient
+from open_table_connector.contract import ConnectorError, ConnectorErrorCode, ResourceLimits, TableMode, TableURI, TableWriteRequest
+from open_table_connector.contract.fingerprints import arrow_content_fingerprint, arrow_schema_fingerprint
+from open_table_connector.maybesheet import MaybeSheetConnector, MaybeSheetReadRequest, SubprocessProcessClient
 
 
 class Process:

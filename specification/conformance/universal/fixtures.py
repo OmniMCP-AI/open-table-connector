@@ -11,16 +11,16 @@ from typing import Any, Callable, Iterable, Mapping
 from openpyxl import Workbook
 import pyarrow as pa
 
-from open_connectors.cli.adapters import (
+from open_table_connector.cli.adapters import (
     FeishuBitableAdapter,
     GoogleSheetsAdapter,
     LocalAdapter,
     MaybeSheetAdapter,
 )
-from open_connectors.cli.commands import run_command
-from open_connectors.cli.model import CliOptions, Endpoint, parse_endpoint
-from open_connectors.cli.registry import ConnectorRegistry
-from open_connectors.contract import (
+from open_table_connector.cli.commands import run_command
+from open_table_connector.cli.model import CliOptions, Endpoint, parse_endpoint
+from open_table_connector.cli.registry import ConnectorRegistry
+from open_table_connector.contract import (
     ArrowReadResult,
     BaseConvention,
     CapabilityIdentity,
@@ -31,7 +31,7 @@ from open_connectors.contract import (
     TableURI,
     TableWriteResult,
 )
-from open_connectors.contract.fingerprints import (
+from open_table_connector.contract.fingerprints import (
     arrow_content_fingerprint,
     arrow_schema_fingerprint,
 )

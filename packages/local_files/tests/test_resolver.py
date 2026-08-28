@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from open_connectors.contract import ResolveContext, TableURI, TableMode
-from open_connectors.contract.errors import ConnectorError, ConnectorErrorCode
-from open_connectors.local_files.resolver import LocalFormat, LocalURIResolver
+from open_table_connector.contract import ResolveContext, TableURI, TableMode
+from open_table_connector.contract.errors import ConnectorError, ConnectorErrorCode
+from open_table_connector.local_files.resolver import LocalFormat, LocalURIResolver
 
 
 def test_resolver_accepts_absolute_file_uri_and_sheet_fragment(tmp_path: Path) -> None:

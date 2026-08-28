@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from open_connectors.contract import (
+from open_table_connector.contract import (
     BaseConvention,
     CapabilityIdentity,
     ConnectorIdentity,
@@ -8,7 +8,7 @@ from open_connectors.contract import (
     TableMode,
     TableURI,
 )
-from open_connectors.contract.receipts import NeutralReceipt
+from open_table_connector.contract.receipts import NeutralReceipt
 
 
 def test_read_receipt_round_trips_without_vendor_credentials() -> None:

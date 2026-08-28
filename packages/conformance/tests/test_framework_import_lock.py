@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from open_connectors.conformance.static_suite import assert_framework_import_free
+from open_table_connector.conformance.static_suite import assert_framework_import_free
 
 
 def test_runtime_connector_tree_has_no_framework_imports(tmp_path: Path) -> None:

@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import polars as pl
 
-from open_connectors.contract import (
+from open_table_connector.contract import (
     ArrowReadResult,
     CapabilityIdentity,
     ConnectorIdentity,
@@ -25,32 +25,32 @@ from open_connectors.contract import (
     TableWriteRequest,
     TableWriteResult,
 )
-from open_connectors.dbt import DbtCompileRequest, DbtConnector, DbtPreparedOperation
-from open_connectors.dbt.identity import (
+from open_table_connector.dbt import DbtCompileRequest, DbtConnector, DbtPreparedOperation
+from open_table_connector.dbt.identity import (
     CONNECTOR_IDENTITY as DBT_IDENTITY,
     DBT_ARTIFACT_READ_CAPABILITY,
     DBT_CANCEL_CAPABILITY,
     DBT_COMPILE_CAPABILITY,
     DBT_RUN_CAPABILITY,
 )
-from open_connectors.feishu_bitable import (
+from open_table_connector.feishu_bitable import (
     FeishuBitableConnector,
     FeishuBitableReadOptions,
     FeishuBitableTableReadRequest,
 )
-from open_connectors.feishu_bitable.connector import CAPABILITY_MANIFEST as FEISHU_MANIFEST
-from open_connectors.google_sheets import (
+from open_table_connector.feishu_bitable.connector import CAPABILITY_MANIFEST as FEISHU_MANIFEST
+from open_table_connector.google_sheets import (
     GoogleSheetsConnector,
     GoogleSheetsReadOptions,
     GoogleSheetsTableReadRequest,
 )
-from open_connectors.google_sheets.connector import (
+from open_table_connector.google_sheets.connector import (
     CAPABILITY_MANIFEST as GOOGLE_MANIFEST,
     UrllibSheetsTransport,
 )
-from open_connectors.local_files import LocalFilesConnector, LocalTableReadRequest
-from open_connectors.maybesheet import MaybeSheetConnector, MaybeSheetReadRequest
-from open_connectors.maybesheet.identity import (
+from open_table_connector.local_files import LocalFilesConnector, LocalTableReadRequest
+from open_table_connector.maybesheet import MaybeSheetConnector, MaybeSheetReadRequest
+from open_table_connector.maybesheet.identity import (
     BASE_INSPECT_CAPABILITY,
     BASE_READ_CAPABILITY,
     CONNECTOR_IDENTITY as MAYBE_IDENTITY,
@@ -58,7 +58,7 @@ from open_connectors.maybesheet.identity import (
     SHEET_READ_CAPABILITY,
     TABLE_WRITE_CAPABILITY as MAYBE_TABLE_WRITE_CAPABILITY,
 )
-from open_connectors.postgres import (
+from open_table_connector.postgres import (
     CONNECTOR_IDENTITY as POSTGRES_IDENTITY,
     PostgresConnector,
     PostgresReadOptions,
@@ -69,7 +69,7 @@ from open_connectors.postgres import (
     TABLE_READ_POLARS_CAPABILITY as POSTGRES_READ_POLARS_CAPABILITY,
     TABLE_WRITE_CAPABILITY as POSTGRES_WRITE_CAPABILITY,
 )
-from open_connectors.sqlite import (
+from open_table_connector.sqlite import (
     CONNECTOR_IDENTITY as SQLITE_IDENTITY,
     SQLiteConnector,
     SQLiteReadOptions,
@@ -351,7 +351,7 @@ def _google_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
             access_token="fixture-token",
         )
         with patch(
-            "open_connectors.google_sheets.connector.urlopen",
+            "open_table_connector.google_sheets.connector.urlopen",
             side_effect=raw_failure,
         ):
             return failing_connector.read_arrow(make_read_request(ResourceLimits()))

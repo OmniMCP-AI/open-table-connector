@@ -5,7 +5,7 @@ from pathlib import Path
 
 from jsonschema import validate
 
-from open_connectors.contract import (
+from open_table_connector.contract import (
     BaseConvention,
     CapabilityIdentity,
     CapabilityManifest,
@@ -15,7 +15,7 @@ from open_connectors.contract import (
     TableMode,
     TableURI,
 )
-from open_connectors.contract.errors import ConnectorError
+from open_table_connector.contract.errors import ConnectorError
 
 
 SCHEMA_ROOT = Path(__file__).parents[3] / "specification" / "schemas"

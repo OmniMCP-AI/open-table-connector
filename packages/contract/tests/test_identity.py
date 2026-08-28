@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from open_connectors.contract import (
+from open_table_connector.contract import (
     CapabilityIdentity,
     CapabilityManifest,
     ConnectorIdentity,

@@ -7,7 +7,7 @@ import sqlite3
 import polars as pl
 import pytest
 
-from open_connectors.contract import (
+from open_table_connector.contract import (
     BaseConvention,
     ConnectorError,
     ConnectorErrorCode,
@@ -17,12 +17,12 @@ from open_connectors.contract import (
     TableMode,
     TableURI,
 )
-from open_connectors.postgres import (
+from open_table_connector.postgres import (
     PostgresConnector,
     PostgresReadOptions,
     PostgresTableReadRequest,
 )
-from open_connectors.sqlite import (
+from open_table_connector.sqlite import (
     SQLiteConnector,
     SQLiteReadOptions,
     SQLiteTableReadRequest,

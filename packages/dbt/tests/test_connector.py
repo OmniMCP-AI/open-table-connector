@@ -1,4 +1,4 @@
-from open_connectors.dbt import DbtCompileRequest, DbtConnector
+from open_table_connector.dbt import DbtCompileRequest, DbtConnector
 
 
 def test_dbt_connector_freezes_compiled_artifact_bytes_and_invocation() -> None:

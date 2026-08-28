@@ -23,13 +23,13 @@ canonical acceptance.
 
 The first workspace packages are:
 
-- `open-connectors-contract`: closed v1 identity, URI, Base/Sheet coordinate,
+- `open-table-connector-contract`: closed v1 identity, URI, Base/Sheet coordinate,
   receipt, error, and Arrow/Polars read contracts;
-- `open-connectors-conformance`: reusable parity and dependency-direction
+- `open-table-connector-conformance`: reusable parity and dependency-direction
   checks; and
-- `open-connectors-local-files`: CSV and Excel read/inspect implementation.
+- `open-table-connector-local-files`: CSV and Excel read/inspect implementation.
 
-The `open_connectors` Python namespace is PEP 420 based; framework packages
+The `open_table_connector` Python namespace is PEP 420 based; framework packages
 are never dependencies of the neutral packages.
 
 ## Command-line interface

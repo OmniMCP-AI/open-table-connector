@@ -6,8 +6,8 @@ Complete.
 
 ## Changed files
 
-- `packages/cli/src/open_connectors/cli/output.py`: structured JSONL/JSON/CSV/table read output, pipeline summaries, and credential-safe error output with plan exit-code mapping.
-- `packages/cli/src/open_connectors/cli/commands.py`: defensive `Namespace` handling, immutable `CliOptions` construction, and `list`/`inspect`/`read`/`convert`/`import` routing.
+- `packages/cli/src/open_table_connector/cli/output.py`: structured JSONL/JSON/CSV/table read output, pipeline summaries, and credential-safe error output with plan exit-code mapping.
+- `packages/cli/src/open_table_connector/cli/commands.py`: defensive `Namespace` handling, immutable `CliOptions` construction, and `list`/`inspect`/`read`/`convert`/`import` routing.
 - `packages/cli/tests/test_commands.py`: focused JSONL read and safe authentication-error coverage.
 
 ## Commits
@@ -124,8 +124,8 @@ backstop.
 
 ### Changed files
 
-- `packages/cli/src/open_connectors/cli/output.py`
-- `packages/cli/src/open_connectors/cli/formats.py`
+- `packages/cli/src/open_table_connector/cli/output.py`
+- `packages/cli/src/open_table_connector/cli/formats.py`
 - `packages/cli/tests/test_commands.py`
 - `packages/cli/tests/test_formats.py`
 

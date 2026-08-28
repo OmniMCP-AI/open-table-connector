@@ -7,7 +7,7 @@ import subprocess
 import polars as pl
 import pytest
 
-from open_connectors.contract import (
+from open_table_connector.contract import (
     ArrowReadResult,
     BaseConvention,
     ConnectorError,
@@ -17,8 +17,8 @@ from open_connectors.contract import (
     TableMode,
     TableURI,
 )
-from open_connectors.local_files import LocalReadOptions, LocalTableReadRequest
-from open_connectors.maybesheet import SubprocessProcessClient
+from open_table_connector.local_files import LocalReadOptions, LocalTableReadRequest
+from open_table_connector.maybesheet import SubprocessProcessClient
 
 from specification.conformance.universal.assertions import (
     assert_error_is_safe,

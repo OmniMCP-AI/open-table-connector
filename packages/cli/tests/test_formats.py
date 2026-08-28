@@ -6,9 +6,9 @@ from decimal import Decimal
 import pyarrow as pa
 import pytest
 
-from open_connectors.contract import ConnectorError
-from open_connectors.cli.formats import infer_format, read_local, write_local
-from open_connectors.cli.model import Endpoint, FormatName, parse_endpoint
+from open_table_connector.contract import ConnectorError
+from open_table_connector.cli.formats import infer_format, read_local, write_local
+from open_table_connector.cli.model import Endpoint, FormatName, parse_endpoint
 
 
 def _strict_json_loads(text: str):

@@ -8,26 +8,26 @@ version = "0.1.0"
 description = "Open Table Connector CLI"
 requires-python = ">=3.11"
 dependencies = [
-  "open-connectors-contract==0.1.0",
-  "open-connectors-google-sheets==0.1.0",
-  "open-connectors-feishu-bitable==0.1.0",
-  "open-connectors-maybesheet==0.1.0",
+  "open-table-connector-contract==0.1.0",
+  "open-table-connector-google-sheets==0.1.0",
+  "open-table-connector-feishu-bitable==0.1.0",
+  "open-table-connector-maybesheet==0.1.0",
   "polars>=1.0,<2",
   "pyarrow>=14,<20",
 ]
 
 [project.scripts]
-otc = "open_connectors.cli.__main__:main"
-open-table-connector = "open_connectors.cli.__main__:main"
-open-connectors = "open_connectors.cli.__main__:main"
+otc = "open_table_connector.cli.__main__:main"
+open-table-connector = "open_table_connector.cli.__main__:main"
+open-connectors = "open_table_connector.cli.__main__:main"
 
 [tool.uv.sources]
-open-connectors-contract = { workspace = true }
-open-connectors-google-sheets = { workspace = true }
-open-connectors-feishu-bitable = { workspace = true }
-open-connectors-maybesheet = { workspace = true }
+open-table-connector-contract = { workspace = true }
+open-table-connector-google-sheets = { workspace = true }
+open-table-connector-feishu-bitable = { workspace = true }
+open-table-connector-maybesheet = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["open_connectors.cli*"]
+include = ["open_table_connector.cli*"]
 namespaces = true

@@ -4,10 +4,10 @@ from dataclasses import dataclass
 import pyarrow as pa
 import pytest
 
-from open_connectors.cli.model import CliOptions, FormatName, parse_endpoint
-from open_connectors.cli.pipeline import convert_endpoint, import_endpoint, inspect_endpoint, read_endpoint
-from open_connectors.cli.registry import ConnectorRegistry, build_default_registry
-from open_connectors.contract import (
+from open_table_connector.cli.model import CliOptions, FormatName, parse_endpoint
+from open_table_connector.cli.pipeline import convert_endpoint, import_endpoint, inspect_endpoint, read_endpoint
+from open_table_connector.cli.registry import ConnectorRegistry, build_default_registry
+from open_table_connector.contract import (
     CapabilityIdentity,
     ConnectorError,
     ConnectorErrorCode,
@@ -17,7 +17,7 @@ from open_connectors.contract import (
     TableURI,
     TableWriteResult,
 )
-from open_connectors.contract.fingerprints import arrow_content_fingerprint
+from open_table_connector.contract.fingerprints import arrow_content_fingerprint
 
 
 @dataclass

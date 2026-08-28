@@ -3,15 +3,15 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "open-connectors-google-sheets"
+name = "open-table-connector-google-sheets"
 version = "0.1.0"
 requires-python = ">=3.11"
 readme = "README.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["open_connectors.google_sheets*"]
+include = ["open_table_connector.google_sheets*"]
 namespaces = true
 
 [tool.setuptools.package-data]
-"open_connectors.google_sheets" = ["manifest.json"]
+"open_table_connector.google_sheets" = ["manifest.json"]

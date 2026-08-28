@@ -2,8 +2,8 @@
 
 ## Changed Files
 
-- `packages/cli/src/open_connectors/cli/formats.py`
-- `packages/cli/src/open_connectors/cli/__init__.py`
+- `packages/cli/src/open_table_connector/cli/formats.py`
+- `packages/cli/src/open_table_connector/cli/__init__.py`
 - `packages/cli/tests/test_formats.py`
 
 ## Commit
@@ -32,7 +32,7 @@
 
 ### Changed Files
 
-- `packages/cli/src/open_connectors/cli/formats.py`
+- `packages/cli/src/open_table_connector/cli/formats.py`
 - `packages/cli/tests/test_formats.py`
 
 ### Commit

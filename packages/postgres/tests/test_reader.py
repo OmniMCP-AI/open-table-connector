@@ -3,8 +3,8 @@ from __future__ import annotations
 import polars as pl
 import pyarrow as pa
 
-from open_connectors.contract import ExecutionRequest, ResourceLimits, TableURI, TableWriteRequest
-from open_connectors.postgres.reader import PostgresConnector, PostgresReadOptions, PostgresTableReadRequest
+from open_table_connector.contract import ExecutionRequest, ResourceLimits, TableURI, TableWriteRequest
+from open_table_connector.postgres.reader import PostgresConnector, PostgresReadOptions, PostgresTableReadRequest
 
 
 class Cursor:

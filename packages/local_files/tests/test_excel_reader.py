@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
-from open_connectors.contract import InspectRequest, TableURI
-from open_connectors.contract import ConnectorError, ConnectorErrorCode
-from open_connectors.local_files.reader import (
+from open_table_connector.contract import InspectRequest, TableURI
+from open_table_connector.contract import ConnectorError, ConnectorErrorCode
+from open_table_connector.local_files.reader import (
     LocalFilesConnector,
     LocalReadOptions,
     LocalTableReadRequest,

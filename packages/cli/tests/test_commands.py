@@ -7,10 +7,10 @@ from decimal import Decimal
 import pyarrow as pa
 import pytest
 
-from open_connectors.cli.commands import run_command
-from open_connectors.cli.output import emit_error
-from open_connectors.cli.registry import ConnectorRegistry
-from open_connectors.contract import (
+from open_table_connector.cli.commands import run_command
+from open_table_connector.cli.output import emit_error
+from open_table_connector.cli.registry import ConnectorRegistry
+from open_table_connector.contract import (
     ArrowReadResult,
     CapabilityIdentity,
     ConnectorError,
@@ -21,7 +21,7 @@ from open_connectors.contract import (
     TableMode,
     TableURI,
 )
-from open_connectors.contract.coordinates import BaseConvention
+from open_table_connector.contract.coordinates import BaseConvention
 
 
 def _strict_json_loads(text: str):

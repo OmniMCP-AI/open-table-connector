@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from open_connectors.contract.errors import ConnectorError, ConnectorErrorCode
-from open_connectors.local_files.probe import LocalFormat, detect_format
+from open_table_connector.contract.errors import ConnectorError, ConnectorErrorCode
+from open_table_connector.local_files.probe import LocalFormat, detect_format
 
 
 def test_csv_signature_wins_over_misleading_xlsx_suffix(tmp_path: Path) -> None:

@@ -6,7 +6,7 @@
 
 **Architecture:** Add a new CLI distribution with a small registry and adapter seam. The command layer handles endpoint parsing, format codecs, output events, exit codes, and pipeline orchestration; connector adapters translate that generic interface into the existing connector contract request types. Every data path normalizes through an Arrow table, so local-format conversion and connector-to-connector import share one implementation.
 
-**Tech Stack:** Python 3.11+, `argparse`, `pathlib`, `csv`, `json`, `pyarrow`, `polars`, existing `open_connectors.contract` roles, `pytest`, and the existing `uv` workspace.
+**Tech Stack:** Python 3.11+, `argparse`, `pathlib`, `csv`, `json`, `pyarrow`, `polars`, existing `open_table_connector.contract` roles, `pytest`, and the existing `uv` workspace.
 
 **Spec:** `docs/superpowers/specs/2026-08-27-open-table-connector-cli-design.md`
 
@@ -31,15 +31,15 @@ Create the CLI package under `packages/cli/`:
 
 - `packages/cli/pyproject.toml`: distribution metadata, workspace dependencies, and the three console scripts.
 - `packages/cli/README.md`: agent and human usage examples.
-- `packages/cli/src/open_connectors/cli/__init__.py`: public CLI package exports.
-- `packages/cli/src/open_connectors/cli/model.py`: endpoint, format, options, and pipeline result value objects.
-- `packages/cli/src/open_connectors/cli/formats.py`: local CSV/JSON/JSONL/Markdown-table readers and writers.
-- `packages/cli/src/open_connectors/cli/adapters.py`: the small generic adapter interface and provider-specific request translation.
-- `packages/cli/src/open_connectors/cli/registry.py`: URI-scheme registry and default adapter construction.
-- `packages/cli/src/open_connectors/cli/pipeline.py`: read/inspect/write/convert/import orchestration.
-- `packages/cli/src/open_connectors/cli/output.py`: JSONL events, JSON documents, CSV, table rendering, and safe error serialization.
-- `packages/cli/src/open_connectors/cli/commands.py`: command handlers over streams and the pipeline.
-- `packages/cli/src/open_connectors/cli/__main__.py`: `argparse` parser, environment resolution, and exit-code boundary.
+- `packages/cli/src/open_table_connector/cli/__init__.py`: public CLI package exports.
+- `packages/cli/src/open_table_connector/cli/model.py`: endpoint, format, options, and pipeline result value objects.
+- `packages/cli/src/open_table_connector/cli/formats.py`: local CSV/JSON/JSONL/Markdown-table readers and writers.
+- `packages/cli/src/open_table_connector/cli/adapters.py`: the small generic adapter interface and provider-specific request translation.
+- `packages/cli/src/open_table_connector/cli/registry.py`: URI-scheme registry and default adapter construction.
+- `packages/cli/src/open_table_connector/cli/pipeline.py`: read/inspect/write/convert/import orchestration.
+- `packages/cli/src/open_table_connector/cli/output.py`: JSONL events, JSON documents, CSV, table rendering, and safe error serialization.
+- `packages/cli/src/open_table_connector/cli/commands.py`: command handlers over streams and the pipeline.
+- `packages/cli/src/open_table_connector/cli/__main__.py`: `argparse` parser, environment resolution, and exit-code boundary.
 - `packages/cli/tests/test_formats.py`: codec seam tests.
 - `packages/cli/tests/test_registry.py`: URI dispatch and capability tests.
 - `packages/cli/tests/test_pipeline.py`: conversion/import orchestration tests.
@@ -49,10 +49,10 @@ Create the CLI package under `packages/cli/`:
 Modify the workspace and existing MaybeSheet package:
 
 - `pyproject.toml`: add `packages/cli` to `tool.uv.workspace.members`; rename the root workspace project to `open-table-connector-workspace` if it still uses the former project name.
-- `packages/maybesheet/src/open_connectors/maybesheet/connector.py`: implement `table.write` through `ProcessClient` stdin.
-- `packages/maybesheet/src/open_connectors/maybesheet/process.py`: accept an optional stdin payload and pass it to `subprocess.run`.
-- `packages/maybesheet/src/open_connectors/maybesheet/identity.py`: add the `table.write` capability identity.
-- `packages/maybesheet/src/open_connectors/maybesheet/__init__.py`: export the write capability if the package exposes capability constants.
+- `packages/maybesheet/src/open_table_connector/maybesheet/connector.py`: implement `table.write` through `ProcessClient` stdin.
+- `packages/maybesheet/src/open_table_connector/maybesheet/process.py`: accept an optional stdin payload and pass it to `subprocess.run`.
+- `packages/maybesheet/src/open_table_connector/maybesheet/identity.py`: add the `table.write` capability identity.
+- `packages/maybesheet/src/open_table_connector/maybesheet/__init__.py`: export the write capability if the package exposes capability constants.
 - `packages/maybesheet/tests/test_connector.py`: add write command, stdin, receipt, policy, and process-error tests.
 - `README.md`: document the canonical `otc` commands and endpoint flag convention.
 
@@ -61,8 +61,8 @@ Modify the workspace and existing MaybeSheet package:
 **Files:**
 - Create: `packages/cli/pyproject.toml`
 - Create: `packages/cli/README.md`
-- Create: `packages/cli/src/open_connectors/cli/__init__.py`
-- Create: `packages/cli/src/open_connectors/cli/model.py`
+- Create: `packages/cli/src/open_table_connector/cli/__init__.py`
+- Create: `packages/cli/src/open_table_connector/cli/model.py`
 - Modify: `pyproject.toml`
 - Test: `packages/cli/tests/test_model.py`
 
@@ -78,7 +78,7 @@ from pathlib import Path
 
 import pytest
 
-from open_connectors.cli.model import FormatName, parse_endpoint, parse_format
+from open_table_connector.cli.model import FormatName, parse_endpoint, parse_format
 
 
 def test_parse_endpoint_keeps_connector_uri_opaque() -> None:
@@ -103,7 +103,7 @@ def test_parse_format_defaults_to_auto_and_rejects_unknown_values() -> None:
 
 Run: `uv run pytest packages/cli/tests/test_model.py -q`
 
-Expected: collection fails because `packages/cli` and `open_connectors.cli.model` do not exist.
+Expected: collection fails because `packages/cli` and `open_table_connector.cli.model` do not exist.
 
 - [ ] **Step 3: Add the package and implement the model seam**
 
@@ -111,9 +111,9 @@ Create the package metadata with these exact scripts and workspace dependencies:
 
 ```toml
 [project.scripts]
-otc = "open_connectors.cli.__main__:main"
-open-table-connector = "open_connectors.cli.__main__:main"
-open-connectors = "open_connectors.cli.__main__:main"
+otc = "open_table_connector.cli.__main__:main"
+open-table-connector = "open_table_connector.cli.__main__:main"
+open-connectors = "open_table_connector.cli.__main__:main"
 ```
 
 Implement `FormatName` as a `StrEnum` with lower-case values `auto`, `csv`, `json`, `jsonl`, and `table`. `parse_endpoint` must use `TableURI` validation for connector URIs and convert `file://` paths through `url2pathname`; a bare path must remain a `Path` without requiring the file to exist. `CliOptions` must be an immutable dataclass with defaults `from_format=FormatName.AUTO`, `to_format=FormatName.AUTO`, `output_format=FormatName.JSONL`, `limit=None`, `timeout=None`, `sheet=None`, `range=None`, `field_names=()`, `if_exists="error"`, `token=None`, and `target=None`; validate positive limits/timeouts and convert field names to a tuple. `PipelineSummary` must contain `status`, `rows_read`, `rows_written`, `source_receipt`, and `destination_receipt`.
@@ -134,7 +134,7 @@ git commit -m "feat: scaffold open table connector cli"
 ### Task 2: Implement local format codecs
 
 **Files:**
-- Create: `packages/cli/src/open_connectors/cli/formats.py`
+- Create: `packages/cli/src/open_table_connector/cli/formats.py`
 - Test: `packages/cli/tests/test_formats.py`
 
 **Interfaces:**
@@ -150,8 +150,8 @@ import io
 
 import pyarrow as pa
 
-from open_connectors.cli.formats import read_local, write_local
-from open_connectors.cli.model import Endpoint, FormatName, parse_endpoint
+from open_table_connector.cli.formats import read_local, write_local
+from open_table_connector.cli.model import Endpoint, FormatName, parse_endpoint
 
 
 def test_json_array_reader_unions_object_keys(tmp_path) -> None:
@@ -202,17 +202,17 @@ Expected: 4 passed.
 - [ ] **Step 5: Commit the codecs**
 
 ```bash
-git add packages/cli/src/open_connectors/cli/formats.py packages/cli/tests/test_formats.py
+git add packages/cli/src/open_table_connector/cli/formats.py packages/cli/tests/test_formats.py
 git commit -m "feat: add otc table format codecs"
 ```
 
 ### Task 3: Add MaybeSheet table writing
 
 **Files:**
-- Modify: `packages/maybesheet/src/open_connectors/maybesheet/process.py`
-- Modify: `packages/maybesheet/src/open_connectors/maybesheet/connector.py`
-- Modify: `packages/maybesheet/src/open_connectors/maybesheet/identity.py`
-- Modify: `packages/maybesheet/src/open_connectors/maybesheet/__init__.py`
+- Modify: `packages/maybesheet/src/open_table_connector/maybesheet/process.py`
+- Modify: `packages/maybesheet/src/open_table_connector/maybesheet/connector.py`
+- Modify: `packages/maybesheet/src/open_table_connector/maybesheet/identity.py`
+- Modify: `packages/maybesheet/src/open_table_connector/maybesheet/__init__.py`
 - Test: `packages/maybesheet/tests/test_connector.py`
 
 **Interfaces:**
@@ -226,8 +226,8 @@ git commit -m "feat: add otc table format codecs"
 import polars as pl
 import pytest
 
-from open_connectors.contract import ConnectorError, ConnectorErrorCode, TableWriteRequest, TableURI
-from open_connectors.maybesheet import MaybeSheetConnector
+from open_table_connector.contract import ConnectorError, ConnectorErrorCode, TableWriteRequest, TableURI
+from open_table_connector.maybesheet import MaybeSheetConnector
 
 
 class Process:
@@ -285,8 +285,8 @@ git commit -m "feat: add maybesheet table writes"
 ### Task 4: Define the registry and generic connector adapters
 
 **Files:**
-- Create: `packages/cli/src/open_connectors/cli/adapters.py`
-- Create: `packages/cli/src/open_connectors/cli/registry.py`
+- Create: `packages/cli/src/open_table_connector/cli/adapters.py`
+- Create: `packages/cli/src/open_table_connector/cli/registry.py`
 - Test: `packages/cli/tests/test_registry.py`
 
 **Interfaces:**
@@ -299,9 +299,9 @@ git commit -m "feat: add maybesheet table writes"
 ```python
 import pytest
 
-from open_connectors.cli.model import parse_endpoint
-from open_connectors.cli.registry import build_default_registry
-from open_connectors.contract import ConnectorError, ConnectorErrorCode
+from open_table_connector.cli.model import parse_endpoint
+from open_table_connector.cli.registry import build_default_registry
+from open_table_connector.contract import ConnectorError, ConnectorErrorCode
 
 
 def test_default_registry_lists_all_supported_adapter_schemes() -> None:
@@ -342,14 +342,14 @@ Expected: 3 passed.
 - [ ] **Step 5: Commit the registry seam**
 
 ```bash
-git add packages/cli/src/open_connectors/cli/adapters.py packages/cli/src/open_connectors/cli/registry.py packages/cli/tests/test_registry.py
+git add packages/cli/src/open_table_connector/cli/adapters.py packages/cli/src/open_table_connector/cli/registry.py packages/cli/tests/test_registry.py
 git commit -m "feat: add otc connector registry"
 ```
 
 ### Task 5: Implement the Arrow pipeline for read, inspect, convert, and import
 
 **Files:**
-- Create: `packages/cli/src/open_connectors/cli/pipeline.py`
+- Create: `packages/cli/src/open_table_connector/cli/pipeline.py`
 - Test: `packages/cli/tests/test_pipeline.py`
 
 **Interfaces:**
@@ -366,9 +366,9 @@ import json
 
 import pyarrow as pa
 
-from open_connectors.cli.pipeline import convert_endpoint, import_endpoint
-from open_connectors.cli.model import CliOptions, parse_endpoint
-from open_connectors.cli.registry import build_default_registry
+from open_table_connector.cli.pipeline import convert_endpoint, import_endpoint
+from open_table_connector.cli.model import CliOptions, parse_endpoint
+from open_table_connector.cli.registry import build_default_registry
 
 
 def test_convert_csv_to_json_writes_union_rows(tmp_path) -> None:
@@ -412,15 +412,15 @@ Expected: 2 passed.
 - [ ] **Step 5: Commit the pipeline**
 
 ```bash
-git add packages/cli/src/open_connectors/cli/pipeline.py packages/cli/tests/test_pipeline.py
+git add packages/cli/src/open_table_connector/cli/pipeline.py packages/cli/tests/test_pipeline.py
 git commit -m "feat: add otc table pipelines"
 ```
 
 ### Task 6: Implement structured output and command handlers
 
 **Files:**
-- Create: `packages/cli/src/open_connectors/cli/output.py`
-- Create: `packages/cli/src/open_connectors/cli/commands.py`
+- Create: `packages/cli/src/open_table_connector/cli/output.py`
+- Create: `packages/cli/src/open_table_connector/cli/commands.py`
 - Test: `packages/cli/tests/test_commands.py`
 
 **Interfaces:**
@@ -435,7 +435,7 @@ git commit -m "feat: add otc table pipelines"
 import io
 import json
 
-from open_connectors.cli.commands import run_command
+from open_table_connector.cli.commands import run_command
 
 
 def test_read_defaults_to_jsonl_row_events_then_summary(fake_registry) -> None:
@@ -478,16 +478,16 @@ Expected: 2 passed.
 - [ ] **Step 5: Commit output and handlers**
 
 ```bash
-git add packages/cli/src/open_connectors/cli/output.py packages/cli/src/open_connectors/cli/commands.py packages/cli/tests/test_commands.py
+git add packages/cli/src/open_table_connector/cli/output.py packages/cli/src/open_table_connector/cli/commands.py packages/cli/tests/test_commands.py
 git commit -m "feat: add otc structured command output"
 ```
 
 ### Task 7: Add the executable parser, environment credentials, and end-to-end tests
 
 **Files:**
-- Create: `packages/cli/src/open_connectors/cli/__main__.py`
+- Create: `packages/cli/src/open_table_connector/cli/__main__.py`
 - Create: `packages/cli/tests/test_cli_e2e.py`
-- Modify: `packages/cli/src/open_connectors/cli/__init__.py`
+- Modify: `packages/cli/src/open_table_connector/cli/__init__.py`
 - Modify: `packages/cli/README.md`
 - Modify: `README.md`
 
@@ -504,7 +504,7 @@ import sys
 
 
 def test_parser_requires_explicit_from_and_to_for_import() -> None:
-    result = subprocess.run([sys.executable, "-m", "open_connectors.cli", "import", "--from", "rows.csv"], capture_output=True, text=True)
+    result = subprocess.run([sys.executable, "-m", "open_table_connector.cli", "import", "--from", "rows.csv"], capture_output=True, text=True)
     assert result.returncode == 2
     assert "--to" in result.stderr
 
@@ -527,7 +527,7 @@ Expected: the module and console scripts are not available.
 
 Create subparsers for `list`, `inspect`, `read`, `convert`, and `import`. Use `dest="from_value"` for `--from` because `from` is a Python keyword. Use `action="append"` for `--field-name`. Resolve tokens from `--token` first, then provider environment variables in `build_default_registry`; never put the token into an endpoint or output object. `main` must catch parser errors as exit code 2, build the default registry, route to `run_command`, flush output, and return the handler code. Add the package’s `__main__` guard and document examples using `otc` plus the long-form command.
 
-Add a compatibility alias test by invoking `python -m open_connectors.cli` and `otc`; the console-script aliases are verified by `uv run otc --help`, `uv run open-table-connector --help`, and `uv run open-connectors --help`.
+Add a compatibility alias test by invoking `python -m open_table_connector.cli` and `otc`; the console-script aliases are verified by `uv run otc --help`, `uv run open-table-connector --help`, and `uv run open-connectors --help`.
 
 - [ ] **Step 4: Run end-to-end tests and help commands**
 
@@ -538,7 +538,7 @@ Expected: 2 end-to-end tests pass and all three help commands exit 0.
 - [ ] **Step 5: Commit the executable and docs**
 
 ```bash
-git add packages/cli/src/open_connectors/cli/__main__.py packages/cli/src/open_connectors/cli/__init__.py packages/cli/tests/test_cli_e2e.py packages/cli/README.md README.md
+git add packages/cli/src/open_table_connector/cli/__main__.py packages/cli/src/open_table_connector/cli/__init__.py packages/cli/tests/test_cli_e2e.py packages/cli/README.md README.md
 git commit -m "feat: expose otc command line interface"
 ```
 

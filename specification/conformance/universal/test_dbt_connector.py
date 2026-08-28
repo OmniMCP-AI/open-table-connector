@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
-from open_connectors.contract import ConnectorError, ConnectorErrorCode
-from open_connectors.dbt import (
+from open_table_connector.contract import ConnectorError, ConnectorErrorCode
+from open_table_connector.dbt import (
     DbtCompileRequest,
     DbtConnector,
     DbtPreparedOperation,

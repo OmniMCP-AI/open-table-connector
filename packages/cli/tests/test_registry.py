@@ -3,9 +3,9 @@ import sys
 
 import pytest
 
-from open_connectors.cli.model import CliOptions, parse_endpoint
-from open_connectors.cli.registry import build_default_registry
-from open_connectors.contract import ConnectorError, ConnectorErrorCode, TableMode
+from open_table_connector.cli.model import CliOptions, parse_endpoint
+from open_table_connector.cli.registry import build_default_registry
+from open_table_connector.contract import ConnectorError, ConnectorErrorCode, TableMode
 
 
 class Transport:

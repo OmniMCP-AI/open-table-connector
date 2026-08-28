@@ -6,11 +6,11 @@ Complete. Added the executable argparse entrypoint, package exports, subprocess 
 
 ## Changed files
 
-- `packages/cli/src/open_connectors/cli/__main__.py`
+- `packages/cli/src/open_table_connector/cli/__main__.py`
   - Added `build_parser()` and `main(argv)`.
   - Added `list`, `inspect`, `read`, `convert`, and `import` subcommands.
   - Added explicit `--from`/`--to` destinations, all requested options, repeated `--field-name`, environment resolution through `build_default_registry`, parser exit handling, flushing, and the module guard.
-- `packages/cli/src/open_connectors/cli/__init__.py`
+- `packages/cli/src/open_table_connector/cli/__init__.py`
   - Exported `build_parser` and `main`.
 - `packages/cli/tests/test_cli_e2e.py`
   - Added missing-endpoint parser, CSV-to-JSONL subprocess, and module/alias help tests.
@@ -48,7 +48,7 @@ Complete. Changed the parser’s `--output-format` default from `None` to `jsonl
 
 ### Changed files
 
-- `packages/cli/src/open_connectors/cli/__main__.py` — parser default is now `jsonl`.
+- `packages/cli/src/open_table_connector/cli/__main__.py` — parser default is now `jsonl`.
 - `packages/cli/tests/test_cli_e2e.py` — added module and `otc` subprocess regression coverage for default JSONL row and summary output.
 
 ### Commit
@@ -80,7 +80,7 @@ Complete. The `list` subparser now accepts `--output-format` with the standard f
 
 ### Changed files
 
-- `packages/cli/src/open_connectors/cli/__main__.py` — added `list --output-format` with `_FORMATS` choices and a `jsonl` default.
+- `packages/cli/src/open_table_connector/cli/__main__.py` — added `list --output-format` with `_FORMATS` choices and a `jsonl` default.
 - `packages/cli/tests/test_cli_e2e.py` — added an `otc list --output-format jsonl` subprocess regression asserting clean JSONL connector records.
 
 ### Commit
@@ -113,7 +113,7 @@ Complete. Restricted `--output-format` to `csv`, `json`, `jsonl`, and `table` fo
 
 ### Changed files
 
-- `packages/cli/src/open_connectors/cli/__main__.py` — added separate output-format choices and applied them to list and the shared operation options.
+- `packages/cli/src/open_table_connector/cli/__main__.py` — added separate output-format choices and applied them to list and the shared operation options.
 - `packages/cli/tests/test_cli_e2e.py` — added subprocess coverage asserting `--output-format auto` is rejected with exit code 2; retained list JSONL smoke coverage.
 
 ### Commit
@@ -146,7 +146,7 @@ Complete. Added a custom argparse error seam so parser failures return exit code
 
 ### Changed files
 
-- `packages/cli/src/open_connectors/cli/__main__.py` — added custom parser errors, allowlisted parser context extraction, and one-line JSON usage diagnostics.
+- `packages/cli/src/open_table_connector/cli/__main__.py` — added custom parser errors, allowlisted parser context extraction, and one-line JSON usage diagnostics.
 - `packages/cli/tests/test_cli_e2e.py` — updated missing-destination and invalid-output-format subprocess tests to validate JSON shape, single-line stderr, safe context, and token redaction.
 
 ### Commit

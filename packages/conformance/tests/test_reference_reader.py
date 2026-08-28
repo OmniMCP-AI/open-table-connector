@@ -7,7 +7,7 @@ import polars as pl
 import pyarrow as pa
 import pytest
 
-from open_connectors.contract import (
+from open_table_connector.contract import (
     ArrowReadResult,
     ArrowTableReader,
     CapabilityIdentity,
@@ -20,7 +20,7 @@ from open_connectors.contract import (
     TableReadRequest,
     TableURI,
 )
-from open_connectors.conformance.assertions import (
+from open_table_connector.conformance.assertions import (
     assert_arrow_polars_equal,
     assert_read_connector_conformance,
     assert_receipt_safe,

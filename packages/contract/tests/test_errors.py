@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from open_connectors.contract.errors import ConnectorError, ConnectorErrorCode
+from open_table_connector.contract.errors import ConnectorError, ConnectorErrorCode
 
 
 def test_error_codes_are_closed_and_stable() -> None:

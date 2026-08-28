@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pyarrow as pa
 
-from open_connectors.contract import ResourceLimits, TableURI
-from open_connectors.local_files.reader import (
+from open_table_connector.contract import ResourceLimits, TableURI
+from open_table_connector.local_files.reader import (
     LocalFilesConnector,
     LocalReadOptions,
     LocalTableReadRequest,

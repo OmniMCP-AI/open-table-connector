@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from open_connectors.contract import BaseCoordinate, SheetCoordinate
+from open_table_connector.contract import BaseCoordinate, SheetCoordinate
 
 
 def test_base_coordinate_accepts_stable_record_id() -> None:

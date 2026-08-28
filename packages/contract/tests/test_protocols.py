@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import inspect
 
-from open_connectors.contract.inspect import TableInspector
-from open_connectors.contract.read import (
+from open_table_connector.contract.inspect import TableInspector
+from open_table_connector.contract.read import (
     ArrowTableReader,
     PolarsTableReader,
     TableReadRequest,
 )
-from open_connectors.contract.resolve import URIResolver
+from open_table_connector.contract.resolve import URIResolver
 
 
 def test_roles_are_small_and_capability_specific() -> None:

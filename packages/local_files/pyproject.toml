@@ -3,21 +3,21 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "open-connectors-local-files"
+name = "open-table-connector-local-files"
 version = "0.1.0"
 description = "Neutral local CSV and Excel Connector"
 requires-python = ">=3.11"
 dependencies = [
-  "open-connectors-contract==0.1.0",
+  "open-table-connector-contract==0.1.0",
   "openpyxl>=3.1,<4",
   "polars>=1.0,<2",
   "pyarrow>=14,<20",
 ]
 
 [tool.uv.sources]
-open-connectors-contract = { workspace = true }
+open-table-connector-contract = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["open_connectors.local_files*"]
+include = ["open_table_connector.local_files*"]
 namespaces = true

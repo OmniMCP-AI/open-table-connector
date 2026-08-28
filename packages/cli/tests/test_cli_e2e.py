@@ -9,7 +9,7 @@ def _run_module(*args: str, env: dict[str, str] | None = None) -> subprocess.Com
     if env is not None:
         child_env.update(env)
     return subprocess.run(
-        [sys.executable, "-m", "open_connectors.cli", *args],
+        [sys.executable, "-m", "open_table_connector.cli", *args],
         capture_output=True,
         text=True,
         env=child_env,
@@ -47,7 +47,7 @@ def test_read_defaults_to_jsonl_for_module_and_otc(tmp_path) -> None:
     source.write_text("id\na\n")
 
     for command in (
-        [sys.executable, "-m", "open_connectors.cli"],
+        [sys.executable, "-m", "open_table_connector.cli"],
         ["otc"],
     ):
         result = subprocess.run(
@@ -79,7 +79,7 @@ def test_list_accepts_jsonl_output_format_without_endpoints() -> None:
 
 def test_parser_rejects_auto_output_format() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "open_connectors.cli", "list", "--output-format", "auto"],
+        [sys.executable, "-m", "open_table_connector.cli", "list", "--output-format", "auto"],
         capture_output=True,
         text=True,
     )
@@ -94,7 +94,7 @@ def test_parser_rejects_auto_output_format() -> None:
 
 def test_module_and_alias_help_commands_exit_successfully() -> None:
     for command in (
-        [sys.executable, "-m", "open_connectors.cli", "--help"],
+        [sys.executable, "-m", "open_table_connector.cli", "--help"],
         ["otc", "--help"],
         ["open-table-connector", "--help"],
         ["open-connectors", "--help"],

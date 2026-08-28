@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping
 
 import pyarrow as pa
 
-from open_connectors.contract import (
+from open_table_connector.contract import (
     CapabilityIdentity,
     CapabilityManifest,
     ConnectorError,
@@ -17,7 +17,7 @@ from open_connectors.contract import (
     TableMode,
     TableURI,
 )
-from open_connectors.contract.fingerprints import (
+from open_table_connector.contract.fingerprints import (
     arrow_content_fingerprint,
     arrow_schema_fingerprint,
 )

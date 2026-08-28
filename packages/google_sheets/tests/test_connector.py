@@ -3,9 +3,9 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
-from open_connectors.contract import ConnectorError, ConnectorErrorCode, InspectRequest, ResourceLimits, ResolveContext, TableReadRequest, TableURI, TableWriteRequest
-from open_connectors.google_sheets import GoogleSheetsConnector, GoogleSheetsReadOptions
-from open_connectors.google_sheets.connector import UrllibSheetsTransport
+from open_table_connector.contract import ConnectorError, ConnectorErrorCode, InspectRequest, ResourceLimits, ResolveContext, TableReadRequest, TableURI, TableWriteRequest
+from open_table_connector.google_sheets import GoogleSheetsConnector, GoogleSheetsReadOptions
+from open_table_connector.google_sheets.connector import UrllibSheetsTransport
 
 
 class FakeTransport:
@@ -28,7 +28,7 @@ def test_google_sheets_transport_redacts_credentials_from_provider_errors(
         raise RuntimeError(f"provider rejected credential {credential}")
 
     monkeypatch.setattr(
-        "open_connectors.google_sheets.connector.urlopen",
+        "open_table_connector.google_sheets.connector.urlopen",
         fail_request,
     )
 

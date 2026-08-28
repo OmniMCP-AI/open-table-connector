@@ -6,7 +6,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from open_connectors.contract import CapabilityIdentity, CapabilityManifest, TableMode
+from open_table_connector.contract import CapabilityIdentity, CapabilityManifest, TableMode
 
 from specification.conformance.universal.cases import (
     ConnectorCase,

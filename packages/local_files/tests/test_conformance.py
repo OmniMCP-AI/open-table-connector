@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from open_connectors.contract import TableURI
-from open_connectors.conformance import run_read_suite
-from open_connectors.local_files.reader import LocalFilesConnector, LocalTableReadRequest
+from open_table_connector.contract import TableURI
+from open_table_connector.conformance import run_read_suite
+from open_table_connector.local_files.reader import LocalFilesConnector, LocalTableReadRequest
 
 
 def test_local_files_connector_passes_shared_read_conformance(tmp_path: Path) -> None:

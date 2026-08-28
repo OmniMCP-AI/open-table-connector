@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from open_connectors.contract import TableURI
+from open_table_connector.contract import TableURI
 
 
 def test_table_uri_is_a_value_only_credential_free_reference() -> None:
