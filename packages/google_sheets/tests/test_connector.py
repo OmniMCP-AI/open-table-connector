@@ -3,8 +3,9 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
-from open_connectors.contract import InspectRequest, ResourceLimits, ResolveContext, TableReadRequest, TableURI, TableWriteRequest
+from open_connectors.contract import ConnectorError, ConnectorErrorCode, InspectRequest, ResourceLimits, ResolveContext, TableReadRequest, TableURI, TableWriteRequest
 from open_connectors.google_sheets import GoogleSheetsConnector, GoogleSheetsReadOptions
+from open_connectors.google_sheets.connector import UrllibSheetsTransport
 
 
 class FakeTransport:
@@ -16,6 +17,34 @@ class FakeTransport:
         if method == "GET":
             return {"range": "Orders!A1:B3", "values": [["id", "amount"], ["a", 1], ["b", 2]]}
         return {"updatedRange": "Orders!A1:B2", "updatedRows": 2, "updatedColumns": 2}
+
+
+def test_google_sheets_transport_redacts_credentials_from_provider_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential = "provider-credential-secret"
+
+    def fail_request(*_args, **_kwargs):
+        raise RuntimeError(f"provider rejected credential {credential}")
+
+    monkeypatch.setattr(
+        "open_connectors.google_sheets.connector.urlopen",
+        fail_request,
+    )
+
+    with pytest.raises(ConnectorError) as raised:
+        UrllibSheetsTransport().request(
+            "GET",
+            "https://sheets.googleapis.com/v4/spreadsheets/fixture/values/Orders",
+            headers={"Authorization": f"Bearer {credential}"},
+        )
+
+    assert raised.value.code is ConnectorErrorCode.EXECUTION_FAILED
+    assert raised.value.message == "Google Sheets request failed"
+    assert raised.value.safe_details == {
+        "reason": "unexpected transport exception"
+    }
+    assert credential not in repr(raised.value.to_wire())
 
 
 def test_google_sheets_reads_values_and_builds_receipt() -> None:

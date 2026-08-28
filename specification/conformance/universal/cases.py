@@ -337,7 +337,7 @@ def _google_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
         return connector.read_polars(make_read_request(resource_limits))
 
     raw_failure = RawProviderFailure(
-        "Google Sheets upstream returned 503",
+        "Google Sheets upstream returned 503 for fixture-token",
         credential="fixture-token",
     )
 

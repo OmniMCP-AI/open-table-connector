@@ -580,12 +580,7 @@ def test_provider_failures_map_to_safe_redacted_errors(
     failure = fixture.failure
     assert not isinstance(failure.raw_failure, ConnectorError)
     if isinstance(failure.raw_failure, BaseException):
-        raw_secret = getattr(
-            failure.raw_failure,
-            "credential",
-            str(failure.raw_failure),
-        )
-        assert failure.fixture_secret in raw_secret
+        assert failure.fixture_secret in str(failure.raw_failure)
     else:
         assert failure.fixture_secret in repr(failure.raw_failure)
 
@@ -593,6 +588,11 @@ def test_provider_failures_map_to_safe_redacted_errors(
         failure.invoke()
 
     assert raised.value.code is expected_code
+    assert raised.value.safe_details
+    if case_name == "google_sheets":
+        assert raised.value.safe_details == {
+            "reason": "unexpected transport exception"
+        }
     assert_error_is_safe(
         raised.value,
         forbidden_values=("fixture-token", "fixture-secret"),
