@@ -95,6 +95,21 @@ def test_markdown_connector_rejects_mismatched_csv_payload(tmp_path: Path) -> No
     assert raised.value.code is ConnectorErrorCode.INVALID_URI
 
 
+def test_markdown_connector_maps_unknown_encoding_to_connector_error(tmp_path: Path) -> None:
+    source = tmp_path / "orders.md"
+    source.write_text("| id |\n| --- |\n| 1 |\n", encoding="utf-8")
+    request = MarkdownTableReadRequest(
+        TableURI(f"md://{source}"),
+        options=MarkdownReadOptions(encoding="x-open-table-connector-unknown"),
+    )
+
+    with pytest.raises(ConnectorError) as raised:
+        MarkdownConnector().read_arrow(request)
+
+    assert raised.value.code is ConnectorErrorCode.EXECUTION_FAILED
+    assert raised.value.safe_details["encoding"] == "x-open-table-connector-unknown"
+
+
 def test_markdown_connector_passes_shared_read_conformance(tmp_path: Path) -> None:
     source = tmp_path / "orders.md"
     source.write_text("| id | amount |\n| --- | --- |\n| 1 | 2.50 |\n| 2 | |\n", encoding="utf-8")

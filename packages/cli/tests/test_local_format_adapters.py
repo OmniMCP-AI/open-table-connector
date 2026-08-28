@@ -1,12 +1,12 @@
 from pathlib import Path
 
 import pytest
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
 from open_table_connector.cli.model import CliOptions, FormatName, parse_endpoint
 from open_table_connector.cli.pipeline import convert_endpoint, import_endpoint
 from open_table_connector.cli.registry import build_default_registry
-from open_table_connector.contract import ConnectorError, ConnectorErrorCode
+from open_table_connector.contract import ConnectorError, ConnectorErrorCode, TableMode
 
 
 def test_cli_lists_concrete_local_connector_types() -> None:
@@ -37,6 +37,123 @@ def test_registry_routes_bare_path_to_local_files_facade(tmp_path: Path) -> None
     adapter = build_default_registry().connector_for(endpoint)
 
     assert adapter.identity.connector_id == "local_files"
+
+
+def test_local_adapter_auto_probes_extensionless_csv_and_preserves_facade_receipt(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "orders"
+    source.write_text("id,note\n1,ok\n", encoding="utf8")
+    endpoint = parse_endpoint(str(source))
+
+    result = build_default_registry().connector_for(endpoint).read(endpoint, CliOptions())
+
+    assert result.table.to_pylist() == [{"id": "1", "note": "ok"}]
+    assert result.receipt.connector.connector_id == "local_files"
+    assert result.receipt.mode is TableMode.SHEET
+
+
+def test_local_adapter_auto_probes_content_despite_misleading_suffix(tmp_path: Path) -> None:
+    source = tmp_path / "orders.xlsx"
+    source.write_text("id,note\n1,ok\n", encoding="utf8")
+    endpoint = parse_endpoint(source.as_uri())
+
+    result = build_default_registry().connector_for(endpoint).read(endpoint, CliOptions())
+
+    assert result.table.to_pylist() == [{"id": "1", "note": "ok"}]
+
+
+def test_local_adapter_auto_honors_requested_excel_sheet(tmp_path: Path) -> None:
+    source = tmp_path / "orders"
+    workbook = Workbook()
+    orders = workbook.active
+    orders.title = "orders"
+    orders.append(["id"])
+    orders.append(["1"])
+    refunds = workbook.create_sheet("refunds")
+    refunds.append(["refund_id"])
+    refunds.append(["r1"])
+    workbook.save(source)
+    endpoint = parse_endpoint(str(source))
+
+    result = build_default_registry().connector_for(endpoint).read(
+        endpoint,
+        CliOptions(sheet="refunds"),
+    )
+
+    assert result.table.to_pylist() == [{"refund_id": "r1"}]
+    assert result.receipt.connector.connector_id == "local_files"
+    assert result.receipt.coordinate_convention.sheet == "refunds"
+
+
+def test_local_adapter_auto_inspection_reports_native_sheet_facts(tmp_path: Path) -> None:
+    source = tmp_path / "orders"
+    source.write_text("| id |\n| --- |\n| 1 |\n", encoding="utf8")
+    endpoint = parse_endpoint(str(source))
+
+    inspection = build_default_registry().connector_for(endpoint).inspect(
+        endpoint,
+        CliOptions(),
+    )
+
+    assert inspection.mode is TableMode.SHEET
+    assert inspection.coordinate_convention.sheet == "data"
+    assert inspection.facts["worksheets"] == ["data"]
+
+
+@pytest.mark.parametrize(
+    ("format_name", "payload"),
+    (
+        (FormatName.JSON, '[{"id":"1"}]'),
+        (FormatName.JSONL, '{"id":"1"}\n'),
+    ),
+)
+def test_local_adapter_retains_explicit_json_reading(
+    tmp_path: Path,
+    format_name: FormatName,
+    payload: str,
+) -> None:
+    source = tmp_path / "orders.data"
+    source.write_text(payload, encoding="utf8")
+    endpoint = parse_endpoint(str(source))
+
+    result = build_default_registry().connector_for(endpoint).read(
+        endpoint,
+        CliOptions(from_format=format_name),
+    )
+
+    assert result.table.to_pylist() == [{"id": "1"}]
+    assert result.receipt.connector.connector_id == "local_files"
+
+
+def test_excel_adapter_inspection_delegates_native_sheet_facts(tmp_path: Path) -> None:
+    source = tmp_path / "book.xlsx"
+    workbook = Workbook()
+    orders = workbook.active
+    orders.title = "orders"
+    orders.append(["id"])
+    orders.append(["1"])
+    refunds = workbook.create_sheet("refunds")
+    refunds.append(["refund_id"])
+    refunds.append(["r1"])
+    workbook.save(source)
+    endpoint = parse_endpoint(f"excel://{source}")
+
+    inspection = build_default_registry().connector_for(endpoint).inspect(
+        endpoint,
+        CliOptions(sheet="refunds"),
+    )
+
+    assert inspection.mode is TableMode.SHEET
+    assert inspection.columns == ("refund_id",)
+    assert inspection.coordinate_convention.sheet == "refunds"
+    assert inspection.coordinate_convention.header_rows == 1
+    assert inspection.coordinate_convention.first_data_row == 2
+    assert inspection.facts == {
+        "worksheets": ["orders", "refunds"],
+        "formula_text_captured": False,
+        "formula_calculated": False,
+    }
 
 
 def test_cli_converts_csv_to_explicit_markdown_destination(tmp_path: Path) -> None:

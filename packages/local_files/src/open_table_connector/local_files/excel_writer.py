@@ -23,9 +23,12 @@ def write_excel(table: pa.Table, path: Path, sheet: str | None = None) -> None:
     workbook = Workbook()
     worksheet = workbook.active
     worksheet.title = sheet or "Sheet1"
-    worksheet.append(list(table.column_names))
+    _append_user_row(worksheet, list(table.column_names))
     for row in table.to_pylist():
-        worksheet.append([_cell_value(row.get(name)) for name in table.column_names])
+        _append_user_row(
+            worksheet,
+            [_cell_value(row.get(name)) for name in table.column_names],
+        )
     try:
         workbook.save(path)
     except OSError as exc:
@@ -42,6 +45,13 @@ def _cell_value(value: Any) -> Any:
     if isinstance(value, (list, dict)):
         return str(value)
     return value
+
+
+def _append_user_row(worksheet: Any, values: list[Any]) -> None:
+    worksheet.append(values)
+    for cell in worksheet[worksheet.max_row]:
+        if isinstance(cell.value, str):
+            cell.data_type = "s"
 
 
 __all__ = ["write_excel"]

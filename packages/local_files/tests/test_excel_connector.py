@@ -86,6 +86,23 @@ def test_excel_connector_inspection_reports_available_worksheets(tmp_path: Path)
     assert inspection.facts["formula_calculated"] is False
 
 
+def test_excel_connector_inspection_honors_option_bearing_request(tmp_path: Path) -> None:
+    source = tmp_path / "book.xlsx"
+    _workbook(source)
+    request = ExcelTableReadRequest(
+        TableURI(f"excel://{source}"),
+        options=ExcelReadOptions(sheet="refunds"),
+    )
+
+    inspection = ExcelConnector().inspect(request)
+
+    assert inspection.columns == ("refund_id", "amount")
+    assert inspection.coordinate_convention.sheet == "refunds"
+    assert inspection.coordinate_convention.header_rows == 1
+    assert inspection.coordinate_convention.first_data_row == 2
+    assert inspection.facts["worksheets"] == ["orders", "refunds"]
+
+
 def test_excel_connector_rejects_unsupported_hosts(tmp_path: Path) -> None:
     source = tmp_path / "book.xlsx"
     _workbook(source)

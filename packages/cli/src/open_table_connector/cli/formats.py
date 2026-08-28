@@ -11,7 +11,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence, TextIO
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 import pyarrow as pa
 
@@ -181,7 +181,21 @@ def _local_path(endpoint: Endpoint) -> Path:
         raise ConnectorError(
             ConnectorErrorCode.INVALID_URI,
             "local output query parameters are unsupported",
-            {"endpoint": endpoint.raw},
+            {
+                "query_keys": sorted(
+                    {key for key, _ in parse_qsl(parsed.query, keep_blank_values=True)}
+                )
+            },
+        )
+    if parsed.fragment:
+        raise ConnectorError(
+            ConnectorErrorCode.INVALID_URI,
+            "local output URI fragments are unsupported",
+            {
+                "fragment_keys": sorted(
+                    {key for key, _ in parse_qsl(parsed.fragment, keep_blank_values=True)}
+                )
+            },
         )
     path = Path(unquote(parsed.path))
     if not path.is_absolute():

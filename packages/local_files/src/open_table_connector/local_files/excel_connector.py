@@ -127,15 +127,23 @@ class ExcelConnector(URIResolver, TableInspector, ArrowTableReader, PolarsTableR
         table, receipt = self._result(request, TABLE_READ_POLARS_CAPABILITY)
         return PolarsReadResult(frame=pl.from_arrow(table), receipt=receipt)
 
-    def inspect(self, request: InspectRequest):
-        table, _, sheet, worksheets = self._read_canonical(
-            ExcelTableReadRequest(request.uri, resource_limits=request.resource_limits)
-        )
+    def inspect(self, request: InspectRequest | ExcelTableReadRequest):
+        if isinstance(request, ExcelTableReadRequest):
+            excel_request = request
+        else:
+            excel_request = ExcelTableReadRequest(
+                request.uri,
+                resource_limits=request.resource_limits,
+            )
+        table, _, sheet, worksheets = self._read_canonical(excel_request)
         return inspection_from_read(
-            request,
+            InspectRequest(
+                excel_request.uri,
+                resource_limits=excel_request.resource_limits,
+            ),
             table=table,
             sheet=sheet,
-            header_row=1,
+            header_row=excel_request.options.header_row,
             worksheets=worksheets,
             mode=TableMode.SHEET,
             formula_text_captured=False,

@@ -83,7 +83,7 @@ class MarkdownConnector(URIResolver, TableInspector, ArrowTableReader, PolarsTab
         path = resolved.resource.path
         try:
             text = path.read_bytes().decode(request.options.encoding)
-        except (OSError, UnicodeError) as exc:
+        except (OSError, UnicodeError, LookupError) as exc:
             raise ConnectorError(
                 ConnectorErrorCode.EXECUTION_FAILED,
                 "Markdown file could not be decoded",

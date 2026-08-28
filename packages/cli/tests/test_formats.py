@@ -6,9 +6,10 @@ from decimal import Decimal
 import pyarrow as pa
 import pytest
 
-from open_table_connector.contract import ConnectorError
+from open_table_connector.contract import ConnectorError, ConnectorErrorCode
 from open_table_connector.cli.formats import infer_format, read_local, write_local
 from open_table_connector.cli.model import Endpoint, FormatName, parse_endpoint
+from open_table_connector.cli.output import emit_error
 
 
 def _strict_json_loads(text: str):
@@ -158,3 +159,49 @@ def test_infer_format_uses_explicit_format() -> None:
 def test_infer_format_uses_file_suffix_for_auto() -> None:
     endpoint = parse_endpoint("rows.table")
     assert infer_format(endpoint, FormatName.AUTO) is FormatName.TABLE
+
+
+@pytest.mark.parametrize(
+    ("component", "expected_details", "secret"),
+    (
+        ("?view=query-secret&mode=compact", {"query_keys": ["mode", "view"]}, "query-secret"),
+        ("#token=fragment-secret&sheet=Orders", {"fragment_keys": ["sheet", "token"]}, "fragment-secret"),
+    ),
+)
+def test_local_destination_rejects_uri_components_without_leaking_values(
+    tmp_path,
+    component: str,
+    expected_details: dict[str, list[str]],
+    secret: str,
+) -> None:
+    destination = tmp_path / "orders.csv"
+    endpoint = parse_endpoint(f"csv://{destination}{component}")
+
+    with pytest.raises(ConnectorError) as raised:
+        write_local(pa.table({"id": ["1"]}), endpoint, FormatName.CSV)
+
+    output = io.StringIO()
+    assert emit_error(raised.value, output) == 2
+    payload = json.loads(output.getvalue())
+    assert raised.value.code is ConnectorErrorCode.INVALID_URI
+    assert payload["safe_details"] == expected_details
+    assert secret not in output.getvalue()
+    assert endpoint.raw not in output.getvalue()
+
+
+def test_local_destination_accepts_localhost_absolute_uri(tmp_path) -> None:
+    destination = tmp_path / "orders.csv"
+    endpoint = parse_endpoint(f"csv://localhost{destination}")
+
+    write_local(pa.table({"id": ["1"]}), endpoint, FormatName.CSV)
+
+    assert destination.read_text(encoding="utf8") == "id\n1\n"
+
+
+def test_local_destination_rejects_relative_explicit_uri() -> None:
+    endpoint = parse_endpoint("csv:orders.csv")
+
+    with pytest.raises(ConnectorError) as raised:
+        write_local(pa.table({"id": ["1"]}), endpoint, FormatName.CSV)
+
+    assert raised.value.code is ConnectorErrorCode.INVALID_URI

@@ -51,6 +51,8 @@ from open_table_connector.local_files import (
     ExcelReadOptions,
     ExcelTableReadRequest,
     LocalFilesConnector,
+    LocalReadOptions,
+    LocalTableReadRequest,
     MarkdownConnector,
     MarkdownReadOptions,
     MarkdownTableReadRequest,
@@ -350,16 +352,7 @@ class ExcelAdapter:
         return self.connector.read_arrow(self._request(endpoint, options))
 
     def inspect(self, endpoint: Endpoint, options: CliOptions) -> TableInspection:
-        result = self.read(endpoint, options)
-        return TableInspection(
-            _connector_uri(endpoint),
-            TableMode.SHEET,
-            tuple(result.table.column_names),
-            result.receipt.schema_fingerprint,
-            result.table.num_rows,
-            result.receipt.coordinate_convention,
-            {"provider": "local", "connector": self.identity.connector_id},
-        )
+        return self.connector.inspect(self._request(endpoint, options))
 
     def write(self, endpoint: Endpoint, table: pa.Table, options: CliOptions) -> TableWriteResult:
         write_local(table, endpoint, FormatName.EXCEL, sheet=options.sheet)
@@ -406,11 +399,30 @@ class LocalAdapter:
     def _format(self, endpoint: Endpoint, options: CliOptions, *, output: bool = False) -> FormatName:
         return infer_format(endpoint, options.to_format if output else options.from_format)
 
+    def _read_request(self, endpoint: Endpoint, options: CliOptions) -> LocalTableReadRequest:
+        return LocalTableReadRequest(
+            _connector_uri(endpoint),
+            resource_limits=_limits(options),
+            options=LocalReadOptions(sheet=options.sheet),
+        )
+
+    def _uses_legacy_reader(self, endpoint: Endpoint, options: CliOptions) -> bool:
+        if endpoint.is_stdio or options.from_format in {FormatName.JSON, FormatName.JSONL}:
+            return True
+        return (
+            options.from_format is FormatName.AUTO
+            and self._format(endpoint, options) in {FormatName.JSON, FormatName.JSONL}
+        )
+
     def read(self, endpoint: Endpoint, options: CliOptions) -> ArrowReadResult:
+        if not self._uses_legacy_reader(endpoint, options):
+            return self.connector.read_arrow(self._read_request(endpoint, options))
         table = _limited_table(read_local(endpoint, self._format(endpoint, options)), options)
         return ArrowReadResult(table, _local_receipt(endpoint, table, _LOCAL_READ_CAPABILITY))
 
     def inspect(self, endpoint: Endpoint, options: CliOptions) -> TableInspection:
+        if not self._uses_legacy_reader(endpoint, options):
+            return self.connector.inspect(self._read_request(endpoint, options))
         result = self.read(endpoint, options)
         return TableInspection(_local_uri(endpoint), TableMode.BASE,
                                 tuple(result.table.column_names), result.receipt.schema_fingerprint,

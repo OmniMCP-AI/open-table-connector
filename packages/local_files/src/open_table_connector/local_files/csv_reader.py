@@ -32,7 +32,7 @@ def read_csv_arrow(
 ) -> pa.Table:
     try:
         text = path.read_bytes().decode(encoding)
-    except (OSError, UnicodeError) as exc:
+    except (OSError, UnicodeError, LookupError) as exc:
         raise ConnectorError(
             ConnectorErrorCode.EXECUTION_FAILED,
             "CSV file could not be decoded",

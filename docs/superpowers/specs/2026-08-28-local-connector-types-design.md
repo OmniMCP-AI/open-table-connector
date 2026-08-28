@@ -2,7 +2,8 @@
 
 ## Status
 
-Approved in chat on 2026-08-28. Implementation has not started.
+Approved in chat on 2026-08-28. Implementation and final whole-branch review
+corrections are complete and verified on `main` as of 2026-08-28.
 
 ## Context
 
