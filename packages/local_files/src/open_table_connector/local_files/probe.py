@@ -44,6 +44,8 @@ def detect_format(path: Path) -> LocalFormat:
                 return LocalFormat.CSV
         if is_markdown_payload(text):
             return LocalFormat.MARKDOWN
+        if path.suffix.casefold() in {".csv", ".tsv"}:
+            return LocalFormat.CSV
     raise ConnectorError(
         ConnectorErrorCode.INVALID_URI,
         "local file has no supported CSV, Markdown, or XLSX signature",
