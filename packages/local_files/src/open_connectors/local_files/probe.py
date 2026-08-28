@@ -44,6 +44,10 @@ def detect_format(path: Path) -> LocalFormat:
     text = payload.decode("utf-8", errors="replace")
     if path.suffix.casefold() == ".json":
         return LocalFormat.JSON
+    if path.suffix.casefold() in {".csv", ".tsv"}:
+        lines = [line for line in text.splitlines() if line.strip()]
+        if len(lines) >= 2:
+            return LocalFormat.CSV
     if text.lstrip().startswith(("[", "{")):
         try:
             import json
