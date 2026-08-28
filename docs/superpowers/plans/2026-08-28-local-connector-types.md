@@ -136,7 +136,7 @@ git commit -m "refactor: extract neutral markdown codec"
   - `MarkdownReadOptions(encoding: str = "utf8")`, `MarkdownTableReadRequest`, and `MarkdownConnector` with `identity.connector_id == "md"` and `manifest.uri_schemes == ("md",)`.
   - Each manifest advertises `uri.resolve`, `table.inspect`, `table.read.arrow`, and `table.read.polars` in `TableMode.SHEET`.
 
-- [ ] **Step 1: Write failing identity, URI, and read tests**
+- [x] **Step 1: Write failing identity, URI, and read tests**
 
 ```python
 @pytest.mark.parametrize(
@@ -184,19 +184,19 @@ Run: `uv run pytest packages/local_files/tests/test_csv_connector.py packages/lo
 
 Expected: FAIL because the concrete connector classes, requests, and manifests are not present.
 
-- [ ] **Step 2: Implement concrete request and connector interfaces**
+- [x] **Step 2: Implement concrete request and connector interfaces**
 
 Give each request a `resolve_context` property returning `ResolveContext(resource_limits=self.resource_limits)`. Use a shared private absolute-path parser for explicit schemes; reject query parameters, unsupported hosts, relative paths, missing files, and format mismatches with stable `ConnectorError` codes. Construct receipts with the concrete `ConnectorIdentity` and the requested capability. Use `SheetConvention(sheet="data", header_rows=1, first_data_row=2)` for CSV and Markdown; use the selected worksheet and header row for Excel.
 
 Keep `table.read.arrow` and `table.read.polars` over one canonical Arrow read so content/schema fingerprints remain identical. `inspect` must not import CLI code and must report format-appropriate columns, row count, schema fingerprint, and worksheet facts.
 
-- [ ] **Step 3: Run concrete connector tests**
+- [x] **Step 3: Run concrete connector tests**
 
 Run: `uv run pytest packages/local_files/tests/test_csv_connector.py packages/local_files/tests/test_excel_connector.py packages/local_files/tests/test_markdown_connector.py -q`
 
 Expected: PASS, including identity, explicit scheme routing, Arrow/Polars parity, inspection, limits, malformed inputs, missing files, and receipt identity assertions.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add packages/local_files/src/open_table_connector/local_files packages/local_files/tests/test_csv_connector.py packages/local_files/tests/test_excel_connector.py packages/local_files/tests/test_markdown_connector.py
