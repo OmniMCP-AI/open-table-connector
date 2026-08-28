@@ -70,3 +70,42 @@ def test_local_files_facade_rejects_sheet_option_for_non_excel_formats(
         )
 
     assert raised.value.code is ConnectorErrorCode.INVALID_URI
+
+
+def test_local_files_facade_inspection_honors_csv_read_options(tmp_path: Path) -> None:
+    source = tmp_path / "orders.csv"
+    source.write_bytes("name;amount\ncafé;1\n".encode("latin-1"))
+    request = LocalTableReadRequest(
+        TableURI(source.as_uri()),
+        options=LocalReadOptions(separator=";", encoding="latin-1"),
+    )
+
+    inspection = LocalFilesConnector().inspect(request)
+
+    assert inspection.columns == ("name", "amount")
+    assert inspection.row_count == 1
+
+
+def test_local_files_facade_inspection_honors_excel_read_options(tmp_path: Path) -> None:
+    source = tmp_path / "orders.xlsx"
+    workbook = Workbook()
+    orders = workbook.active
+    orders.title = "orders"
+    orders.append(["ignored metadata"])
+    orders.append(["id", "amount"])
+    orders.append(["1", "2.50"])
+    refunds = workbook.create_sheet("refunds")
+    refunds.append(["ignored metadata"])
+    refunds.append(["refund_id", "amount"])
+    refunds.append(["r1", "1.00"])
+    workbook.save(source)
+    request = LocalTableReadRequest(
+        TableURI(source.as_uri()),
+        options=LocalReadOptions(sheet="refunds", header_row=2),
+    )
+
+    inspection = LocalFilesConnector().inspect(request)
+
+    assert inspection.columns == ("refund_id", "amount")
+    assert inspection.coordinate_convention.sheet == "refunds"
+    assert inspection.coordinate_convention.header_rows == 2

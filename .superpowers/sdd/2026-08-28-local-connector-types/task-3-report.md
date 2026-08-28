@@ -81,3 +81,63 @@ No additional issues found in self-review.
 None at hand. The facade currently delegates by building concrete connector
 requests and reusing the concrete connectors' internal canonical read paths,
 which keeps the compatibility surface thin while preserving `file://` receipts.
+
+## Review Fix Round 1: Preserve Facade Options During Inspection
+
+### Finding and root cause
+
+`LocalFilesConnector.inspect()` rebuilt a `LocalTableReadRequest` from only the
+URI and resource limits. Because `InspectRequest` has no format-specific
+options, an option-bearing compatibility request lost its `separator`,
+`encoding`, `sheet`, and `header_row` values before delegation. Inspection
+could therefore disagree with the corresponding compatibility read.
+
+### Fix
+
+- `inspect()` now accepts the existing `InspectRequest` form and the public
+  `LocalTableReadRequest` form. It reuses the latter directly so all facade
+  options reach the concrete connector.
+- Inspection metadata now receives the facade request's `header_row`.
+- Replaced the facade's `tuple[Any, Any]` helper return type with an explicit
+  union of concrete connector/request pairs.
+
+### TDD regression coverage
+
+Added these focused tests in
+`packages/local_files/tests/test_local_files_connector.py`:
+
+- `test_local_files_facade_inspection_honors_csv_read_options` verifies a
+  semicolon-delimited Latin-1 CSV is inspected with the requested separator
+  and encoding.
+- `test_local_files_facade_inspection_honors_excel_read_options` verifies
+  worksheet selection, header-row selection, columns, and coordinate metadata
+  during inspection.
+
+The new tests were first run against the unfixed implementation:
+
+```bash
+uv run python -m pytest packages/local_files/tests/test_local_files_connector.py -q
+```
+
+Observed output: `2 failed, 5 passed in 15.84s`. The failures were the
+expected default UTF-8/comma CSV decode and default Excel header-row behavior.
+
+After the fix, the covering compatibility tests were run with:
+
+```bash
+uv run python -m pytest packages/local_files/tests/test_local_files_connector.py packages/local_files/tests/test_resolver.py packages/local_files/tests/test_conformance.py packages/local_files/tests/test_csv_reader.py packages/local_files/tests/test_excel_reader.py packages/local_files/tests/test_probe.py -q
+```
+
+Output: `24 passed in 0.60s`.
+
+The full workspace suite was then run with:
+
+```bash
+uv run python -m pytest -q
+```
+
+Output: `467 passed in 6.91s`.
+
+`git diff --check` also completed successfully with no output. The round-1
+fix was committed in the follow-up fix commit after the original Task 3
+implementation commit `aa098c2`.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TypeAlias
 from urllib.parse import quote
 
 import polars as pl
@@ -17,6 +17,7 @@ from open_table_connector.contract import (
     PolarsTableReader,
     ResolveContext,
     ResolvedTable,
+    TableInspection,
     TableInspector,
     TableMode,
     TableReadRequest,
@@ -66,6 +67,13 @@ class LocalTableReadRequest(TableReadRequest):
         return ResolveContext(resource_limits=self.resource_limits)
 
 
+ConcreteConnectorRequest: TypeAlias = (
+    tuple[CsvConnector, CsvTableReadRequest]
+    | tuple[ExcelConnector, ExcelTableReadRequest]
+    | tuple[MarkdownConnector, MarkdownTableReadRequest]
+)
+
+
 class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsTableReader):
     identity = CONNECTOR_IDENTITY
     manifest = CAPABILITY_MANIFEST
@@ -102,7 +110,7 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
 
     def _build_concrete_request(
         self, request: LocalTableReadRequest, resolved: ResolvedLocalTable
-    ) -> tuple[Any, Any]:
+    ) -> ConcreteConnectorRequest:
         if resolved.format is LocalFormat.CSV:
             return (
                 self._csv_connector,
@@ -176,15 +184,19 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
         table, receipt = self._result(request, TABLE_READ_POLARS_CAPABILITY)
         return PolarsReadResult(frame=pl.from_arrow(table), receipt=receipt)
 
-    def inspect(self, request: InspectRequest):
-        local_request = LocalTableReadRequest(request.uri, resource_limits=request.resource_limits)
+    def inspect(self, request: InspectRequest | LocalTableReadRequest) -> TableInspection:
+        if isinstance(request, LocalTableReadRequest):
+            local_request = request
+        else:
+            local_request = LocalTableReadRequest(request.uri, resource_limits=request.resource_limits)
         table, _, sheet, worksheets = self._read_canonical(local_request)
         return inspection_from_read(
-            request,
+            InspectRequest(local_request.uri, resource_limits=local_request.resource_limits),
             table=table,
             sheet=sheet,
             worksheets=worksheets,
             mode=TableMode.SHEET,
+            header_row=local_request.options.header_row,
         )
 
 
