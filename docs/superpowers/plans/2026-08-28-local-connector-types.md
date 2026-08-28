@@ -221,7 +221,7 @@ git commit -m "feat: add concrete local format connectors"
 - Consumes: `CsvConnector`, `ExcelConnector`, `MarkdownConnector`, `LocalURIResolver`, `LocalReadOptions`, and `LocalTableReadRequest`.
 - Produces: `LocalFilesConnector` with its current public constructor and methods, `LocalReadOptions`, `LocalTableReadRequest`, `LocalURIResolver`, and `ResolvedLocalTable`; compatibility receipts retain `connector_id == "local_files"`.
 
-- [ ] **Step 1: Write failing facade delegation tests**
+- [x] **Step 1: Write failing facade delegation tests**
 
 ```python
 @pytest.mark.parametrize(
@@ -262,19 +262,19 @@ Run: `uv run pytest packages/local_files/tests/test_local_files_connector.py pac
 
 Expected: FAIL because the facade does not yet delegate Markdown and the compatibility reader remains format-branching code.
 
-- [ ] **Step 2: Implement the facade and format-aware resolver**
+- [x] **Step 2: Implement the facade and format-aware resolver**
 
 Move the existing `LocalFilesConnector` implementation into `local_files_connector.py`; keep `reader.py` as a compatibility re-export for `LocalFilesConnector`, `LocalReadOptions`, and `LocalTableReadRequest`. Extend `ResolvedLocalTable` and `LocalFormat` to include Markdown. Select a concrete connector from the resolved format and pass the existing options into its request. Use the existing low-level readers where this avoids a needless conversion, but construct the final compatibility receipt with `local_files` identity. Preserve sheet-fragment handling for XLSX and reject a CSV/Markdown request that supplies a sheet option.
 
 Update probe errors to name all three supported formats. Ensure repeated reads, byte limits, absolute URI validation, and missing-file behavior remain unchanged.
 
-- [ ] **Step 3: Run compatibility tests**
+- [x] **Step 3: Run compatibility tests**
 
 Run: `uv run pytest packages/local_files/tests/test_local_files_connector.py packages/local_files/tests/test_resolver.py packages/local_files/tests/test_conformance.py packages/local_files/tests/test_csv_reader.py packages/local_files/tests/test_excel_reader.py packages/local_files/tests/test_probe.py -q`
 
 Expected: PASS with existing CSV/XLSX behavior unchanged and Markdown added to `file://` autodetection.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add packages/local_files/src/open_table_connector/local_files packages/local_files/tests
