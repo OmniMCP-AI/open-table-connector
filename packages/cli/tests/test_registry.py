@@ -6,6 +6,7 @@ import pytest
 from open_table_connector.cli.model import CliOptions, parse_endpoint
 from open_table_connector.cli.registry import build_default_registry
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode, TableMode
+from open_table_connector.local_files import LocalFilesConnector
 
 
 class Transport:
@@ -118,11 +119,19 @@ def test_feishu_adapter_inspect_uses_options_and_injected_transport() -> None:
     assert transport.calls[0][4] == 2
 
 
-def test_default_registry_exposes_base_modes_for_local_and_maybe_sheet() -> None:
+def test_default_registry_exposes_base_mode_for_maybe_sheet() -> None:
     adapters = {adapter.identity.connector_id: adapter for adapter in build_default_registry(env={}).list()}
 
-    assert adapters["local_files"].modes == (TableMode.BASE,)
     assert adapters["maybe_sheet"].modes == (TableMode.BASE,)
+
+
+def test_default_registry_local_files_metadata_matches_public_facade_manifest() -> None:
+    adapter = build_default_registry(env={}).connector_for(parse_endpoint("/tmp/orders.csv"))
+
+    assert adapter.identity == LocalFilesConnector.identity
+    assert adapter.schemes == tuple(LocalFilesConnector.manifest.uri_schemes)
+    assert adapter.capabilities == tuple(LocalFilesConnector.manifest.capabilities)
+    assert adapter.modes == tuple(LocalFilesConnector.manifest.modes)
 
 
 def test_maybe_sheet_sheet_capability_is_rejected_before_process_io() -> None:

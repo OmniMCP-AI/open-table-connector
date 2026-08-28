@@ -153,12 +153,12 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
             "connector_id": "local_files",
             "schemes": ["file"],
             "capabilities": [
+                {"capability_id": "uri.resolve", "capability_version": "1.0"},
+                {"capability_id": "table.inspect", "capability_version": "1.0"},
                 {"capability_id": "table.read.arrow", "capability_version": "1.0"},
                 {"capability_id": "table.read.polars", "capability_version": "1.0"},
-                {"capability_id": "table.inspect", "capability_version": "1.0"},
-                {"capability_id": "table.write", "capability_version": "1.0"},
             ],
-            "modes": ["base"],
+            "modes": ["sheet"],
         },
         {
             "connector_id": "google_sheets",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 from pathlib import Path
 from typing import Any, Mapping, Protocol
@@ -50,6 +50,7 @@ from open_table_connector.local_files import (
     ExcelConnector,
     ExcelReadOptions,
     ExcelTableReadRequest,
+    LocalFilesConnector,
     MarkdownConnector,
     MarkdownReadOptions,
     MarkdownTableReadRequest,
@@ -396,15 +397,11 @@ class MarkdownAdapter:
 
 @dataclass
 class LocalAdapter:
+    connector: LocalFilesConnector = field(default_factory=LocalFilesConnector)
     schemes: tuple[str, ...] = ("file",)
-    identity: ConnectorIdentity = ConnectorIdentity("local_files", "0.1.0", "1.0")
-    modes: tuple[TableMode, ...] = (TableMode.BASE,)
-    capabilities: tuple[CapabilityIdentity, ...] = (
-        CapabilityIdentity("table.read.arrow", "1.0"),
-        CapabilityIdentity("table.read.polars", "1.0"),
-        CapabilityIdentity("table.inspect", "1.0"),
-        CapabilityIdentity("table.write", "1.0"),
-    )
+    identity: ConnectorIdentity = LocalFilesConnector.identity
+    modes: tuple[TableMode, ...] = tuple(LocalFilesConnector.manifest.modes)
+    capabilities: tuple[CapabilityIdentity, ...] = tuple(LocalFilesConnector.manifest.capabilities)
 
     def _format(self, endpoint: Endpoint, options: CliOptions, *, output: bool = False) -> FormatName:
         return infer_format(endpoint, options.to_format if output else options.from_format)
