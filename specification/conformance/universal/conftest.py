@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import polars as pl
@@ -19,11 +20,34 @@ from specification.conformance.universal.fixtures import (
 )
 
 
+_PROVIDER_CREDENTIAL_ENVIRONMENT_VARIABLES = frozenset(
+    {
+        "FEISHU_TENANT_ACCESS_TOKEN",
+        "GOOGLE_SHEETS_ACCESS_TOKEN",
+        "MAYBESHEET_ACCESS_TOKEN",
+    }
+)
+
+
 @pytest.fixture(autouse=True)
-def isolated_universal_fixture_bundle(tmp_path: Path) -> UniversalFixtureBundle:
+def isolated_universal_fixture_bundle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> UniversalFixtureBundle:
+    for variable in _PROVIDER_CREDENTIAL_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(variable, raising=False)
     bundle = build_fixture_bundle(tmp_path)
     configure_fixture_bundle(bundle)
     return bundle
+
+
+@pytest.fixture
+def sanitized_subprocess_env() -> dict[str, str]:
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key not in _PROVIDER_CREDENTIAL_ENVIRONMENT_VARIABLES
+    }
 
 
 @pytest.fixture

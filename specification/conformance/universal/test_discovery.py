@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import importlib
 
 import pytest
@@ -24,6 +25,116 @@ _CASE_NAMES = (
     "dbt",
 )
 _MANIFESTLESS_CASE_NAMES = ("maybesheet", "sqlite", "postgres", "dbt")
+
+
+@dataclass(frozen=True)
+class _ExpectedConnectorMetadata:
+    connector_id: str
+    connector_version: str
+    contract_version: str
+    capabilities: tuple[tuple[str, str], ...]
+    modes: tuple[str, ...]
+    schemes: tuple[str, ...]
+
+
+_EXPECTED_METADATA = {
+    "local_files": _ExpectedConnectorMetadata(
+        connector_id="local_files",
+        connector_version="0.1.0",
+        contract_version="1.0",
+        capabilities=(
+            ("uri.resolve", "1.0"),
+            ("table.inspect", "1.0"),
+            ("table.read.arrow", "1.0"),
+            ("table.read.polars", "1.0"),
+        ),
+        modes=("sheet",),
+        schemes=("file",),
+    ),
+    "google_sheets": _ExpectedConnectorMetadata(
+        connector_id="google_sheets",
+        connector_version="0.1.0",
+        contract_version="1.0",
+        capabilities=(
+            ("uri.resolve", "1.0"),
+            ("table.inspect", "1.0"),
+            ("table.read.arrow", "1.0"),
+            ("table.read.polars", "1.0"),
+            ("table.write", "1.0"),
+        ),
+        modes=("sheet",),
+        schemes=("gsheets", "https"),
+    ),
+    "feishu_bitable": _ExpectedConnectorMetadata(
+        connector_id="feishu_bitable",
+        connector_version="0.1.0",
+        contract_version="1.0",
+        capabilities=(
+            ("uri.resolve", "1.0"),
+            ("table.inspect", "1.0"),
+            ("table.read.arrow", "1.0"),
+            ("table.read.polars", "1.0"),
+            ("table.write", "1.0"),
+        ),
+        modes=("base",),
+        schemes=("feishu", "feishu_bitable"),
+    ),
+    "maybesheet": _ExpectedConnectorMetadata(
+        connector_id="maybesheet",
+        connector_version="0.1.0",
+        contract_version="1.0",
+        capabilities=(
+            ("base.read", "1.0"),
+            ("base.inspect", "1.0"),
+            ("sheet.read", "1.0"),
+            ("sheet.inspect", "1.0"),
+            ("table.write", "1.0"),
+        ),
+        modes=("base", "sheet"),
+        schemes=("https", "maybe"),
+    ),
+    "sqlite": _ExpectedConnectorMetadata(
+        connector_id="sqlite",
+        connector_version="0.1.0",
+        contract_version="1.0",
+        capabilities=(
+            ("table.read.arrow", "1.0"),
+            ("table.read.polars", "1.0"),
+            ("table.inspect", "1.0"),
+            ("table.execute", "1.0"),
+            ("table.write", "1.0"),
+        ),
+        modes=("base",),
+        schemes=("sqlite",),
+    ),
+    "postgres": _ExpectedConnectorMetadata(
+        connector_id="postgres",
+        connector_version="0.1.0",
+        contract_version="1.0",
+        capabilities=(
+            ("table.read.arrow", "1.0"),
+            ("table.read.polars", "1.0"),
+            ("table.inspect", "1.0"),
+            ("table.execute", "1.0"),
+            ("table.write", "1.0"),
+        ),
+        modes=("base",),
+        schemes=("postgres", "postgresql"),
+    ),
+    "dbt": _ExpectedConnectorMetadata(
+        connector_id="dbt",
+        connector_version="0.1.0",
+        contract_version="1.0",
+        capabilities=(
+            ("dbt.compile", "1.0"),
+            ("dbt.run", "1.0"),
+            ("dbt.cancel", "1.0"),
+            ("dbt.artifact.read", "1.0"),
+        ),
+        modes=(),
+        schemes=("file",),
+    ),
+}
 
 
 def test_all_current_connectors_have_named_cases() -> None:
@@ -60,6 +171,56 @@ def test_all_cases_bootstrap_fixtures_without_pytest_configure() -> None:
 @pytest.mark.parametrize("connector_case", _CASE_NAMES, ids=str, indirect=True)
 def test_connector_identity_is_closed_and_stable(connector_case: ConnectorCase) -> None:
     assert_identity_round_trip(connector_case.identity)
+
+
+@pytest.mark.parametrize(
+    ("case_name", "expected"),
+    tuple(
+        pytest.param(case_name, expected, id=case_name)
+        for case_name, expected in _EXPECTED_METADATA.items()
+    ),
+)
+def test_public_identity_and_manifest_match_literal_expectations(
+    case_name: str,
+    expected: _ExpectedConnectorMetadata,
+) -> None:
+    connector_case = case(case_name)
+    public_identity = connector_case.connector.identity
+
+    assert public_identity.connector_id == expected.connector_id
+    assert public_identity.connector_version == expected.connector_version
+    assert public_identity.contract_version == expected.contract_version
+    assert connector_case.identity == public_identity
+
+    manifest = getattr(connector_case.connector, "manifest", None)
+    if manifest is not None:
+        public_capabilities = tuple(
+            (item.capability_id, item.capability_version)
+            for item in manifest.capabilities
+        )
+        public_modes = tuple(mode.value for mode in manifest.modes)
+        public_schemes = tuple(manifest.uri_schemes)
+        assert manifest.connector == public_identity
+    else:
+        public_capabilities = tuple(
+            (
+                binding.identity.capability_id,
+                binding.identity.capability_version,
+            )
+            for binding in connector_case.capability_bindings.values()
+            if binding.identity is not None
+        )
+        public_modes = tuple(sorted(mode.value for mode in connector_case.modes))
+        public_schemes = tuple(sorted(connector_case.schemes))
+
+    assert public_capabilities == expected.capabilities
+    assert public_modes == expected.modes
+    assert public_schemes == expected.schemes
+    assert connector_case.capabilities == frozenset(
+        capability_id for capability_id, _version in expected.capabilities
+    )
+    assert connector_case.modes == frozenset(TableMode(mode) for mode in expected.modes)
+    assert connector_case.schemes == frozenset(expected.schemes)
 
 
 @pytest.mark.parametrize("connector_case", _CASE_NAMES, ids=str, indirect=True)

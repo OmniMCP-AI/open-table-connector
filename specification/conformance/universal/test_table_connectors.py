@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 import string
+import subprocess
 
 import polars as pl
 import pytest
@@ -18,6 +18,7 @@ from open_connectors.contract import (
     TableURI,
 )
 from open_connectors.local_files import LocalReadOptions, LocalTableReadRequest
+from open_connectors.maybesheet import SubprocessProcessClient
 
 from specification.conformance.universal.assertions import (
     assert_error_is_safe,
@@ -537,10 +538,10 @@ def test_maybesheet_write_records_stdin_jsonl_argv_and_credential_locality(
         "-",
     )
     assert call.timeout is None
-    assert [json.loads(line) for line in call.stdin.splitlines()] == [
-        {"id": "write-1", "amount": "3.50"},
-        {"id": "write-2", "amount": "4.00"},
-    ]
+    assert call.stdin == (
+        '{"id":"write-1","amount":"3.50"}\n'
+        '{"id":"write-2","amount":"4.00"}\n'
+    )
     assert call.credentials == {"access_token": "fixture-token"}
     _assert_credential_is_local(
         "fixture-token",
@@ -597,6 +598,90 @@ def test_provider_failures_map_to_safe_redacted_errors(
         raised.value,
         forbidden_values=("fixture-token", "fixture-secret"),
     )
+
+
+@pytest.mark.parametrize(
+    ("operation", "expected_capability"),
+    (
+        pytest.param(
+            "calculate_formulas",
+            "formula.calculate",
+            id="formula-calculate-unsupported",
+        ),
+        pytest.param(
+            "read_formula_values",
+            "formula.readback",
+            id="formula-readback-unsupported",
+        ),
+    ),
+)
+def test_maybesheet_formula_operations_fail_closed(
+    operation: str,
+    expected_capability: str,
+) -> None:
+    connector = case("maybesheet").connector
+
+    with pytest.raises(ConnectorError) as raised:
+        getattr(connector, operation)(object())
+
+    assert raised.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+    assert raised.value.safe_details == {"capability": expected_capability}
+    assert_error_is_safe(raised.value)
+
+
+def test_maybesheet_process_timeouts_map_to_safe_stable_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, object] = {}
+
+    def timeout(command: list[str], **kwargs: object) -> object:
+        seen["command"] = command
+        seen.update(kwargs)
+        raise subprocess.TimeoutExpired(
+            command,
+            kwargs["timeout"],
+            output="provider stdout exposed fixture-token",
+            stderr="provider stderr exposed fixture-token",
+        )
+
+    monkeypatch.setattr(subprocess, "run", timeout)
+
+    with pytest.raises(ConnectorError) as raised:
+        SubprocessProcessClient(timeout_seconds=9).run(
+            ("mbs", "db-table", "read"),
+            credentials={"access_token": "fixture-token"},
+            timeout=2.5,
+        )
+
+    provider_credentials = {
+        key: value
+        for key, value in seen["env"].items()
+        if key
+        in {
+            "FEISHU_TENANT_ACCESS_TOKEN",
+            "GOOGLE_SHEETS_ACCESS_TOKEN",
+            "MAYBESHEET_ACCESS_TOKEN",
+        }
+    }
+    assert seen["command"] == ["mbs", "db-table", "read"]
+    assert seen["check"] is False
+    assert seen["capture_output"] is True
+    assert seen["text"] is True
+    assert seen["input"] is None
+    assert seen["timeout"] == 2.5
+    assert provider_credentials == {"MAYBESHEET_ACCESS_TOKEN": "fixture-token"}
+
+    cause = raised.value.__cause__
+    assert isinstance(cause, subprocess.TimeoutExpired)
+    assert cause.timeout == 2.5
+    assert cause.output == "provider stdout exposed fixture-token"
+    assert cause.stderr == "provider stderr exposed fixture-token"
+    assert raised.value.to_wire() == {
+        "code": "timeout",
+        "message": "MaybeSheet process timed out",
+        "safe_details": {"timeout_seconds": 2.5},
+    }
+    assert_error_is_safe(raised.value, forbidden_values=("fixture-token",))
 
 
 @pytest.mark.parametrize(

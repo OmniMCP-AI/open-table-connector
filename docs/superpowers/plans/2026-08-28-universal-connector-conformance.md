@@ -10,6 +10,18 @@
 
 **Spec:** \`docs/superpowers/specs/2026-08-28-universal-connector-conformance-design.md\`
 
+**Current status (2026-08-28):** Tasks 1–8 are complete. Final-review round 1
+added independent literal metadata expectations for all seven connectors,
+credential-isolated subprocess coverage, exact MaybeSheet JSONL bytes, and the
+approved formula-negative and timeout tests. The dedicated suite collects and
+passes 245 cases, and the full workspace passes 432 tests. Dependency sync and
+lock checks, bytecode compilation, \`uv build --all-packages\`, ordered
+collection-ID determinism, and offline CLI smoke checks pass. Exact commands,
+exit statuses, build artifacts, and remaining concerns are recorded in
+\`.superpowers/sdd/2026-08-28-universal-connector-conformance/task-8-report.md\`.
+Independent release artifacts/tags and owner-supplied live evidence remain
+outside this test-only plan.
+
 ## Global Constraints
 
 - The suite covers \`local_files\`, \`google_sheets\`, \`feishu_bitable\`, \`maybesheet\`, \`sqlite\`, \`postgres\`, and \`dbt\`.
@@ -423,7 +435,7 @@ git commit -m "test: add universal cli and security matrix"
 - Consumes: all universal tests and case IDs from Tasks 1–6.
 - Produces: a repeatable count guard and contributor-facing run instructions.
 
-- [ ] **Step 1: Write the failing count guard**
+- [x] **Step 1: Write the failing count guard**
 
 The count guard collects the dedicated directory in a subprocess and fails with the actual count below 120. Its assertion message includes the command and observed count:
 
@@ -448,7 +460,7 @@ uv run python -m pytest specification/conformance/universal --collect-only -q
 uv run python -m pytest specification/conformance/universal -q
 \`\`\`
 
-- [ ] **Step 2: Run the count guard and verify red if below the floor**
+- [x] **Step 2: Run the count guard and verify red if below the floor**
 
 \`\`\`bash
 uv run python -m pytest specification/conformance/universal/test_suite_count.py -q
@@ -456,15 +468,15 @@ uv run python -m pytest specification/conformance/universal/test_suite_count.py 
 
 Expected: FAIL with the observed collected count if the suite has fewer than 120 tests.
 
-- [ ] **Step 3: Expand named behavior functions until the floor is met**
+- [x] **Step 3: Expand named behavior functions until the floor is met**
 
 Add missing behavior-focused tests in the relevant task file, not one giant parameter list. Every parametrized test uses stable descriptive IDs. The final directory contains at least eight behavior-focused test modules/functions families and at least 120 collected cases.
 
-- [ ] **Step 4: Run the count guard and dedicated suite to verify green**
+- [x] **Step 4: Run the count guard and dedicated suite to verify green**
 
 Run both README commands. Expected: count at least 120, dedicated suite passes, and count guard reports no failure.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 \`\`\`bash
 git add specification/conformance/universal/test_suite_count.py specification/conformance/universal/README.md pyproject.toml
@@ -480,7 +492,7 @@ git commit -m "test: enforce universal conformance suite size"
 - Consumes: completed universal suite and existing workspace tests.
 - Produces: verified full test/build evidence and reviewable final diff.
 
-- [ ] **Step 1: Run the dedicated suite and record its count**
+- [x] **Step 1: Run the dedicated suite and record its count**
 
 \`\`\`bash
 uv run python -m pytest specification/conformance/universal --collect-only -q
@@ -489,7 +501,7 @@ uv run python -m pytest specification/conformance/universal -q
 
 Expected: at least 120 collected tests and zero failures.
 
-- [ ] **Step 2: Run the full workspace tests**
+- [x] **Step 2: Run the full workspace tests**
 
 \`\`\`bash
 uv sync --all-packages --group dev
@@ -499,7 +511,7 @@ uv run python -m pytest
 
 Expected: the original suite plus the universal suite pass.
 
-- [ ] **Step 3: Run static/build checks**
+- [x] **Step 3: Run static/build checks**
 
 \`\`\`bash
 git diff --check
@@ -509,7 +521,7 @@ uv build --all-packages
 
 Expected: all commands exit zero.
 
-- [ ] **Step 4: Run offline/security smoke checks**
+- [x] **Step 4: Run offline/security smoke checks**
 
 \`\`\`bash
 uv run otc list --output-format jsonl
@@ -520,7 +532,7 @@ uv run open-connectors --help
 
 Expected: four connector discovery records and successful help output for all entry points; no credentials or network calls.
 
-- [ ] **Step 5: Prepare the final review package**
+- [x] **Step 5: Prepare the final review package**
 
 \`\`\`bash
 BASE=$(git merge-base origin/main HEAD)
@@ -530,7 +542,7 @@ BASE=$(git merge-base origin/main HEAD)
 
 Request separate standards/spec review against \`docs/superpowers/specs/2026-08-28-universal-connector-conformance-design.md\`. Resolve every Critical or Important finding with a fresh test and focused commit before handoff.
 
-- [ ] **Step 6: Commit any final test-only correction and report verification**
+- [x] **Step 6: Commit any final test-only correction and report verification**
 
 Use a specific message such as:
 
@@ -540,4 +552,3 @@ git commit -m "test: tighten universal conformance coverage"
 \`\`\`
 
 Report the exact collected count, full-suite result, build result, and any accepted Minor concern.
-

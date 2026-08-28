@@ -26,12 +26,15 @@ def parse_collected_count(output: str) -> int:
     return int(match.group(1))
 
 
-def test_universal_suite_has_minimum_collected_cases() -> None:
+def test_universal_suite_has_minimum_collected_cases(
+    sanitized_subprocess_env: dict[str, str],
+) -> None:
     completed = subprocess.run(
         COLLECT_COMMAND,
         check=True,
         capture_output=True,
         text=True,
+        env=sanitized_subprocess_env,
     )
     count = parse_collected_count(completed.stdout)
     command = " ".join(COLLECT_COMMAND)

@@ -1084,7 +1084,10 @@ def test_cli_repeated_reads_emit_deterministic_jsonl_and_table(format_name: str)
         )
 
 
-def test_otc_parser_error_is_one_safe_json_record_and_redacts_token(tmp_path) -> None:
+def test_otc_parser_error_is_one_safe_json_record_and_redacts_token(
+    tmp_path,
+    sanitized_subprocess_env: dict[str, str],
+) -> None:
     source = tmp_path / "rows.csv"
     source.write_text("id\na\n", encoding="utf-8")
 
@@ -1102,6 +1105,7 @@ def test_otc_parser_error_is_one_safe_json_record_and_redacts_token(tmp_path) ->
         capture_output=True,
         text=True,
         check=False,
+        env=sanitized_subprocess_env,
     )
 
     assert completed.returncode == 2
@@ -1113,7 +1117,10 @@ def test_otc_parser_error_is_one_safe_json_record_and_redacts_token(tmp_path) ->
     assert _FIXTURE_SECRET not in completed.stderr
 
 
-def test_otc_entry_point_parses_from_to_and_emits_only_requested_codec(tmp_path) -> None:
+def test_otc_entry_point_parses_from_to_and_emits_only_requested_codec(
+    tmp_path,
+    sanitized_subprocess_env: dict[str, str],
+) -> None:
     source = tmp_path / "rows.csv"
     source.write_text("id,amount\na,1\n", encoding="utf-8")
 
@@ -1133,6 +1140,7 @@ def test_otc_entry_point_parses_from_to_and_emits_only_requested_codec(tmp_path)
         capture_output=True,
         text=True,
         check=False,
+        env=sanitized_subprocess_env,
     )
 
     assert completed.returncode == 0
