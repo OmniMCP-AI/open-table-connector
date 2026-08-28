@@ -7,7 +7,7 @@ import polars as pl
 
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode, ResourceLimits, TableMode, TableURI, TableWriteRequest
 from open_table_connector.contract.fingerprints import arrow_content_fingerprint, arrow_schema_fingerprint
-from open_table_connector.maybesheet import MaybeSheetConnector, MaybeSheetReadRequest, SubprocessProcessClient
+from open_table_connector.maybe_sheet import MaybeSheetConnector, MaybeSheetReadRequest, SubprocessProcessClient
 
 
 class Process:
@@ -39,7 +39,7 @@ class OverReturningProcess:
         }
 
 
-def test_maybesheet_has_explicit_base_and_sheet_argv_and_receipts() -> None:
+def test_maybe_sheet_has_explicit_base_and_sheet_argv_and_receipts() -> None:
     process = Process()
     connector = MaybeSheetConnector(process)
     request = MaybeSheetReadRequest(TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"), TableMode.BASE, "R_orders")
@@ -56,7 +56,7 @@ def test_maybesheet_has_explicit_base_and_sheet_argv_and_receipts() -> None:
     assert result.receipt.vendor_receipt_ref == "safe-ref"
 
 
-def test_maybesheet_read_enforces_max_rows_when_process_over_returns() -> None:
+def test_maybe_sheet_read_enforces_max_rows_when_process_over_returns() -> None:
     process = OverReturningProcess()
     request = MaybeSheetReadRequest(
         TableURI("maybe://doc/R_orders"),
@@ -75,14 +75,14 @@ def test_maybesheet_read_enforces_max_rows_when_process_over_returns() -> None:
     assert result.receipt.vendor_receipt_ref == "over-return-ref"
 
 
-def test_maybesheet_non_read_capabilities_fail_explicitly() -> None:
+def test_maybe_sheet_non_read_capabilities_fail_explicitly() -> None:
     connector = MaybeSheetConnector(Process())
     with pytest.raises(ConnectorError) as error:
         connector.read_formula_values(object())
     assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
 
 
-def test_maybesheet_subprocess_transport_redacts_diagnostics_and_prefixes_credentials(monkeypatch) -> None:
+def test_maybe_sheet_subprocess_transport_redacts_diagnostics_and_prefixes_credentials(monkeypatch) -> None:
     seen = {}
 
     def fake_run(command, **kwargs):
@@ -97,12 +97,12 @@ def test_maybesheet_subprocess_transport_redacts_diagnostics_and_prefixes_creden
     )
 
     assert payload == {"ok": True}
-    assert seen["env"]["MAYBESHEET_ACCESS_TOKEN"] == "hidden"
+    assert seen["env"]["MAYBE_SHEET_ACCESS_TOKEN"] == "hidden"
     assert seen["input"] == '{"id":"1"}\n'
     assert "stderr" not in repr(seen)
 
 
-def test_maybesheet_write_sends_jsonl_to_process() -> None:
+def test_maybe_sheet_write_sends_jsonl_to_process() -> None:
     process = Process()
     result = MaybeSheetConnector(process).write(
         TableWriteRequest(
@@ -129,7 +129,7 @@ def test_maybesheet_write_sends_jsonl_to_process() -> None:
     assert result.receipt.vendor_receipt_ref == "safe-ref"
 
 
-def test_maybesheet_write_normalizes_non_finite_floats_to_strict_json() -> None:
+def test_maybe_sheet_write_normalizes_non_finite_floats_to_strict_json() -> None:
     process = Process()
 
     MaybeSheetConnector(process).write(
@@ -158,7 +158,7 @@ def test_maybesheet_write_normalizes_non_finite_floats_to_strict_json() -> None:
     ]
 
 
-def test_maybesheet_write_serialization_errors_are_secret_safe_and_skip_process() -> None:
+def test_maybe_sheet_write_serialization_errors_are_secret_safe_and_skip_process() -> None:
     process = Process()
     secret = "serialization-secret"
 
@@ -183,7 +183,7 @@ def test_maybesheet_write_serialization_errors_are_secret_safe_and_skip_process(
     assert process.calls == []
 
 
-def test_maybesheet_write_passes_explicit_credentials_without_serializing_them() -> None:
+def test_maybe_sheet_write_passes_explicit_credentials_without_serializing_them() -> None:
     process = Process()
     access_token = "explicit-write-token"
     result = MaybeSheetConnector(process).write(
@@ -204,7 +204,7 @@ def test_maybesheet_write_passes_explicit_credentials_without_serializing_them()
 
 
 @pytest.mark.parametrize("if_exists", ["replace", "error"])
-def test_maybesheet_rejects_unsupported_write_policies(if_exists) -> None:
+def test_maybe_sheet_rejects_unsupported_write_policies(if_exists) -> None:
     process = Process()
     with pytest.raises(ConnectorError) as error:
         MaybeSheetConnector(process).write(
@@ -222,7 +222,7 @@ def test_maybesheet_rejects_unsupported_write_policies(if_exists) -> None:
 
 
 @pytest.mark.parametrize("operation", ["read", "write"])
-def test_maybesheet_unexpected_process_errors_do_not_expose_access_tokens(operation) -> None:
+def test_maybe_sheet_unexpected_process_errors_do_not_expose_access_tokens(operation) -> None:
     access_token = "access-token-secret"
 
     class ExplodingProcess:
@@ -255,7 +255,7 @@ def test_maybesheet_unexpected_process_errors_do_not_expose_access_tokens(operat
     assert access_token not in repr(error.value.to_wire())
 
 
-def test_maybesheet_subprocess_transport_maps_timeouts_to_stable_connector_error(monkeypatch) -> None:
+def test_maybe_sheet_subprocess_transport_maps_timeouts_to_stable_connector_error(monkeypatch) -> None:
     def fake_run(*_args, **_kwargs):
         raise subprocess.TimeoutExpired("mbs", 1)
 
@@ -265,7 +265,7 @@ def test_maybesheet_subprocess_transport_maps_timeouts_to_stable_connector_error
     assert error.value.code is ConnectorErrorCode.TIMEOUT
 
 
-def test_maybesheet_read_passes_request_timeout_to_compatible_process_client() -> None:
+def test_maybe_sheet_read_passes_request_timeout_to_compatible_process_client() -> None:
     process = TimedProcess()
     request = MaybeSheetReadRequest(
         TableURI("maybe://doc/R_orders"),
@@ -279,7 +279,7 @@ def test_maybesheet_read_passes_request_timeout_to_compatible_process_client() -
     assert process.timeout == 7
 
 
-def test_maybesheet_subprocess_client_accepts_per_request_timeout(monkeypatch) -> None:
+def test_maybe_sheet_subprocess_client_accepts_per_request_timeout(monkeypatch) -> None:
     seen = {}
 
     def fake_run(command, **kwargs):

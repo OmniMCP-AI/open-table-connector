@@ -64,7 +64,7 @@ Command:
 uv run python -m pytest \
   packages/google_sheets/tests/test_connector.py \
   packages/feishu_bitable/tests/test_connector.py \
-  packages/maybesheet/tests/test_connector.py \
+  packages/maybe_sheet/tests/test_connector.py \
   packages/sqlite/tests/test_reader.py \
   packages/postgres/tests/test_reader.py \
   packages/dbt/tests/test_connector.py \
@@ -118,14 +118,14 @@ __________ test_all_cases_bootstrap_fixtures_without_pytest_configure __________
 E   RuntimeError: universal connector fixtures are not configured
 _____________ test_all_advertised_capabilities_have_case_bindings ______________
 E   RuntimeError: universal connector fixtures are not configured
-_____ test_cases_with_sheet_read_returns_mode_specific_maybesheet_binding ______
+_____ test_cases_with_sheet_read_returns_mode_specific_maybe_sheet_binding ______
 E   RuntimeError: universal connector fixtures are not configured
 ____________ test_dbt_capabilities_expose_fixture_backed_operations ____________
 E   RuntimeError: universal connector fixtures are not configured
 =========================== short test summary info ============================
 FAILED specification/conformance/universal/test_discovery.py::test_all_cases_bootstrap_fixtures_without_pytest_configure
 FAILED specification/conformance/universal/test_discovery.py::test_all_advertised_capabilities_have_case_bindings
-FAILED specification/conformance/universal/test_discovery.py::test_cases_with_sheet_read_returns_mode_specific_maybesheet_binding
+FAILED specification/conformance/universal/test_discovery.py::test_cases_with_sheet_read_returns_mode_specific_maybe_sheet_binding
 FAILED specification/conformance/universal/test_discovery.py::test_dbt_capabilities_expose_fixture_backed_operations
 4 failed, 2 passed in 0.09s
 ```
@@ -158,7 +158,7 @@ uv run python -m pytest \
   specification/conformance/universal/test_discovery.py \
   packages/google_sheets/tests/test_connector.py \
   packages/feishu_bitable/tests/test_connector.py \
-  packages/maybesheet/tests/test_connector.py \
+  packages/maybe_sheet/tests/test_connector.py \
   packages/sqlite/tests/test_reader.py \
   packages/postgres/tests/test_reader.py \
   packages/dbt/tests/test_connector.py \

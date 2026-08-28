@@ -24,7 +24,7 @@ _PROVIDER_CREDENTIAL_ENVIRONMENT_VARIABLES = frozenset(
     {
         "FEISHU_TENANT_ACCESS_TOKEN",
         "GOOGLE_SHEETS_ACCESS_TOKEN",
-        "MAYBESHEET_ACCESS_TOKEN",
+        "MAYBE_SHEET_ACCESS_TOKEN",
     }
 )
 
@@ -79,7 +79,7 @@ def connector_case(request: pytest.FixtureRequest) -> ConnectorCase:
         ),
         pytest.param(
             "https://www.maybe.ai/docs/spreadsheets/d/fixture-doc?access_token=fixture-token",
-            id="maybesheet-access-token-query",
+            id="maybe_sheet-access-token-query",
         ),
     )
 )
@@ -122,7 +122,7 @@ def write_if_exists_by_case() -> dict[str, str]:
     return {
         "google_sheets": "replace",
         "feishu_bitable": "append",
-        "maybesheet": "append",
+        "maybe_sheet": "append",
         "sqlite": "replace",
         "postgres": "replace",
     }

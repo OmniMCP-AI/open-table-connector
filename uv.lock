@@ -10,7 +10,7 @@ members = [
     "open-table-connector-feishu-bitable",
     "open-table-connector-google-sheets",
     "open-table-connector-local-files",
-    "open-table-connector-maybesheet",
+    "open-table-connector-maybe-sheet",
     "open-table-connector-postgres",
     "open-table-connector-sqlite",
     "open-table-connector",
@@ -149,9 +149,9 @@ requires-dist = [
 ]
 
 [[package]]
-name = "open-table-connector-maybesheet"
+name = "open-table-connector-maybe-sheet"
 version = "0.1.0"
-source = { editable = "packages/maybesheet" }
+source = { editable = "packages/maybe_sheet" }
 dependencies = [
     { name = "open-table-connector-contract" },
     { name = "polars" },
@@ -207,7 +207,7 @@ dependencies = [
     { name = "open-table-connector-contract" },
     { name = "open-table-connector-feishu-bitable" },
     { name = "open-table-connector-google-sheets" },
-    { name = "open-table-connector-maybesheet" },
+    { name = "open-table-connector-maybe-sheet" },
     { name = "polars" },
     { name = "pyarrow" },
 ]
@@ -217,7 +217,7 @@ requires-dist = [
     { name = "open-table-connector-contract", editable = "packages/contract" },
     { name = "open-table-connector-feishu-bitable", editable = "packages/feishu_bitable" },
     { name = "open-table-connector-google-sheets", editable = "packages/google_sheets" },
-    { name = "open-table-connector-maybesheet", editable = "packages/maybesheet" },
+    { name = "open-table-connector-maybe-sheet", editable = "packages/maybe_sheet" },
     { name = "polars", specifier = ">=1.0,<2" },
     { name = "pyarrow", specifier = ">=14,<20" },
 ]

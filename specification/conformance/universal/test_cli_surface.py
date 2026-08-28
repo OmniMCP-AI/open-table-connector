@@ -141,7 +141,7 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
             "modes": ["base"],
         },
         {
-            "connector_id": "maybesheet",
+            "connector_id": "maybe_sheet",
             "schemes": ["maybe", "https"],
             "capabilities": [
                 {"capability_id": "base.read", "capability_version": "1.0"},
@@ -206,14 +206,14 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
             id="feishu-scheme",
         ),
         pytest.param(
-            "maybesheet",
+            "maybe_sheet",
             "https://www.maybe.ai/docs/spreadsheets/d/fixture-doc",
             {"token": _FIXTURE_SECRET, "target": "R_orders"},
             "base",
             ["id", "amount", "note"],
             4,
             {"transport": "process_client"},
-            id="maybesheet-https-host",
+            id="maybe_sheet-https-host",
         ),
         pytest.param(
             "local_files",
@@ -269,23 +269,23 @@ def test_cli_inspect_from_selects_exact_scheme_and_reports_safe_metadata(
     assert _FIXTURE_SECRET not in result.stdout
     google_requests = bridge.cases["google_sheets"].http_fixture.transport.requests
     feishu_requests = bridge.cases["feishu_bitable"].http_fixture.transport.requests
-    maybesheet_calls = bridge.cases["maybesheet"].process_fixture.process.calls
+    maybe_sheet_calls = bridge.cases["maybe_sheet"].process_fixture.process.calls
     if case_name == "google_sheets":
         assert len(google_requests) == 1
         assert feishu_requests == []
-        assert maybesheet_calls == []
+        assert maybe_sheet_calls == []
     elif case_name == "feishu_bitable":
         assert google_requests == []
         assert len(feishu_requests) == 2
-        assert maybesheet_calls == []
-    elif case_name == "maybesheet":
+        assert maybe_sheet_calls == []
+    elif case_name == "maybe_sheet":
         assert google_requests == []
         assert feishu_requests == []
-        assert len(maybesheet_calls) == 1
+        assert len(maybe_sheet_calls) == 1
     else:
         assert google_requests == []
         assert feishu_requests == []
-        assert maybesheet_calls == []
+        assert maybe_sheet_calls == []
 
 
 @pytest.mark.parametrize(
@@ -308,12 +308,12 @@ def test_cli_inspect_from_selects_exact_scheme_and_reports_safe_metadata(
             id="feishu-rows",
         ),
         pytest.param(
-            "maybesheet",
+            "maybe_sheet",
             "maybe://fixture-doc/R_orders",
             {"token": _FIXTURE_SECRET},
             {"id": "1", "amount": "2.5", "note": "first"},
             4,
-            id="maybesheet-rows",
+            id="maybe_sheet-rows",
         ),
         pytest.param(
             "local_files",
@@ -700,8 +700,8 @@ def test_cli_field_names_reach_feishu_adapter_and_filter_exact_columns() -> None
     )
 
 
-def test_cli_target_reaches_maybesheet_process_boundary() -> None:
-    bridge = build_cli_registry_bridge("maybesheet")
+def test_cli_target_reaches_maybe_sheet_process_boundary() -> None:
+    bridge = build_cli_registry_bridge("maybe_sheet")
 
     result = run_cli_command(
         _args(
@@ -715,7 +715,7 @@ def test_cli_target_reaches_maybesheet_process_boundary() -> None:
         bridge.registry,
     )
 
-    call = bridge.cases["maybesheet"].process_fixture.process.calls[0]
+    call = bridge.cases["maybe_sheet"].process_fixture.process.calls[0]
     assert result.exit_code == 0
     assert call.argv == (
         "mbs",

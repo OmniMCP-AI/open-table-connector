@@ -118,16 +118,16 @@ def test_feishu_adapter_inspect_uses_options_and_injected_transport() -> None:
     assert transport.calls[0][4] == 2
 
 
-def test_default_registry_exposes_base_modes_for_local_and_maybesheet() -> None:
+def test_default_registry_exposes_base_modes_for_local_and_maybe_sheet() -> None:
     adapters = {adapter.identity.connector_id: adapter for adapter in build_default_registry(env={}).list()}
 
     assert adapters["local_files"].modes == (TableMode.BASE,)
-    assert adapters["maybesheet"].modes == (TableMode.BASE,)
+    assert adapters["maybe_sheet"].modes == (TableMode.BASE,)
 
 
-def test_maybesheet_sheet_capability_is_rejected_before_process_io() -> None:
+def test_maybe_sheet_sheet_capability_is_rejected_before_process_io() -> None:
     process = Process()
-    registry = build_default_registry(transports={"maybesheet": process})
+    registry = build_default_registry(transports={"maybe_sheet": process})
 
     with pytest.raises(ConnectorError) as error:
         registry.require_capability(parse_endpoint("maybe://doc/target"), "sheet.read")
@@ -179,9 +179,9 @@ def test_local_stdin_inspection_uses_stable_uri_and_receipt_revision(monkeypatch
     assert inspection.coordinate_convention.ordinal_snapshot_id.startswith("sha256:")
 
 
-def test_registry_injects_maybesheet_process_transport() -> None:
+def test_registry_injects_maybe_sheet_process_transport() -> None:
     process = Process()
-    registry = build_default_registry(transports={"maybesheet": process})
+    registry = build_default_registry(transports={"maybe_sheet": process})
 
     adapter = registry.connector_for(parse_endpoint("maybe://doc/R_orders"))
     result = adapter.read(parse_endpoint("maybe://doc/R_orders"), CliOptions(token="cli-secret", limit=1))
@@ -206,9 +206,9 @@ def test_local_adapter_applies_limit_before_returning_rows(tmp_path) -> None:
     assert result.receipt.row_count == 2
 
 
-def test_maybesheet_https_document_requires_explicit_target_before_process_io() -> None:
+def test_maybe_sheet_https_document_requires_explicit_target_before_process_io() -> None:
     process = Process()
-    registry = build_default_registry(transports={"maybesheet": process})
+    registry = build_default_registry(transports={"maybe_sheet": process})
     endpoint = parse_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc")
 
     with pytest.raises(ConnectorError) as error:
@@ -219,9 +219,9 @@ def test_maybesheet_https_document_requires_explicit_target_before_process_io() 
     assert process.calls == []
 
 
-def test_maybesheet_https_document_uses_explicit_target() -> None:
+def test_maybe_sheet_https_document_uses_explicit_target() -> None:
     process = Process()
-    registry = build_default_registry(transports={"maybesheet": process})
+    registry = build_default_registry(transports={"maybe_sheet": process})
     endpoint = parse_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc")
 
     registry.connector_for(endpoint).read(endpoint, CliOptions(target="R_orders"))
@@ -239,9 +239,9 @@ def test_maybesheet_https_document_uses_explicit_target() -> None:
         "maybe://doc/R_orders/extra",
     ),
 )
-def test_maybesheet_rejects_malformed_opaque_uris_before_process_io(uri) -> None:
+def test_maybe_sheet_rejects_malformed_opaque_uris_before_process_io(uri) -> None:
     process = Process()
-    registry = build_default_registry(transports={"maybesheet": process})
+    registry = build_default_registry(transports={"maybe_sheet": process})
     endpoint = parse_endpoint(uri)
 
     with pytest.raises(ConnectorError) as error:

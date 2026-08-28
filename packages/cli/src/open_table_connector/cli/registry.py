@@ -40,7 +40,7 @@ class ConnectorRegistry:
                 host = (parsed.hostname or "").casefold()
                 if adapter.identity.connector_id == "google_sheets" and host != "docs.google.com":
                     continue
-                if adapter.identity.connector_id == "maybesheet" and host != "www.maybe.ai":
+                if adapter.identity.connector_id == "maybe_sheet" and host != "www.maybe.ai":
                     continue
             return adapter
         if not scheme_matched:

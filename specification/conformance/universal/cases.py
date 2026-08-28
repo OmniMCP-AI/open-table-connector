@@ -49,8 +49,8 @@ from open_table_connector.google_sheets.connector import (
     UrllibSheetsTransport,
 )
 from open_table_connector.local_files import LocalFilesConnector, LocalTableReadRequest
-from open_table_connector.maybesheet import MaybeSheetConnector, MaybeSheetReadRequest
-from open_table_connector.maybesheet.identity import (
+from open_table_connector.maybe_sheet import MaybeSheetConnector, MaybeSheetReadRequest
+from open_table_connector.maybe_sheet.identity import (
     BASE_INSPECT_CAPABILITY,
     BASE_READ_CAPABILITY,
     CONNECTOR_IDENTITY as MAYBE_IDENTITY,
@@ -684,7 +684,7 @@ def _maybe_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
     }
 
     return ConnectorCase(
-        name="maybesheet",
+        name="maybe_sheet",
         connector=connector,
         identity=MAYBE_IDENTITY,
         capabilities=_capabilities(

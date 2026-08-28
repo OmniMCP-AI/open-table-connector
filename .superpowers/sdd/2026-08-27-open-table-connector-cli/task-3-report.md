@@ -4,24 +4,24 @@ Status: complete
 
 ## Changed files
 
-- `packages/maybesheet/src/open_table_connector/maybesheet/process.py`
+- `packages/maybe_sheet/src/open_table_connector/maybe_sheet/process.py`
   - Added optional stdin to `ProcessClient` transport and passed it to `subprocess.run` as input.
-- `packages/maybesheet/src/open_table_connector/maybesheet/connector.py`
+- `packages/maybe_sheet/src/open_table_connector/maybe_sheet/connector.py`
   - Implemented append-only `TableWriteRequest` handling with compact JSONL stdin, the specified `mbs db-table write` argv, safe policy validation, process error mapping, and neutral write receipts.
-- `packages/maybesheet/src/open_table_connector/maybesheet/identity.py`
+- `packages/maybe_sheet/src/open_table_connector/maybe_sheet/identity.py`
   - Added `TABLE_WRITE_CAPABILITY`.
-- `packages/maybesheet/src/open_table_connector/maybesheet/__init__.py`
+- `packages/maybe_sheet/src/open_table_connector/maybe_sheet/__init__.py`
   - Exported `TABLE_WRITE_CAPABILITY`.
-- `packages/maybesheet/tests/test_connector.py`
+- `packages/maybe_sheet/tests/test_connector.py`
   - Added writer, policy rejection, and stdin transport coverage; updated the process test double for the compatible stdin parameter.
 
 ## Commits
 
-- `feat: add maybesheet table writes`
+- `feat: add maybe_sheet table writes`
 
 ## Tests
 
-- `uv run python -m pytest packages/maybesheet/tests -q` — 7 passed.
+- `uv run python -m pytest packages/maybe_sheet/tests -q` — 7 passed.
 - `git diff --check` — passed.
 
 ## Concerns
@@ -42,9 +42,9 @@ The generic exception handlers in `MaybeSheetConnector.write` and `_read` copied
 
 ## Changed files
 
-- `packages/maybesheet/src/open_table_connector/maybesheet/connector.py`
+- `packages/maybe_sheet/src/open_table_connector/maybe_sheet/connector.py`
   - Replaced both raw exception messages with the fixed safe reason `unexpected process-client exception`, preserving `EXECUTION_FAILED` and unchanged `ConnectorError` propagation.
-- `packages/maybesheet/tests/test_connector.py`
+- `packages/maybe_sheet/tests/test_connector.py`
   - Added read/write regression coverage using an exception containing an access token and asserting the token is absent from error details, wire output, and repr.
 
 ## Commits
@@ -53,7 +53,7 @@ The generic exception handlers in `MaybeSheetConnector.write` and `_read` copied
 
 ## Tests
 
-- `uv run python -m pytest packages/maybesheet/tests -q` — 9 passed.
+- `uv run python -m pytest packages/maybe_sheet/tests -q` — 9 passed.
 - `uv run python -m pytest packages/cli/tests/test_commands.py packages/cli/tests/test_registry.py packages/cli/tests/test_pipeline.py -q` — 27 passed.
 - `git diff --check` — passed before the fix report was appended.
 
@@ -71,10 +71,10 @@ Status: complete
 
 ## Changed files
 
-- `packages/maybesheet/src/open_table_connector/maybesheet/connector.py`
+- `packages/maybe_sheet/src/open_table_connector/maybe_sheet/connector.py`
   - Added a keyword-only optional `credentials` mapping to `write`, preserving one-argument `TableWriter` callers.
   - Forwarded the mapping only to `ProcessClient.run`; credentials remain absent from argv, stdin, receipt fields, and error details.
-- `packages/maybesheet/tests/test_connector.py`
+- `packages/maybe_sheet/tests/test_connector.py`
   - Added explicit write-credential precedence and non-serialization assertions.
   - Extended the unexpected-process-error regression to exercise an explicit write credential and verify token-free error representations.
 - `packages/cli/src/open_table_connector/cli/adapters.py`
@@ -88,7 +88,7 @@ Status: complete
 
 ## Tests
 
-- `uv run python -m pytest packages/maybesheet/tests -q` — 10 passed.
+- `uv run python -m pytest packages/maybe_sheet/tests -q` — 10 passed.
 - `uv run python -m pytest packages/cli/tests/test_commands.py packages/cli/tests/test_registry.py packages/cli/tests/test_pipeline.py -q` — 42 passed.
 - `git diff --check` — passed before commit.
 
@@ -113,6 +113,6 @@ Status: complete
 
 ## Tests
 
-- `uv run python -m pytest packages/maybesheet/tests/test_connector.py -q` — 15 passed.
+- `uv run python -m pytest packages/maybe_sheet/tests/test_connector.py -q` — 15 passed.
 - `uv run python -m pytest packages/cli/tests/test_pipeline.py -q` — 24 passed.
 - `uv run python -m pytest -q` — 186 passed.

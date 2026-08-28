@@ -13,7 +13,7 @@ The suite covers the current connector packages:
 - `local_files`
 - `google_sheets`
 - `feishu_bitable`
-- `maybesheet`
+- `maybe_sheet`
 - `sqlite`
 - `postgres`
 - `dbt`

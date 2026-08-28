@@ -113,7 +113,7 @@ Resolved 28 packages in 7ms
    Building open-table-connector-feishu-bitable @ file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/feishu_bitable
    Building open-table-connector-google-sheets @ file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/google_sheets
    Building open-table-connector-local-files @ file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/local_files
-   Building open-table-connector-maybesheet @ file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/maybesheet
+   Building open-table-connector-maybe-sheet @ file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/maybe_sheet
    Building open-table-connector-postgres @ file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/postgres
    Building open-table-connector-sqlite @ file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/sqlite
    Building open-table-connector @ file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/cli
@@ -124,7 +124,7 @@ Resolved 28 packages in 7ms
       Built open-table-connector-dbt @ file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/dbt
       Built open-table-connector-conformance @ file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/conformance
       Built open-table-connector-local-files @ file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/local_files
-      Built open-table-connector-maybesheet @ file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/maybesheet
+      Built open-table-connector-maybe-sheet @ file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/maybe_sheet
       Built open-table-connector-google-sheets @ file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/google_sheets
       Built open-table-connector-contract @ file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/contract
 Prepared 10 packages in 1.96s
@@ -143,8 +143,8 @@ Installed 10 packages in 9ms
  + open-table-connector-google-sheets==0.1.0 (from file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/google_sheets)
  - open-table-connector-local-files==0.1.0 (from file:///Users/admin/Code/GitHub/open-connectors/.worktrees/otc-cli/packages/local_files)
  + open-table-connector-local-files==0.1.0 (from file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/local_files)
- - open-table-connector-maybesheet==0.1.0 (from file:///Users/admin/Code/GitHub/open-connectors/.worktrees/otc-cli/packages/maybesheet)
- + open-table-connector-maybesheet==0.1.0 (from file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/maybesheet)
+ - open-table-connector-maybe-sheet==0.1.0 (from file:///Users/admin/Code/GitHub/open-connectors/.worktrees/otc-cli/packages/maybe_sheet)
+ + open-table-connector-maybe-sheet==0.1.0 (from file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/maybe_sheet)
  - open-table-connector-postgres==0.1.0 (from file:///Users/admin/Code/GitHub/open-connectors/.worktrees/otc-cli/packages/postgres)
  + open-table-connector-postgres==0.1.0 (from file:///Users/admin/Code/GitHub/open-table-connectors/.worktrees/otc-cli/packages/postgres)
  - open-table-connector-sqlite==0.1.0 (from file:///Users/admin/Code/GitHub/open-connectors/.worktrees/otc-cli/packages/sqlite)

@@ -2,7 +2,7 @@
 
 This directory contains the offline, framework-neutral conformance suite for
 the supported connector families: `local_files`, `google_sheets`,
-`feishu_bitable`, `maybesheet`, `sqlite`, `postgres`, and `dbt`. Tests use
+`feishu_bitable`, `maybe_sheet`, `sqlite`, `postgres`, and `dbt`. Tests use
 deterministic fixture data and stable case IDs so the suite can validate wire
 contracts, discovery, table behavior, database behavior, dbt behavior, CLI
 surfaces, and security invariants without requiring external services.

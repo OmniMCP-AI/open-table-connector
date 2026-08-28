@@ -274,12 +274,12 @@ def test_csv_to_google_sheets_import_sends_header_and_rows(tmp_path) -> None:
     }
 
 
-def test_google_sheets_to_maybesheet_import_sends_jsonl_to_process(tmp_path) -> None:
+def test_google_sheets_to_maybe_sheet_import_sends_jsonl_to_process(tmp_path) -> None:
     source = tmp_path / "orders.jsonl"
     source.write_text('{"id":"a"}\n')
     process = RecordingProcess()
     registry = build_default_registry(
-        env={"MAYBESHEET_ACCESS_TOKEN": "token"}, transports={"maybesheet": process}
+        env={"MAYBE_SHEET_ACCESS_TOKEN": "token"}, transports={"maybe_sheet": process}
     )
 
     summary = import_endpoint(
@@ -399,10 +399,10 @@ def test_row_limit_is_applied_before_destination_write(tmp_path) -> None:
     }
 
 
-def test_maybesheet_unsupported_policy_is_rejected_before_source_read() -> None:
+def test_maybe_sheet_unsupported_policy_is_rejected_before_source_read() -> None:
     source_adapter = RecordingAdapter()
     process = RecordingProcess()
-    registry = build_default_registry(transports={"maybesheet": process})
+    registry = build_default_registry(transports={"maybe_sheet": process})
     registry.register(source_adapter)
 
     with pytest.raises(ConnectorError) as error:
@@ -576,10 +576,10 @@ def test_google_source_limit_is_reflected_in_import_summary_and_destination_tabl
     assert destination_adapter.tables[0].num_rows == 2
 
 
-def test_maybesheet_source_limit_is_enforced_when_process_over_returns_during_import() -> None:
+def test_maybe_sheet_source_limit_is_enforced_when_process_over_returns_during_import() -> None:
     process = OverReturningProcess()
     destination_adapter = RecordingAdapter()
-    registry = build_default_registry(transports={"maybesheet": process})
+    registry = build_default_registry(transports={"maybe_sheet": process})
     registry.register(destination_adapter)
 
     summary = import_endpoint(
@@ -598,10 +598,10 @@ def test_maybesheet_source_limit_is_enforced_when_process_over_returns_during_im
     assert summary.source_receipt.content_fingerprint == arrow_content_fingerprint(written_table)
 
 
-def test_maybesheet_https_missing_target_is_rejected_before_source_or_process_io() -> None:
+def test_maybe_sheet_https_missing_target_is_rejected_before_source_or_process_io() -> None:
     source_adapter = RecordingAdapter()
     process = RecordingProcess()
-    registry = build_default_registry(transports={"maybesheet": process})
+    registry = build_default_registry(transports={"maybe_sheet": process})
     registry.register(source_adapter)
 
     with pytest.raises(ConnectorError) as error:

@@ -49,11 +49,11 @@ Create the CLI package under `packages/cli/`:
 Modify the workspace and existing MaybeSheet package:
 
 - `pyproject.toml`: add `packages/cli` to `tool.uv.workspace.members`; rename the root workspace project to `open-table-connector-workspace` if it still uses the former project name.
-- `packages/maybesheet/src/open_table_connector/maybesheet/connector.py`: implement `table.write` through `ProcessClient` stdin.
-- `packages/maybesheet/src/open_table_connector/maybesheet/process.py`: accept an optional stdin payload and pass it to `subprocess.run`.
-- `packages/maybesheet/src/open_table_connector/maybesheet/identity.py`: add the `table.write` capability identity.
-- `packages/maybesheet/src/open_table_connector/maybesheet/__init__.py`: export the write capability if the package exposes capability constants.
-- `packages/maybesheet/tests/test_connector.py`: add write command, stdin, receipt, policy, and process-error tests.
+- `packages/maybe_sheet/src/open_table_connector/maybe_sheet/connector.py`: implement `table.write` through `ProcessClient` stdin.
+- `packages/maybe_sheet/src/open_table_connector/maybe_sheet/process.py`: accept an optional stdin payload and pass it to `subprocess.run`.
+- `packages/maybe_sheet/src/open_table_connector/maybe_sheet/identity.py`: add the `table.write` capability identity.
+- `packages/maybe_sheet/src/open_table_connector/maybe_sheet/__init__.py`: export the write capability if the package exposes capability constants.
+- `packages/maybe_sheet/tests/test_connector.py`: add write command, stdin, receipt, policy, and process-error tests.
 - `README.md`: document the canonical `otc` commands and endpoint flag convention.
 
 ### Task 1: Scaffold the CLI distribution and shared models
@@ -209,11 +209,11 @@ git commit -m "feat: add otc table format codecs"
 ### Task 3: Add MaybeSheet table writing
 
 **Files:**
-- Modify: `packages/maybesheet/src/open_table_connector/maybesheet/process.py`
-- Modify: `packages/maybesheet/src/open_table_connector/maybesheet/connector.py`
-- Modify: `packages/maybesheet/src/open_table_connector/maybesheet/identity.py`
-- Modify: `packages/maybesheet/src/open_table_connector/maybesheet/__init__.py`
-- Test: `packages/maybesheet/tests/test_connector.py`
+- Modify: `packages/maybe_sheet/src/open_table_connector/maybe_sheet/process.py`
+- Modify: `packages/maybe_sheet/src/open_table_connector/maybe_sheet/connector.py`
+- Modify: `packages/maybe_sheet/src/open_table_connector/maybe_sheet/identity.py`
+- Modify: `packages/maybe_sheet/src/open_table_connector/maybe_sheet/__init__.py`
+- Test: `packages/maybe_sheet/tests/test_connector.py`
 
 **Interfaces:**
 - Extends `ProcessClient.run` to `run(argv: tuple[str, ...], *, credentials: Mapping[str, str] | None = None, stdin: str | None = None) -> Mapping[str, Any]`.
@@ -227,7 +227,7 @@ import polars as pl
 import pytest
 
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode, TableWriteRequest, TableURI
-from open_table_connector.maybesheet import MaybeSheetConnector
+from open_table_connector.maybe_sheet import MaybeSheetConnector
 
 
 class Process:
@@ -239,7 +239,7 @@ class Process:
         return {"status": "completed", "rows_written": 1, "receipt_id": "safe-ref"}
 
 
-def test_maybesheet_write_sends_jsonl_to_process() -> None:
+def test_maybe_sheet_write_sends_jsonl_to_process() -> None:
     process = Process()
     result = MaybeSheetConnector(process).write(
         TableWriteRequest(TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"), pl.DataFrame({"id": ["1"]}), table="R_orders", if_exists="append")
@@ -251,7 +251,7 @@ def test_maybesheet_write_sends_jsonl_to_process() -> None:
 
 
 @pytest.mark.parametrize("if_exists", ["replace", "error"])
-def test_maybesheet_rejects_unsupported_write_policies(if_exists) -> None:
+def test_maybe_sheet_rejects_unsupported_write_policies(if_exists) -> None:
     with pytest.raises(ConnectorError) as error:
         MaybeSheetConnector(Process()).write(
             TableWriteRequest(TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"), pl.DataFrame({"id": ["1"]}), table="R_orders", if_exists=if_exists)
@@ -261,7 +261,7 @@ def test_maybesheet_rejects_unsupported_write_policies(if_exists) -> None:
 
 - [ ] **Step 2: Run the new writer tests to verify they fail**
 
-Run: `uv run pytest packages/maybesheet/tests/test_connector.py -q`
+Run: `uv run pytest packages/maybe_sheet/tests/test_connector.py -q`
 
 Expected: the write test fails because the current connector rejects `table.write`.
 
@@ -271,15 +271,15 @@ Add `stdin` to the protocol and to `SubprocessProcessClient.run`; pass it as `in
 
 - [ ] **Step 4: Run all MaybeSheet tests**
 
-Run: `uv run pytest packages/maybesheet/tests -q`
+Run: `uv run pytest packages/maybe_sheet/tests -q`
 
 Expected: existing read/process tests and the new write tests pass.
 
 - [ ] **Step 5: Commit MaybeSheet writing**
 
 ```bash
-git add packages/maybesheet
-git commit -m "feat: add maybesheet table writes"
+git add packages/maybe_sheet
+git commit -m "feat: add maybe_sheet table writes"
 ```
 
 ### Task 4: Define the registry and generic connector adapters
@@ -550,7 +550,7 @@ git commit -m "feat: expose otc command line interface"
 - Modify: `packages/cli/tests/test_registry.py`
 - Modify: `packages/google_sheets/tests/test_connector.py`
 - Modify: `packages/feishu_bitable/tests/test_connector.py`
-- Modify: `packages/maybesheet/tests/test_connector.py`
+- Modify: `packages/maybe_sheet/tests/test_connector.py`
 
 **Interfaces:**
 - No new public interface; this task verifies that the existing adapters and CLI seam compose correctly for the named cross-connector flows.
@@ -570,11 +570,11 @@ def test_csv_to_google_sheets_import_sends_header_and_rows(tmp_path):
     assert transport.calls[0].body["values"] == [["id", "amount"], ["a", "1"]]
 
 
-def test_google_sheets_to_maybesheet_import_sends_jsonl_to_process(tmp_path):
+def test_google_sheets_to_maybe_sheet_import_sends_jsonl_to_process(tmp_path):
     source = tmp_path / "orders.jsonl"
     source.write_text('{"id":"a"}\n')
     process = RecordingProcess()
-    registry = build_default_registry(env={"MAYBESHEET_ACCESS_TOKEN": "token"}, processes={"maybesheet": process})
+    registry = build_default_registry(env={"MAYBE_SHEET_ACCESS_TOKEN": "token"}, processes={"maybe_sheet": process})
     summary = import_endpoint(parse_endpoint(str(source)), parse_endpoint("maybe://doc/R_orders"), registry, CliOptions(if_exists="append"))
     assert summary.rows_written == 1
     assert process.stdin_payload == '{"id":"a"}\n'
@@ -615,7 +615,7 @@ Each test must assert exact destination request bodies/argv, row counts, receipt
 
 - [ ] **Step 2: Run the new integration tests to verify the missing behavior**
 
-Run: `uv run pytest packages/cli/tests/test_pipeline.py packages/cli/tests/test_commands.py packages/cli/tests/test_registry.py packages/google_sheets/tests packages/feishu_bitable/tests packages/maybesheet/tests -q`
+Run: `uv run pytest packages/cli/tests/test_pipeline.py packages/cli/tests/test_commands.py packages/cli/tests/test_registry.py packages/google_sheets/tests packages/feishu_bitable/tests packages/maybe_sheet/tests -q`
 
 Expected: at least the Google-to-MaybeSheet import test fails until the MaybeSheet adapter target mapping and write receipt path are complete; all failures identify concrete missing behavior.
 
@@ -625,14 +625,14 @@ Ensure the source row limit is enforced in the adapter request, destination writ
 
 - [ ] **Step 4: Run the integration tests to verify they pass**
 
-Run: `uv run pytest packages/cli/tests/test_pipeline.py packages/cli/tests/test_commands.py packages/cli/tests/test_registry.py packages/google_sheets/tests packages/feishu_bitable/tests packages/maybesheet/tests -q`
+Run: `uv run pytest packages/cli/tests/test_pipeline.py packages/cli/tests/test_commands.py packages/cli/tests/test_registry.py packages/google_sheets/tests packages/feishu_bitable/tests packages/maybe_sheet/tests -q`
 
 Expected: all selected tests pass.
 
 - [ ] **Step 5: Commit integration coverage**
 
 ```bash
-git add packages/cli/tests packages/google_sheets/tests packages/feishu_bitable/tests packages/maybesheet/tests
+git add packages/cli/tests packages/google_sheets/tests packages/feishu_bitable/tests packages/maybe_sheet/tests
 git commit -m "test: cover otc connector pipelines"
 ```
 

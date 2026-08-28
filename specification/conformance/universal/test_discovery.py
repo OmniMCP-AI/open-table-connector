@@ -19,12 +19,12 @@ _CASE_NAMES = (
     "local_files",
     "google_sheets",
     "feishu_bitable",
-    "maybesheet",
+    "maybe_sheet",
     "sqlite",
     "postgres",
     "dbt",
 )
-_MANIFESTLESS_CASE_NAMES = ("maybesheet", "sqlite", "postgres", "dbt")
+_MANIFESTLESS_CASE_NAMES = ("maybe_sheet", "sqlite", "postgres", "dbt")
 
 
 @dataclass(frozen=True)
@@ -79,8 +79,8 @@ _EXPECTED_METADATA = {
         modes=("base",),
         schemes=("feishu", "feishu_bitable"),
     ),
-    "maybesheet": _ExpectedConnectorMetadata(
-        connector_id="maybesheet",
+    "maybe_sheet": _ExpectedConnectorMetadata(
+        connector_id="maybe_sheet",
         connector_version="0.1.0",
         contract_version="1.0",
         capabilities=(
@@ -142,7 +142,7 @@ def test_all_current_connectors_have_named_cases() -> None:
         "local_files",
         "google_sheets",
         "feishu_bitable",
-        "maybesheet",
+        "maybe_sheet",
         "sqlite",
         "postgres",
         "dbt",
@@ -161,7 +161,7 @@ def test_all_cases_bootstrap_fixtures_without_pytest_configure() -> None:
         "local_files",
         "google_sheets",
         "feishu_bitable",
-        "maybesheet",
+        "maybe_sheet",
         "sqlite",
         "postgres",
         "dbt",
@@ -292,13 +292,13 @@ def test_case_modes_are_closed_to_contract_values(
     assert set(capability_manifest.modes) == set(connector_case.modes)
 
 
-def test_cases_with_sheet_read_returns_mode_specific_maybesheet_binding() -> None:
+def test_cases_with_sheet_read_returns_mode_specific_maybe_sheet_binding() -> None:
     maybe_case = cases_module.cases_with("sheet.read")[0]
     binding = maybe_case.capability_binding("sheet.read")
     request = binding.make_request(ResourceLimits())
     result = binding.read_arrow(ResourceLimits())
 
-    assert maybe_case.name == "maybesheet"
+    assert maybe_case.name == "maybe_sheet"
     assert request.mode is TableMode.SHEET
     assert request.target == "Orders"
     assert result.receipt.capability.capability_id == "sheet.read"

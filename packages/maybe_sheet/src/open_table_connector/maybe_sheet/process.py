@@ -34,7 +34,7 @@ class SubprocessProcessClient:
         env = os.environ.copy()
         env.update({str(key): str(value) for key, value in self.environment.items()})
         for key, value in (credentials or {}).items():
-            safe_key = "MAYBESHEET_" + "".join(
+            safe_key = "MAYBE_SHEET_" + "".join(
                 character if character.isalnum() else "_"
                 for character in str(key).upper()
             )

@@ -66,7 +66,7 @@ Observed result: the new universal discovery and contract invariants pass across
 Command:
 
 ```bash
-uv run python -m pytest specification/conformance/universal/test_discovery.py specification/conformance/universal/test_contract.py packages/google_sheets/tests/test_connector.py packages/feishu_bitable/tests/test_connector.py packages/maybesheet/tests/test_connector.py packages/sqlite/tests/test_reader.py packages/postgres/tests/test_reader.py packages/dbt/tests/test_connector.py packages/local_files/tests/test_conformance.py packages/local_files/tests/test_excel_reader.py -q
+uv run python -m pytest specification/conformance/universal/test_discovery.py specification/conformance/universal/test_contract.py packages/google_sheets/tests/test_connector.py packages/feishu_bitable/tests/test_connector.py packages/maybe_sheet/tests/test_connector.py packages/sqlite/tests/test_reader.py packages/postgres/tests/test_reader.py packages/dbt/tests/test_connector.py packages/local_files/tests/test_conformance.py packages/local_files/tests/test_excel_reader.py -q
 ```
 
 Output:

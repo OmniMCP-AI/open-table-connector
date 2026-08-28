@@ -43,7 +43,7 @@ from open_table_connector.google_sheets import (
     GoogleSheetsReadOptions,
     GoogleSheetsTableReadRequest,
 )
-from open_table_connector.maybesheet import MaybeSheetConnector, MaybeSheetReadRequest, SubprocessProcessClient
+from open_table_connector.maybe_sheet import MaybeSheetConnector, MaybeSheetReadRequest, SubprocessProcessClient
 
 from .formats import infer_format, read_local, write_local
 from .model import CliOptions, Endpoint, FormatName
@@ -194,7 +194,7 @@ class FeishuBitableAdapter:
 class MaybeSheetAdapter:
     connector: MaybeSheetConnector
     schemes: tuple[str, ...] = ("maybe", "https")
-    identity: ConnectorIdentity = ConnectorIdentity("maybesheet", "0.1.0", "1.0")
+    identity: ConnectorIdentity = ConnectorIdentity("maybe_sheet", "0.1.0", "1.0")
     modes: tuple[TableMode, ...] = (TableMode.BASE,)
     capabilities: tuple[CapabilityIdentity, ...] = (
         CapabilityIdentity("base.read", "1.0"),
@@ -345,7 +345,7 @@ def build_adapters(env: Mapping[str, str], transports: Mapping[str, Any] | None 
     transports = transports or {}
     google = GoogleSheetsConnector(transports.get("google_sheets"), access_token=env.get("GOOGLE_SHEETS_ACCESS_TOKEN"))
     feishu = FeishuBitableConnector(transports.get("feishu_bitable"), tenant_access_token=env.get("FEISHU_TENANT_ACCESS_TOKEN"))
-    maybe = MaybeSheetConnector(transports.get("maybesheet") or SubprocessProcessClient(environment=env))
+    maybe = MaybeSheetConnector(transports.get("maybe_sheet") or SubprocessProcessClient(environment=env))
     return (
         GoogleSheetsAdapter(google, transports.get("google_sheets"), env.get("GOOGLE_SHEETS_ACCESS_TOKEN")),
         FeishuBitableAdapter(feishu, transports.get("feishu_bitable"), env.get("FEISHU_TENANT_ACCESS_TOKEN")),

@@ -16,7 +16,7 @@ Tests and results:
 
 - `uv run python -m pytest packages/cli/tests/test_registry.py -q` — 5 passed
 - `uv run python -m pytest packages/cli/tests -q` — 18 passed
-- `uv run python -m pytest packages/google_sheets/tests packages/feishu_bitable/tests packages/maybesheet/tests -q` — 15 passed
+- `uv run python -m pytest packages/google_sheets/tests packages/feishu_bitable/tests packages/maybe_sheet/tests -q` — 15 passed
 - `uv run python -m compileall -q packages/cli/src/open_table_connector/cli` — passed
 - `git diff --check` — passed
 
@@ -48,7 +48,7 @@ Tests and results:
 - Red regression run: `uv run python -m pytest packages/cli/tests/test_registry.py -q` — 5 passed, 3 failed with the two `UnboundLocalError` inspection failures and the false-positive MaybeSheet capability assertion.
 - Green focused run: `uv run python -m pytest packages/cli/tests/test_registry.py -q` — 8 passed
 - `uv run python -m pytest packages/cli/tests -q` — 21 passed
-- `uv run python -m pytest packages/google_sheets/tests packages/feishu_bitable/tests packages/maybesheet/tests -q` — 15 passed
+- `uv run python -m pytest packages/google_sheets/tests packages/feishu_bitable/tests packages/maybe_sheet/tests -q` — 15 passed
 - `git diff --check` — passed
 
 Concerns:
@@ -84,7 +84,7 @@ Tests and results:
 - Red focused run: `uv run python -m pytest packages/cli/tests/test_registry.py packages/cli/tests/test_pipeline.py -q` — 20 passed, 8 failed, reproducing constant local receipts, source reads before preflight, missing duplicate conflicts, and missing empty-destination preflight.
 - Green focused run: `uv run python -m pytest packages/cli/tests/test_registry.py packages/cli/tests/test_pipeline.py -q` — 28 passed
 - `uv run python -m pytest packages/cli/tests -q` — 53 passed
-- `uv run python -m pytest packages/google_sheets/tests packages/feishu_bitable/tests packages/maybesheet/tests -q` — 17 passed
+- `uv run python -m pytest packages/google_sheets/tests packages/feishu_bitable/tests packages/maybe_sheet/tests -q` — 17 passed
 - `uv run python -m compileall -q packages/cli/src/open_table_connector/cli` — passed
 - `git diff --check` — passed
 
@@ -123,10 +123,10 @@ Commit:
 
 Tests and results:
 
-- Red focused missing-target import regression: `uv run python -m pytest packages/cli/tests/test_pipeline.py::test_maybesheet_https_missing_target_is_rejected_before_source_or_process_io -q` — failed because source read count was 1 instead of 0.
+- Red focused missing-target import regression: `uv run python -m pytest packages/cli/tests/test_pipeline.py::test_maybe_sheet_https_missing_target_is_rejected_before_source_or_process_io -q` — failed because source read count was 1 instead of 0.
 - Green focused run: `uv run python -m pytest packages/cli/tests/test_registry.py packages/cli/tests/test_pipeline.py packages/google_sheets/tests/test_connector.py -q` — 39 passed
 - `uv run python -m pytest packages/cli/tests -q` — 66 passed
-- `uv run python -m pytest packages/google_sheets/tests packages/feishu_bitable/tests packages/maybesheet/tests -q` — 19 passed
+- `uv run python -m pytest packages/google_sheets/tests packages/feishu_bitable/tests packages/maybe_sheet/tests -q` — 19 passed
 - `uv run python -m compileall -q packages/cli/src/open_table_connector/cli packages/google_sheets/src/open_table_connector/google_sheets` — passed
 - `git diff --check` — passed
 
@@ -147,9 +147,9 @@ Changed files:
 
 - `packages/cli/src/open_table_connector/cli/adapters.py`
 - `packages/cli/tests/test_registry.py`
-- `packages/maybesheet/src/open_table_connector/maybesheet/connector.py`
-- `packages/maybesheet/src/open_table_connector/maybesheet/process.py`
-- `packages/maybesheet/tests/test_connector.py`
+- `packages/maybe_sheet/src/open_table_connector/maybe_sheet/connector.py`
+- `packages/maybe_sheet/src/open_table_connector/maybe_sheet/process.py`
+- `packages/maybe_sheet/tests/test_connector.py`
 
 Changes:
 
@@ -166,11 +166,11 @@ Commit:
 
 Tests and results:
 
-- Red focused run: `uv run python -m pytest packages/cli/tests/test_registry.py packages/cli/tests/test_pipeline.py packages/google_sheets/tests/test_connector.py packages/maybesheet/tests/test_connector.py -q` — 48 passed, 7 failed, reproducing all newly covered identity, modes, inspect-limit/timeout, and MaybeSheet timeout gaps.
+- Red focused run: `uv run python -m pytest packages/cli/tests/test_registry.py packages/cli/tests/test_pipeline.py packages/google_sheets/tests/test_connector.py packages/maybe_sheet/tests/test_connector.py -q` — 48 passed, 7 failed, reproducing all newly covered identity, modes, inspect-limit/timeout, and MaybeSheet timeout gaps.
 - Green focused run: same command — 55 passed
 - `uv run python -m pytest packages/cli/tests -q` — 71 passed
-- `uv run python -m pytest packages/google_sheets/tests packages/feishu_bitable/tests packages/maybesheet/tests -q` — 21 passed
-- `uv run python -m compileall -q packages/cli/src/open_table_connector/cli packages/google_sheets/src/open_table_connector/google_sheets packages/maybesheet/src/open_table_connector/maybesheet` — passed
+- `uv run python -m pytest packages/google_sheets/tests packages/feishu_bitable/tests packages/maybe_sheet/tests -q` — 21 passed
+- `uv run python -m compileall -q packages/cli/src/open_table_connector/cli packages/google_sheets/src/open_table_connector/google_sheets packages/maybe_sheet/src/open_table_connector/maybe_sheet` — passed
 - `git diff --check` — passed
 
 Concerns:
@@ -207,7 +207,7 @@ Commit:
 Tests and results:
 
 - Red focused run: `uv run python -m pytest packages/cli/tests/test_registry.py -q` — 15 passed, 7 failed, reproducing the incorrect local inspection identities/convention and malformed MaybeSheet URI acceptance.
-- Green focused run: `uv run python -m pytest packages/cli/tests/test_registry.py packages/cli/tests/test_pipeline.py packages/google_sheets/tests/test_connector.py packages/feishu_bitable/tests/test_connector.py packages/maybesheet/tests/test_connector.py -q` — 66 passed.
+- Green focused run: `uv run python -m pytest packages/cli/tests/test_registry.py packages/cli/tests/test_pipeline.py packages/google_sheets/tests/test_connector.py packages/feishu_bitable/tests/test_connector.py packages/maybe_sheet/tests/test_connector.py -q` — 66 passed.
 - Full CLI suite: `uv run python -m pytest packages/cli/tests -q` — 79 passed.
 - `git diff --check` — passed.
 

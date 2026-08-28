@@ -24,7 +24,7 @@ _CASE_NAMES = (
     "local_files",
     "google_sheets",
     "feishu_bitable",
-    "maybesheet",
+    "maybe_sheet",
     "sqlite",
     "postgres",
     "dbt",
@@ -45,7 +45,7 @@ _SHARED_INSPECT_READ_CASE_NAMES = (
 _WRITE_CASE_NAMES = (
     "google_sheets",
     "feishu_bitable",
-    "maybesheet",
+    "maybe_sheet",
     "sqlite",
     "postgres",
 )

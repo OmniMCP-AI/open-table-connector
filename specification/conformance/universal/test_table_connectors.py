@@ -18,7 +18,7 @@ from open_table_connector.contract import (
     TableURI,
 )
 from open_table_connector.local_files import LocalReadOptions, LocalTableReadRequest
-from open_table_connector.maybesheet import SubprocessProcessClient
+from open_table_connector.maybe_sheet import SubprocessProcessClient
 
 from specification.conformance.universal.assertions import (
     assert_error_is_safe,
@@ -76,14 +76,14 @@ _READ_SCENARIOS = (
         TableMode.BASE,
     ),
     ReadScenario(
-        "maybesheet",
+        "maybe_sheet",
         "base.read",
         "base.inspect",
         ("id", "amount", "note"),
         TableMode.BASE,
     ),
     ReadScenario(
-        "maybesheet",
+        "maybe_sheet",
         "sheet.read",
         "sheet.inspect",
         ("id", "amount", "note"),
@@ -92,7 +92,7 @@ _READ_SCENARIOS = (
     ),
 )
 
-_WRITE_CASE_NAMES = ("google_sheets", "feishu_bitable", "maybesheet")
+_WRITE_CASE_NAMES = ("google_sheets", "feishu_bitable", "maybe_sheet")
 
 
 def _read_arrow(
@@ -295,10 +295,10 @@ def test_http_reads_record_method_url_timeout_selection_and_credential_locality(
 @pytest.mark.parametrize(
     "capability", ("base.read", "sheet.read"), ids=("base", "sheet")
 )
-def test_maybesheet_reads_record_argv_timeout_target_limit_and_credentials(
+def test_maybe_sheet_reads_record_argv_timeout_target_limit_and_credentials(
     capability: str,
 ) -> None:
-    connector_case = case("maybesheet")
+    connector_case = case("maybe_sheet")
     binding = connector_case.capability_binding(capability)
     assert binding.read_arrow is not None
 
@@ -392,7 +392,7 @@ def test_table_writes_report_exact_affected_rows(
         pytest.param("google_sheets", "replace", id="google-sheets:replace"),
         pytest.param("feishu_bitable", "error", id="feishu-bitable:error"),
         pytest.param("feishu_bitable", "append", id="feishu-bitable:append"),
-        pytest.param("maybesheet", "append", id="maybesheet:append"),
+        pytest.param("maybe_sheet", "append", id="maybe_sheet:append"),
     ),
 )
 def test_table_writes_accept_each_supported_policy(
@@ -412,8 +412,8 @@ def test_table_writes_accept_each_supported_policy(
     ("case_name", "policy"),
     (
         pytest.param("feishu_bitable", "replace", id="feishu-bitable:replace"),
-        pytest.param("maybesheet", "error", id="maybesheet:error"),
-        pytest.param("maybesheet", "replace", id="maybesheet:replace"),
+        pytest.param("maybe_sheet", "error", id="maybe_sheet:error"),
+        pytest.param("maybe_sheet", "replace", id="maybe_sheet:replace"),
     ),
 )
 def test_table_writes_reject_unsupported_policies_before_provider_io(
@@ -513,10 +513,10 @@ def test_feishu_write_records_batch_shape_timeout_and_credentials(
     )
 
 
-def test_maybesheet_write_records_stdin_jsonl_argv_and_credential_locality(
+def test_maybe_sheet_write_records_stdin_jsonl_argv_and_credential_locality(
     write_frame: pl.DataFrame,
 ) -> None:
-    connector_case = case("maybesheet")
+    connector_case = case("maybe_sheet")
     assert connector_case.write is not None
 
     result = connector_case.write(write_frame, "append")
@@ -565,9 +565,9 @@ def test_maybesheet_write_records_stdin_jsonl_argv_and_credential_locality(
             id="feishu-bitable:provider-code",
         ),
         pytest.param(
-            "maybesheet",
+            "maybe_sheet",
             ConnectorErrorCode.EXECUTION_FAILED,
-            id="maybesheet:process-error",
+            id="maybe_sheet:process-error",
         ),
     ),
 )
@@ -615,11 +615,11 @@ def test_provider_failures_map_to_safe_redacted_errors(
         ),
     ),
 )
-def test_maybesheet_formula_operations_fail_closed(
+def test_maybe_sheet_formula_operations_fail_closed(
     operation: str,
     expected_capability: str,
 ) -> None:
-    connector = case("maybesheet").connector
+    connector = case("maybe_sheet").connector
 
     with pytest.raises(ConnectorError) as raised:
         getattr(connector, operation)(object())
@@ -629,7 +629,7 @@ def test_maybesheet_formula_operations_fail_closed(
     assert_error_is_safe(raised.value)
 
 
-def test_maybesheet_process_timeouts_map_to_safe_stable_errors(
+def test_maybe_sheet_process_timeouts_map_to_safe_stable_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     seen: dict[str, object] = {}
@@ -660,7 +660,7 @@ def test_maybesheet_process_timeouts_map_to_safe_stable_errors(
         in {
             "FEISHU_TENANT_ACCESS_TOKEN",
             "GOOGLE_SHEETS_ACCESS_TOKEN",
-            "MAYBESHEET_ACCESS_TOKEN",
+            "MAYBE_SHEET_ACCESS_TOKEN",
         }
     }
     assert seen["command"] == ["mbs", "db-table", "read"]
@@ -669,7 +669,7 @@ def test_maybesheet_process_timeouts_map_to_safe_stable_errors(
     assert seen["text"] is True
     assert seen["input"] is None
     assert seen["timeout"] == 2.5
-    assert provider_credentials == {"MAYBESHEET_ACCESS_TOKEN": "fixture-token"}
+    assert provider_credentials == {"MAYBE_SHEET_ACCESS_TOKEN": "fixture-token"}
 
     cause = raised.value.__cause__
     assert isinstance(cause, subprocess.TimeoutExpired)

@@ -29,12 +29,12 @@ the parent environment:
 ```bash
 env GOOGLE_SHEETS_ACCESS_TOKEN=ambient-google \
   FEISHU_TENANT_ACCESS_TOKEN=ambient-feishu \
-  MAYBESHEET_ACCESS_TOKEN=ambient-maybe \
+  MAYBE_SHEET_ACCESS_TOKEN=ambient-maybe \
   uv run python -m pytest \
   specification/conformance/universal/test_discovery.py::test_public_identity_and_manifest_match_literal_expectations \
-  specification/conformance/universal/test_table_connectors.py::test_maybesheet_write_records_stdin_jsonl_argv_and_credential_locality \
-  specification/conformance/universal/test_table_connectors.py::test_maybesheet_formula_operations_fail_closed \
-  specification/conformance/universal/test_table_connectors.py::test_maybesheet_process_timeouts_map_to_safe_stable_errors -q
+  specification/conformance/universal/test_table_connectors.py::test_maybe_sheet_write_records_stdin_jsonl_argv_and_credential_locality \
+  specification/conformance/universal/test_table_connectors.py::test_maybe_sheet_formula_operations_fail_closed \
+  specification/conformance/universal/test_table_connectors.py::test_maybe_sheet_process_timeouts_map_to_safe_stable_errors -q
 ```
 
 Result: exit 1, `1 failed, 10 passed in 0.27s`. The timeout test observed
@@ -69,7 +69,7 @@ expected values.
 All commands below were run fresh from the final committed snapshot. Commands
 that invoke a CLI subprocess used an environment with
 `GOOGLE_SHEETS_ACCESS_TOKEN`, `FEISHU_TENANT_ACCESS_TOKEN`, and
-`MAYBESHEET_ACCESS_TOKEN` explicitly absent.
+`MAYBE_SHEET_ACCESS_TOKEN` explicitly absent.
 
 - `uv sync --all-packages --group dev` — exit 0; `Resolved 28 packages`
   and `Checked 27 packages`.
@@ -87,7 +87,7 @@ that invoke a CLI subprocess used an environment with
 - `uv build --all-packages` — exit 0. The final post-commit run built both
   sdist and wheel artifacts for all 11 workspace packages listed below.
 - `uv run otc list --output-format jsonl` — exit 0 with four records:
-  `google_sheets`, `feishu_bitable`, `maybesheet`, and `local_files`.
+  `google_sheets`, `feishu_bitable`, `maybe_sheet`, and `local_files`.
 - `uv run otc --help` — exit 0; output begins `usage: otc`.
 - `uv run open-table-connector --help` — exit 0; output begins
   `usage: otc`.
@@ -103,7 +103,7 @@ that invoke a CLI subprocess used an environment with
 - `open_table_connector_feishu_bitable-0.1.0`
 - `open_table_connector_google_sheets-0.1.0`
 - `open_table_connector_local_files-0.1.0`
-- `open_table_connector_maybesheet-0.1.0`
+- `open_table_connector_maybe_sheet-0.1.0`
 - `open_table_connector_postgres-0.1.0`
 - `open_table_connector_sqlite-0.1.0`
 - `open_table_connector-0.1.0`
@@ -187,7 +187,7 @@ with `3 passed in 0.40s`.
   ```bash
   env -u GOOGLE_SHEETS_ACCESS_TOKEN \
     -u FEISHU_TENANT_ACCESS_TOKEN \
-    -u MAYBESHEET_ACCESS_TOKEN \
+    -u MAYBE_SHEET_ACCESS_TOKEN \
     uv run --frozen python -m pytest \
     specification/conformance/universal/test_table_connectors.py \
     specification/conformance/universal/test_cli_surface.py \
@@ -220,7 +220,7 @@ with `3 passed in 0.40s`.
   successfully built for all 11 workspace packages listed in the prior build
   section.
 - `uv run --frozen otc list --output-format jsonl` — exit `0` with exactly four
-  records: `google_sheets`, `feishu_bitable`, `maybesheet`, and `local_files`.
+  records: `google_sheets`, `feishu_bitable`, `maybe_sheet`, and `local_files`.
 - `uv run --frozen otc --help`, `uv run --frozen open-table-connector --help`,
   and `uv run --frozen open-connectors --help` — each exited `0` and began
   `usage: otc`.

@@ -180,7 +180,7 @@ Complete. MaybeSheet now slices over-returned process payloads to the requested 
 ### Tests and results
 
 - TDD regression check before the fix — 2 expected failures for direct read and import over-returning-process cases.
-- `uv run python -m pytest packages/maybesheet/tests packages/cli/tests packages/contract/tests -q` — 125 passed.
+- `uv run python -m pytest packages/maybe_sheet/tests packages/cli/tests packages/contract/tests -q` — 125 passed.
 - `uv run python -m pytest -q` — 167 passed.
 - `uv run python -m compileall -q packages` — passed.
 - `git diff --check` — passed.

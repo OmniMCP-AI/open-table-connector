@@ -401,7 +401,7 @@ def build_cli_registry_bridge(*case_names: str) -> CliRegistryBridge:
     names = case_names or (
         "google_sheets",
         "feishu_bitable",
-        "maybesheet",
+        "maybe_sheet",
         "local_files",
     )
     registry = ConnectorRegistry()
@@ -423,7 +423,7 @@ def build_cli_registry_bridge(*case_names: str) -> CliRegistryBridge:
                 connector_case.connector,
                 transport=connector_case.http_fixture.transport,
             )
-        elif name == "maybesheet":
+        elif name == "maybe_sheet":
             adapter = MaybeSheetAdapter(connector_case.connector)
         elif name == "local_files":
             adapter = LocalAdapter()

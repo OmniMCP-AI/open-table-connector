@@ -26,7 +26,7 @@ outside this offline plan.
 
 ## Global Constraints
 
-- The suite covers \`local_files\`, \`google_sheets\`, \`feishu_bitable\`, \`maybesheet\`, \`sqlite\`, \`postgres\`, and \`dbt\`.
+- The suite covers \`local_files\`, \`google_sheets\`, \`feishu_bitable\`, \`maybe_sheet\`, \`sqlite\`, \`postgres\`, and \`dbt\`.
 - The suite is offline and deterministic: no credentials, network calls, vendor binaries, external database services, or shared mutable databases.
 - The dedicated suite collects at least 120 named test cases; parametrized cases must have descriptive IDs and be spread across multiple behavior-focused test functions.
 - Common assertions test neutral contract guarantees; capability-specific assertions run only for declared capabilities, while unsupported calls are checked for explicit safe failures where exposed.
@@ -121,7 +121,7 @@ Add tests requiring exactly these seven case names and stable lookup:
 \`\`\`python
 def test_all_current_connectors_have_named_cases() -> None:
     assert {item.name for item in all_cases()} == {
-        "local_files", "google_sheets", "feishu_bitable", "maybesheet",
+        "local_files", "google_sheets", "feishu_bitable", "maybe_sheet",
         "sqlite", "postgres", "dbt",
     }
 
@@ -229,7 +229,7 @@ git commit -m "test: cover universal connector contract invariants"
 
 **Interfaces:**
 - Consumes: \`ConnectorCase\`, shared assertions, and provider-specific recording fixtures.
-- Produces: universal table behavior coverage for \`local_files\`, \`google_sheets\`, \`feishu_bitable\`, and \`maybesheet\`.
+- Produces: universal table behavior coverage for \`local_files\`, \`google_sheets\`, \`feishu_bitable\`, and \`maybe_sheet\`.
 
 - [ ] **Step 1: Write failing behavior tests first**
 
