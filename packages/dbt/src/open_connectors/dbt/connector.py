@@ -17,6 +17,9 @@ from open_connectors.contract import ConnectorError, ConnectorErrorCode
 from .identity import CONNECTOR_IDENTITY
 
 
+_RUNNER_EXCEPTION_REASON = "unexpected runner exception"
+
+
 @dataclass(frozen=True)
 class DbtCompileRequest:
     project_dir: Path
@@ -114,8 +117,12 @@ class DbtConnector:
                     str(name): content if isinstance(content, bytes) else str(content).encode("utf-8")
                     for name, content in dict(payload.get("artifacts", {})).items()
                 }
-            except Exception as exc:
-                raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "dbt compile failed", {"reason": str(exc)}) from None
+            except Exception:
+                raise ConnectorError(
+                    ConnectorErrorCode.EXECUTION_FAILED,
+                    "dbt compile failed",
+                    {"reason": _RUNNER_EXCEPTION_REASON},
+                ) from None
         else:
             compiled = request.project_dir / "target" / "manifest.json"
             if compiled.is_file():
@@ -146,8 +153,12 @@ class DbtConnector:
             payload = self._runner(argv, operation.project_dir)
             run_results = payload.get("run_results")
             return DbtRunResult(operation.invocation_id, str(payload.get("status", "completed")), run_results if isinstance(run_results, bytes) else None, dict(payload.get("artifact_refs", {})))
-        except Exception as exc:
-            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "dbt run failed", {"reason": str(exc)}) from None
+        except Exception:
+            raise ConnectorError(
+                ConnectorErrorCode.EXECUTION_FAILED,
+                "dbt run failed",
+                {"reason": _RUNNER_EXCEPTION_REASON},
+            ) from None
 
     def cancel(self, operation: DbtPreparedOperation) -> DbtRunResult:
         if self._runner is None:
@@ -155,8 +166,12 @@ class DbtConnector:
         try:
             payload = self._runner(("dbt", "cancel", "--invocation-id", operation.invocation_id), operation.project_dir)
             return DbtRunResult(operation.invocation_id, "cancelled", payload.get("run_results"))
-        except Exception as exc:
-            raise ConnectorError(ConnectorErrorCode.CANCELLED, "dbt cancellation failed", {"reason": str(exc)}) from None
+        except Exception:
+            raise ConnectorError(
+                ConnectorErrorCode.CANCELLED,
+                "dbt cancellation failed",
+                {"reason": _RUNNER_EXCEPTION_REASON},
+            ) from None
 
     def readback(self, operation: DbtPreparedOperation, relation: str) -> Mapping[str, Any]:
         """Return connector-owned physical readback facts when the runner has them."""

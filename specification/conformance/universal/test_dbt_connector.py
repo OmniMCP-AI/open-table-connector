@@ -26,7 +26,8 @@ _FIXTURE_CREDENTIALS = {
 }
 
 
-def _dbt_case() -> ConnectorCase:
+@pytest.fixture
+def dbt_case() -> ConnectorCase:
     matches = cases_with("dbt.compile")
     assert [item.name for item in matches] == ["dbt"]
     return matches[0]
@@ -55,12 +56,13 @@ def _prepared_operation(connector_case: ConnectorCase) -> DbtPreparedOperation:
     return operation
 
 
-def test_dbt_compile_constructs_exact_argv_and_records_project_directory() -> None:
-    connector_case = _dbt_case()
-    fixture = connector_case.dbt_fixture
+def test_dbt_compile_constructs_exact_argv_and_records_project_directory(
+    dbt_case: ConnectorCase,
+) -> None:
+    fixture = dbt_case.dbt_fixture
     assert fixture is not None
 
-    operation = connector_case.connector.compile(
+    operation = dbt_case.connector.compile(
         _compile_request(fixture.project_dir)
     )
 
@@ -76,9 +78,10 @@ def test_dbt_compile_constructs_exact_argv_and_records_project_directory() -> No
     ]
 
 
-def test_dbt_compile_propagates_select_exclude_target_and_vars_to_both_commands() -> None:
-    connector_case = _dbt_case()
-    fixture = connector_case.dbt_fixture
+def test_dbt_compile_propagates_select_exclude_target_and_vars_to_both_commands(
+    dbt_case: ConnectorCase,
+) -> None:
+    fixture = dbt_case.dbt_fixture
     assert fixture is not None
     request = _compile_request(
         fixture.project_dir,
@@ -88,7 +91,7 @@ def test_dbt_compile_propagates_select_exclude_target_and_vars_to_both_commands(
         vars={"currency": "USD", "window_days": 7},
     )
 
-    operation = connector_case.connector.compile(request)
+    operation = dbt_case.connector.compile(request)
 
     option_argv = (
         "--project-dir",
@@ -109,9 +112,10 @@ def test_dbt_compile_propagates_select_exclude_target_and_vars_to_both_commands(
     assert fixture.runner.calls[-1] == fixture.recorded_call(operation.argv)
 
 
-def test_dbt_compile_repeated_invocations_have_deterministic_identity() -> None:
-    connector_case = _dbt_case()
-    fixture = connector_case.dbt_fixture
+def test_dbt_compile_repeated_invocations_have_deterministic_identity(
+    dbt_case: ConnectorCase,
+) -> None:
+    fixture = dbt_case.dbt_fixture
     assert fixture is not None
     request = _compile_request(
         fixture.project_dir,
@@ -120,8 +124,8 @@ def test_dbt_compile_repeated_invocations_have_deterministic_identity() -> None:
         vars={"currency": "USD"},
     )
 
-    first = connector_case.connector.compile(request)
-    second = connector_case.connector.compile(request)
+    first = dbt_case.connector.compile(request)
+    second = dbt_case.connector.compile(request)
 
     assert first.invocation_id == second.invocation_id
     assert first.invocation_id.startswith("dbt_")
@@ -130,14 +134,43 @@ def test_dbt_compile_repeated_invocations_have_deterministic_identity() -> None:
     assert all(call.project_dir == fixture.project_dir for call in fixture.runner.calls)
 
 
-def test_dbt_compile_repeated_invocations_have_deterministic_artifact_hash() -> None:
-    connector_case = _dbt_case()
-    fixture = connector_case.dbt_fixture
+def test_dbt_compile_identity_intentionally_depends_on_absolute_project_path(
+    dbt_case: ConnectorCase,
+    tmp_path: Path,
+) -> None:
+    fixture = dbt_case.dbt_fixture
+    assert fixture is not None
+    moved_project_dir = tmp_path / "moved" / "dbt_project"
+    moved_project_dir.mkdir(parents=True)
+    connector = DbtConnector()
+
+    original = connector.compile(
+        _compile_request(
+            fixture.project_dir,
+            select=("model.fixture.orders",),
+            target="fixture",
+        )
+    )
+    moved = connector.compile(
+        _compile_request(
+            moved_project_dir,
+            select=("model.fixture.orders",),
+            target="fixture",
+        )
+    )
+
+    assert original.invocation_id != moved.invocation_id
+
+
+def test_dbt_compile_repeated_invocations_have_deterministic_artifact_hash(
+    dbt_case: ConnectorCase,
+) -> None:
+    fixture = dbt_case.dbt_fixture
     assert fixture is not None
     request = _compile_request(fixture.project_dir)
 
-    first = connector_case.connector.compile(request)
-    second = connector_case.connector.compile(request)
+    first = dbt_case.connector.compile(request)
+    second = dbt_case.connector.compile(request)
 
     assert first.compiled_artifacts == second.compiled_artifacts == {
         "manifest.json": b'{"nodes":{"model.fixture.orders":{}}}',
@@ -147,13 +180,14 @@ def test_dbt_compile_repeated_invocations_have_deterministic_artifact_hash() -> 
     )
 
 
-def test_dbt_run_maps_status_results_refs_and_exact_invocation() -> None:
-    connector_case = _dbt_case()
-    fixture = connector_case.dbt_fixture
+def test_dbt_run_maps_status_results_refs_and_exact_prepared_invocation(
+    dbt_case: ConnectorCase,
+) -> None:
+    fixture = dbt_case.dbt_fixture
     assert fixture is not None
-    operation = _prepared_operation(connector_case)
+    operation = _prepared_operation(dbt_case)
 
-    result = connector_case.capability_binding("dbt.run").invoke()
+    result = dbt_case.connector.run(operation)
 
     assert isinstance(result, DbtRunResult)
     assert result.status == "success"
@@ -164,14 +198,15 @@ def test_dbt_run_maps_status_results_refs_and_exact_invocation() -> None:
     assert run_call.project_dir == fixture.project_dir
 
 
-def test_dbt_repeated_runs_return_deterministic_results_and_recordings() -> None:
-    connector_case = _dbt_case()
-    fixture = connector_case.dbt_fixture
+def test_dbt_repeated_runs_return_deterministic_results_and_recordings(
+    dbt_case: ConnectorCase,
+) -> None:
+    fixture = dbt_case.dbt_fixture
     assert fixture is not None
-    operation = _prepared_operation(connector_case)
+    operation = _prepared_operation(dbt_case)
 
-    first = connector_case.connector.run(operation)
-    second = connector_case.connector.run(operation)
+    first = dbt_case.connector.run(operation)
+    second = dbt_case.connector.run(operation)
 
     assert first == second == DbtRunResult(
         invocation_id=operation.invocation_id,
@@ -185,13 +220,14 @@ def test_dbt_repeated_runs_return_deterministic_results_and_recordings() -> None
     ]
 
 
-def test_dbt_cancel_maps_cancelled_status_results_and_exact_invocation() -> None:
-    connector_case = _dbt_case()
-    fixture = connector_case.dbt_fixture
+def test_dbt_cancel_maps_cancelled_status_results_and_exact_invocation(
+    dbt_case: ConnectorCase,
+) -> None:
+    fixture = dbt_case.dbt_fixture
     assert fixture is not None
-    operation = _prepared_operation(connector_case)
+    operation = _prepared_operation(dbt_case)
 
-    result = connector_case.connector.cancel(operation)
+    result = dbt_case.connector.cancel(operation)
 
     assert result == DbtRunResult(
         invocation_id=operation.invocation_id,
@@ -203,27 +239,29 @@ def test_dbt_cancel_maps_cancelled_status_results_and_exact_invocation() -> None
     )
 
 
-def test_dbt_artifact_lookup_returns_owned_bytes_and_maps_missing_names() -> None:
-    connector_case = _dbt_case()
-    operation = _prepared_operation(connector_case)
+def test_dbt_artifact_lookup_returns_owned_bytes_and_maps_missing_names(
+    dbt_case: ConnectorCase,
+) -> None:
+    operation = _prepared_operation(dbt_case)
 
-    artifact = connector_case.capability_binding("dbt.artifact.read").invoke()
+    artifact = dbt_case.capability_binding("dbt.artifact.read").invoke()
 
     assert artifact == b'{"nodes":{"model.fixture.orders":{}}}'
     with pytest.raises(ConnectorError) as raised:
-        connector_case.connector.read_artifact(operation, "catalog.json")
+        dbt_case.connector.read_artifact(operation, "catalog.json")
     assert raised.value.code is ConnectorErrorCode.INVALID_URI
     assert raised.value.message == "dbt artifact is unavailable"
     assert raised.value.safe_details == {"artifact": "catalog.json"}
 
 
-def test_dbt_readback_returns_runner_owned_physical_facts() -> None:
-    connector_case = _dbt_case()
-    fixture = connector_case.dbt_fixture
+def test_dbt_readback_returns_runner_owned_physical_facts(
+    dbt_case: ConnectorCase,
+) -> None:
+    fixture = dbt_case.dbt_fixture
     assert fixture is not None
-    operation = _prepared_operation(connector_case)
+    operation = _prepared_operation(dbt_case)
 
-    facts = connector_case.connector.readback(operation, "analytics.orders")
+    facts = dbt_case.connector.readback(operation, "analytics.orders")
 
     assert facts == {
         "relation": "analytics.orders",
@@ -235,9 +273,61 @@ def test_dbt_readback_returns_runner_owned_physical_facts() -> None:
     assert fixture.runner.readback_relations == ["analytics.orders"]
 
 
-def test_dbt_unsupported_runner_maps_run_and_cancel_without_launching_commands() -> None:
-    connector_case = _dbt_case()
-    fixture = connector_case.dbt_fixture
+def test_dbt_readback_failure_maps_through_the_case_connector(
+    dbt_case: ConnectorCase,
+) -> None:
+    operation = _prepared_operation(dbt_case)
+
+    with pytest.raises(ConnectorError) as raised:
+        dbt_case.connector.readback(operation, "analytics.missing")
+
+    assert raised.value.code is ConnectorErrorCode.READBACK_MISMATCH
+    assert raised.value.message == "dbt readback failed"
+    assert raised.value.safe_details == {"relation": "analytics.missing"}
+
+
+def test_dbt_non_mapping_readback_maps_through_the_case_connector(
+    dbt_case: ConnectorCase,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = dbt_case.dbt_fixture
+    assert fixture is not None
+    operation = _prepared_operation(dbt_case)
+    monkeypatch.setattr(
+        fixture.runner,
+        "readback",
+        lambda _relation: ("not", "physical", "facts"),
+    )
+
+    with pytest.raises(ConnectorError) as raised:
+        dbt_case.connector.readback(operation, "analytics.orders")
+
+    assert raised.value.code is ConnectorErrorCode.READBACK_MISMATCH
+    assert raised.value.message == "dbt readback did not return physical facts"
+    assert raised.value.safe_details == {"relation": "analytics.orders"}
+
+
+def test_dbt_no_readback_callback_returns_stable_fallback_through_prepared_binding(
+    dbt_case: ConnectorCase,
+) -> None:
+    fixture = dbt_case.dbt_fixture
+    assert fixture is not None
+    operation = _prepared_operation(dbt_case)
+    connector_without_readback = DbtConnector(fixture.runner.__call__)
+
+    facts = connector_without_readback.readback(operation, "analytics.orders")
+
+    assert facts == {
+        "relation": "analytics.orders",
+        "invocation_id": operation.invocation_id,
+        "status": "not_provided",
+    }
+
+
+def test_dbt_unsupported_runner_maps_run_and_cancel_without_launching_commands(
+    dbt_case: ConnectorCase,
+) -> None:
+    fixture = dbt_case.dbt_fixture
     assert fixture is not None
     connector = DbtConnector()
 
@@ -286,16 +376,20 @@ def test_dbt_unsupported_runner_maps_run_and_cancel_without_launching_commands()
     ),
 )
 def test_dbt_runner_failures_map_to_stable_connector_errors(
+    dbt_case: ConnectorCase,
     operation_name: str,
     expected_code: ConnectorErrorCode,
     expected_message: str,
 ) -> None:
-    connector_case = _dbt_case()
-    fixture = connector_case.dbt_fixture
+    fixture = dbt_case.dbt_fixture
     assert fixture is not None
-    failure = RuntimeError(f"recorded {operation_name} rejection")
+    secret = _FIXTURE_CREDENTIALS["token"]
+    failure = RuntimeError(
+        f"recorded {operation_name} rejection with token={secret}"
+    )
     runner = RecordingDbtRunner(
         failures={operation_name: failure},
+        credentials=_FIXTURE_CREDENTIALS,
         expected_project_dir=fixture.project_dir,
     )
     connector = DbtConnector(runner)
@@ -303,30 +397,40 @@ def test_dbt_runner_failures_map_to_stable_connector_errors(
     if operation_name == "compile":
         invoke = lambda: connector.compile(_compile_request(fixture.project_dir))
     else:
-        prepared = _prepared_operation(connector_case)
+        prepared = _prepared_operation(dbt_case)
         invoke = lambda: getattr(connector, operation_name)(prepared)
 
+    assert secret in str(failure)
     with pytest.raises(ConnectorError) as raised:
         invoke()
 
     assert raised.value.code is expected_code
     assert raised.value.message == expected_message
-    assert raised.value.safe_details == {
-        "reason": f"recorded {operation_name} rejection"
-    }
+    assert raised.value.safe_details == {"reason": "unexpected runner exception"}
+    serialized = json.dumps(raised.value.to_wire(), sort_keys=True)
+    assert all(
+        fixture_secret not in serialized
+        for fixture_secret in _FIXTURE_CREDENTIALS.values()
+    )
     assert runner.calls[-1].project_dir == fixture.project_dir
 
 
-def test_dbt_error_details_are_closed_json_safe_and_credential_free() -> None:
-    connector_case = _dbt_case()
-    fixture = connector_case.dbt_fixture
+def test_dbt_error_details_are_closed_json_safe_and_credential_free(
+    dbt_case: ConnectorCase,
+) -> None:
+    fixture = dbt_case.dbt_fixture
     assert fixture is not None
+    secret = _FIXTURE_CREDENTIALS["password"]
+    raw_failure = RuntimeError(
+        f"recorded compile rejection with password={secret}"
+    )
     runner = RecordingDbtRunner(
-        failures={"compile": RuntimeError("recorded compile rejection")},
+        failures={"compile": raw_failure},
         credentials=_FIXTURE_CREDENTIALS,
         expected_project_dir=fixture.project_dir,
     )
 
+    assert secret in str(raw_failure)
     with pytest.raises(ConnectorError) as raised:
         DbtConnector(runner).compile(_compile_request(fixture.project_dir))
 
@@ -334,15 +438,16 @@ def test_dbt_error_details_are_closed_json_safe_and_credential_free() -> None:
     assert wire == {
         "code": "execution_failed",
         "message": "dbt compile failed",
-        "safe_details": {"reason": "recorded compile rejection"},
+        "safe_details": {"reason": "unexpected runner exception"},
     }
     serialized = json.dumps(wire, sort_keys=True)
     assert all(secret not in serialized for secret in _FIXTURE_CREDENTIALS.values())
 
 
-def test_dbt_capability_bindings_use_only_the_recording_runner() -> None:
-    connector_case = _dbt_case()
-    fixture = connector_case.dbt_fixture
+def test_dbt_capability_bindings_use_only_the_recording_runner(
+    dbt_case: ConnectorCase,
+) -> None:
+    fixture = dbt_case.dbt_fixture
     assert fixture is not None
 
     with (
@@ -350,10 +455,10 @@ def test_dbt_capability_bindings_use_only_the_recording_runner() -> None:
         patch.object(subprocess, "Popen") as popen,
         patch.object(os, "system") as system,
     ):
-        compile_result = connector_case.capability_binding("dbt.compile").invoke()
-        run_result = connector_case.capability_binding("dbt.run").invoke()
-        cancel_result = connector_case.capability_binding("dbt.cancel").invoke()
-        artifact = connector_case.capability_binding("dbt.artifact.read").invoke()
+        compile_result = dbt_case.capability_binding("dbt.compile").invoke()
+        run_result = dbt_case.capability_binding("dbt.run").invoke()
+        cancel_result = dbt_case.capability_binding("dbt.cancel").invoke()
+        artifact = dbt_case.capability_binding("dbt.artifact.read").invoke()
 
     assert isinstance(compile_result, DbtPreparedOperation)
     assert isinstance(run_result, DbtRunResult)
@@ -373,14 +478,15 @@ def test_dbt_capability_bindings_use_only_the_recording_runner() -> None:
     system.assert_not_called()
 
 
-def test_dbt_credentials_are_excluded_from_argv_calls_and_metadata() -> None:
-    connector_case = _dbt_case()
-    fixture = connector_case.dbt_fixture
+def test_dbt_credentials_are_excluded_from_argv_calls_and_metadata(
+    dbt_case: ConnectorCase,
+) -> None:
+    fixture = dbt_case.dbt_fixture
     assert fixture is not None
     assert fixture.runner.credentials == _FIXTURE_CREDENTIALS
 
-    operation = _prepared_operation(connector_case)
-    connector_case.capability_binding("dbt.run").invoke()
+    operation = _prepared_operation(dbt_case)
+    dbt_case.connector.run(operation)
 
     observed = repr(
         {
@@ -395,9 +501,10 @@ def test_dbt_credentials_are_excluded_from_argv_calls_and_metadata() -> None:
     assert operation.metadata["adapter_type"] == "fixture"
 
 
-def test_dbt_temporary_project_contains_only_fixture_project_files() -> None:
-    connector_case = _dbt_case()
-    fixture = connector_case.dbt_fixture
+def test_dbt_temporary_project_contains_only_fixture_project_files(
+    dbt_case: ConnectorCase,
+) -> None:
+    fixture = dbt_case.dbt_fixture
     assert fixture is not None
 
     files = {
