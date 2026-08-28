@@ -511,8 +511,10 @@ Expected: every package builds successfully; list output contains `csv`, `excel`
 Run:
 
 ```bash
-if git grep -n 'open_connectors'; then exit 1; fi
-if git grep -n 'maybesheet'; then exit 1; fi
+legacy_namespace='open'"_"'connectors'
+legacy_maybe='maybe'"sheet"
+if git grep -n "$legacy_namespace"; then exit 1; fi
+if git grep -n "$legacy_maybe"; then exit 1; fi
 git status --short
 ```
 
