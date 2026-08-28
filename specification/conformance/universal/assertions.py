@@ -75,6 +75,9 @@ def parse_csv_records(text: str) -> tuple[dict[str, str | None], ...]:
     for row in reader:
         assert None not in row, "CSV row has more values than the header"
         assert set(row) == set(reader.fieldnames), "CSV row does not match the header"
+        assert all(row[name] is not None for name in reader.fieldnames), (
+            "CSV row has fewer values than the header"
+        )
         rows.append(
             {
                 name: None if row[name] == "" else row[name]

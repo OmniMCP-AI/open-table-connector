@@ -289,6 +289,7 @@ class RecordingCliAdapter:
         capabilities: tuple[str, ...],
         table: pa.Table,
         failures: Mapping[str, BaseException] | None = None,
+        vendor_receipt_ref: str | None = None,
     ) -> None:
         self.identity = ConnectorIdentity(connector_id, "1.0.0", "1.0")
         self.schemes = tuple(schemes)
@@ -299,6 +300,7 @@ class RecordingCliAdapter:
         self.provider_owned_fields: tuple[str, ...] = ()
         self._table = table
         self._failures = dict(failures or {})
+        self._vendor_receipt_ref = vendor_receipt_ref
         self.read_calls: list[RecordedCliCall] = []
         self.inspect_calls: list[RecordedCliCall] = []
         self.preflight_calls: list[RecordedCliCall] = []
@@ -339,6 +341,7 @@ class RecordingCliAdapter:
             BaseConvention(ordinal_snapshot_id=source_revision),
             table.num_rows,
             1,
+            vendor_receipt_ref=self._vendor_receipt_ref,
         )
 
     def read(self, endpoint: Endpoint, options: CliOptions) -> ArrowReadResult:

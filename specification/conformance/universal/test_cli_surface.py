@@ -21,6 +21,7 @@ from specification.conformance.universal.assertions import (
 from specification.conformance.universal.fixtures import (
     RawProviderFailure,
     RecordingCliAdapter,
+    RecordedRequest,
     RecordingSheetsTransport,
     build_cli_registry_bridge,
     run_cli_command,
@@ -48,6 +49,7 @@ def _fixture_adapter(
         "table.write",
     ),
     failures: dict[str, BaseException] | None = None,
+    vendor_receipt_ref: str | None = None,
 ) -> RecordingCliAdapter:
     return RecordingCliAdapter(
         connector_id=connector_id,
@@ -55,16 +57,12 @@ def _fixture_adapter(
         capabilities=capabilities,
         table=pa.Table.from_pylist(list(_TABLE_ROWS)),
         failures=failures,
+        vendor_receipt_ref=vendor_receipt_ref,
     )
 
 
 def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() -> None:
-    bridge = build_cli_registry_bridge(
-        "google_sheets",
-        "feishu_bitable",
-        "maybesheet",
-        "local_files",
-    )
+    bridge = build_cli_registry_bridge()
 
     result = run_cli_command(
         _args("list", output_format="jsonl"),
@@ -74,78 +72,85 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
     records = parse_json_lines(result.stdout)
     assert result.exit_code == 0
     assert result.stderr == ""
-    assert [item["connector_id"] for item in records] == [
-        "google_sheets",
-        "feishu_bitable",
-        "maybesheet",
-        "local_files",
-    ]
-    expected = {
-        "google_sheets": {
-            "schemes": {"gsheets", "https"},
-            "capabilities": {
-                "uri.resolve",
-                "table.inspect",
-                "table.read.arrow",
-                "table.read.polars",
-                "table.write",
-            },
-            "modes": {"sheet"},
+    assert records == (
+        {
+            "connector_id": "google_sheets",
+            "schemes": ["gsheets", "https"],
+            "capabilities": [
+                {"capability_id": "uri.resolve", "capability_version": "1.0"},
+                {"capability_id": "table.inspect", "capability_version": "1.0"},
+                {"capability_id": "table.read.arrow", "capability_version": "1.0"},
+                {"capability_id": "table.read.polars", "capability_version": "1.0"},
+                {"capability_id": "table.write", "capability_version": "1.0"},
+            ],
+            "modes": ["sheet"],
         },
-        "feishu_bitable": {
-            "schemes": {"feishu", "feishu_bitable"},
-            "capabilities": {
-                "uri.resolve",
-                "table.inspect",
-                "table.read.arrow",
-                "table.read.polars",
-                "table.write",
-            },
-            "modes": {"base"},
+        {
+            "connector_id": "feishu_bitable",
+            "schemes": ["feishu", "feishu_bitable"],
+            "capabilities": [
+                {"capability_id": "uri.resolve", "capability_version": "1.0"},
+                {"capability_id": "table.inspect", "capability_version": "1.0"},
+                {"capability_id": "table.read.arrow", "capability_version": "1.0"},
+                {"capability_id": "table.read.polars", "capability_version": "1.0"},
+                {"capability_id": "table.write", "capability_version": "1.0"},
+            ],
+            "modes": ["base"],
         },
-        "maybesheet": {
-            "schemes": {"https", "maybe"},
-            "capabilities": {
-                "base.read",
-                "base.inspect",
-                "table.write",
-            },
-            "modes": {"base"},
+        {
+            "connector_id": "maybesheet",
+            "schemes": ["maybe", "https"],
+            "capabilities": [
+                {"capability_id": "base.read", "capability_version": "1.0"},
+                {"capability_id": "base.inspect", "capability_version": "1.0"},
+                {"capability_id": "table.write", "capability_version": "1.0"},
+            ],
+            "modes": ["base"],
         },
-        "local_files": {
-            "schemes": {"file"},
-            "capabilities": {
-                "table.read.arrow",
-                "table.read.polars",
-                "table.inspect",
-                "table.write",
-            },
-            "modes": {"base"},
+        {
+            "connector_id": "local_files",
+            "schemes": ["file"],
+            "capabilities": [
+                {"capability_id": "table.read.arrow", "capability_version": "1.0"},
+                {"capability_id": "table.read.polars", "capability_version": "1.0"},
+                {"capability_id": "table.inspect", "capability_version": "1.0"},
+                {"capability_id": "table.write", "capability_version": "1.0"},
+            ],
+            "modes": ["base"],
         },
-    }
+    )
+    connector_ids = [record["connector_id"] for record in records]
+    assert len(connector_ids) == len(set(connector_ids))
     for record in records:
-        connector_id = record["connector_id"]
         assert set(record) == {"connector_id", "schemes", "capabilities", "modes"}
-        assert set(record["schemes"]) == expected[connector_id]["schemes"]
-        assert {item["capability_id"] for item in record["capabilities"]} == expected[
-            connector_id
-        ]["capabilities"]
-        assert set(record["modes"]) == expected[connector_id]["modes"]
+        capability_ids = [item["capability_id"] for item in record["capabilities"]]
+        assert len(capability_ids) == len(set(capability_ids))
+        assert len(record["schemes"]) == len(set(record["schemes"]))
+        assert len(record["modes"]) == len(set(record["modes"]))
     assert "token" not in result.stdout.casefold()
     assert _FIXTURE_SECRET not in result.stdout
 
 
 @pytest.mark.parametrize(
-    ("case_name", "source", "extra", "expected_mode", "expected_columns", "expected_rows"),
+    (
+        "case_name",
+        "source",
+        "extra",
+        "expected_mode",
+        "expected_columns",
+        "expected_rows",
+        "expected_facts",
+    ),
     (
         pytest.param(
             "google_sheets",
-            "gsheets://fixture-spreadsheet/Orders",
+            "https://docs.google.com/spreadsheets/d/fixture-spreadsheet/edit#gid=0",
             {"token": _FIXTURE_SECRET},
             "sheet",
             ["id", "amount", "note"],
             4,
-            id="google-sheets-scheme",
+            {"provider": "google_sheets"},
+            id="google-sheets-shared-https-host",
         ),
         pytest.param(
             "feishu_bitable",
@@ -154,6 +159,7 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
             "base",
             ["_record_id", "name", "score", "note", "internal_only"],
             3,
+            {"provider": "feishu_bitable"},
             id="feishu-scheme",
         ),
         pytest.param(
@@ -163,6 +169,7 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
             "base",
             ["id", "amount", "note"],
             4,
+            {"transport": "process_client"},
             id="maybesheet-https-host",
         ),
         pytest.param(
@@ -172,6 +179,7 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
             "base",
             ["id", "amount", "note"],
             3,
+            {"provider": "local"},
             id="local-file-scheme",
         ),
     ),
@@ -183,8 +191,9 @@ def test_cli_inspect_from_selects_exact_scheme_and_reports_safe_metadata(
     expected_mode: str,
     expected_columns: list[str],
     expected_rows: int,
+    expected_facts: dict[str, str],
 ) -> None:
-    bridge = build_cli_registry_bridge(case_name)
+    bridge = build_cli_registry_bridge()
     selected_source = bridge.sources[case_name] if source is None else source
 
     result = run_cli_command(
@@ -204,6 +213,7 @@ def test_cli_inspect_from_selects_exact_scheme_and_reports_safe_metadata(
     assert payload["mode"] == expected_mode
     assert payload["columns"] == expected_columns
     assert payload["row_count"] == expected_rows
+    assert payload["facts"] == expected_facts
     assert set(payload) == {
         "safe_uri",
         "mode",
@@ -214,9 +224,25 @@ def test_cli_inspect_from_selects_exact_scheme_and_reports_safe_metadata(
         "facts",
     }
     assert _FIXTURE_SECRET not in result.stdout
-    assert bridge.registry.connector_for(bridge.endpoints[case_name]) is bridge.adapters[
-        case_name
-    ]
+    google_requests = bridge.cases["google_sheets"].http_fixture.transport.requests
+    feishu_requests = bridge.cases["feishu_bitable"].http_fixture.transport.requests
+    maybesheet_calls = bridge.cases["maybesheet"].process_fixture.process.calls
+    if case_name == "google_sheets":
+        assert len(google_requests) == 1
+        assert feishu_requests == []
+        assert maybesheet_calls == []
+    elif case_name == "feishu_bitable":
+        assert google_requests == []
+        assert len(feishu_requests) == 2
+        assert maybesheet_calls == []
+    elif case_name == "maybesheet":
+        assert google_requests == []
+        assert feishu_requests == []
+        assert len(maybesheet_calls) == 1
+    else:
+        assert google_requests == []
+        assert feishu_requests == []
+        assert maybesheet_calls == []
 
 
 @pytest.mark.parametrize(
@@ -401,10 +427,12 @@ def test_cli_import_preserves_exact_source_and_destination_receipts() -> None:
     source = _fixture_adapter(
         connector_id="source_fixture",
         schemes=("source",),
+        vendor_receipt_ref="source-fixture-receipt",
     )
     destination = _fixture_adapter(
         connector_id="destination_fixture",
         schemes=("destination",),
+        vendor_receipt_ref="destination-fixture-receipt",
     )
     registry = ConnectorRegistry([source, destination])
 
@@ -424,18 +452,78 @@ def test_cli_import_preserves_exact_source_and_destination_receipts() -> None:
     assert result.stderr == ""
     assert payload["status"] == "completed"
     assert payload["rows_read"] == payload["rows_written"] == 2
-    assert payload["source_receipt"]["connector"]["connector_id"] == "source_fixture"
-    assert payload["source_receipt"]["operation_id"] == "source_fixture-read-operation"
-    assert payload["source_receipt"]["safe_uri"]["value"] == "source://fixture/orders"
-    assert payload["destination_receipt"]["connector"]["connector_id"] == (
-        "destination_fixture"
-    )
-    assert payload["destination_receipt"]["operation_id"] == (
-        "destination_fixture-write-operation"
-    )
-    assert payload["destination_receipt"]["safe_uri"]["value"] == (
-        "destination://fixture/archive"
-    )
+    assert set(payload) == {
+        "status",
+        "rows_read",
+        "rows",
+        "rows_written",
+        "source_receipt",
+        "receipt",
+        "destination_receipt",
+    }
+    assert payload["source_receipt"] == {
+        "contract_version": "1.0",
+        "connector": {
+            "connector_id": "source_fixture",
+            "connector_version": "1.0.0",
+            "contract_version": "1.0",
+        },
+        "capability": {
+            "capability_id": "table.read.arrow",
+            "capability_version": "1.0",
+        },
+        "operation_id": "source_fixture-read-operation",
+        "safe_uri": {"value": "source://fixture/orders"},
+        "mode": "base",
+        "source_revision": "source_fixture-read-revision",
+        "schema_fingerprint": (
+            "0afe7a8a0c00e61680aa9e698490be97b75ab686535aab8f19870bdd5c209527"
+        ),
+        "content_fingerprint": (
+            "6da705858d0c6d7797bce085687db86659938e2db56edd2e2d1e314743e083b6"
+        ),
+        "coordinate_convention": {
+            "mode": "base",
+            "record_id_field": None,
+            "key_fields": [],
+            "ordinal_snapshot_id": "source_fixture-read-revision",
+        },
+        "row_count": 2,
+        "batch_count": 1,
+        "vendor_receipt_ref": "source-fixture-receipt",
+    }
+    assert payload["receipt"] == payload["source_receipt"]
+    assert payload["destination_receipt"] == {
+        "contract_version": "1.0",
+        "connector": {
+            "connector_id": "destination_fixture",
+            "connector_version": "1.0.0",
+            "contract_version": "1.0",
+        },
+        "capability": {
+            "capability_id": "table.write",
+            "capability_version": "1.0",
+        },
+        "operation_id": "destination_fixture-write-operation",
+        "safe_uri": {"value": "destination://fixture/archive"},
+        "mode": "base",
+        "source_revision": "destination_fixture-write-revision",
+        "schema_fingerprint": (
+            "0afe7a8a0c00e61680aa9e698490be97b75ab686535aab8f19870bdd5c209527"
+        ),
+        "content_fingerprint": (
+            "6da705858d0c6d7797bce085687db86659938e2db56edd2e2d1e314743e083b6"
+        ),
+        "coordinate_convention": {
+            "mode": "base",
+            "record_id_field": None,
+            "key_fields": [],
+            "ordinal_snapshot_id": "destination_fixture-write-revision",
+        },
+        "row_count": 2,
+        "batch_count": 1,
+        "vendor_receipt_ref": "destination-fixture-receipt",
+    }
     assert source.read_calls[0].endpoint.raw == "source://fixture/orders"
     assert destination.preflight_calls[0].endpoint.raw == "destination://fixture/archive"
     assert destination.write_calls[0].endpoint.raw == "destination://fixture/archive"
@@ -485,6 +573,7 @@ def test_cli_sheet_and_range_reach_google_adapter_as_exact_value_ranges() -> Non
             token=_FIXTURE_SECRET,
             sheet="Orders Sheet",
             limit=1,
+            timeout=2.2,
         ),
         bridge.registry,
     )
@@ -496,14 +585,47 @@ def test_cli_sheet_and_range_reach_google_adapter_as_exact_value_ranges() -> Non
             sheet="Ignored Sheet",
             range="Orders!A1:B2",
             limit=1,
+            timeout=4.1,
         ),
         bridge.registry,
     )
 
     requests = bridge.cases["google_sheets"].http_fixture.transport.requests
     assert sheet_result.exit_code == range_result.exit_code == 0
-    assert requests[0].url.endswith("/values/Orders%20Sheet?majorDimension=ROWS")
-    assert requests[1].url.endswith("/values/Orders%21A1%3AB2?majorDimension=ROWS")
+    assert sheet_result.stderr == range_result.stderr == ""
+    assert requests == [
+        RecordedRequest(
+            method="GET",
+            url=(
+                "https://sheets.googleapis.com/v4/spreadsheets/fixture-spreadsheet/"
+                "values/Orders%20Sheet?majorDimension=ROWS"
+            ),
+            headers={"Authorization": f"Bearer {_FIXTURE_SECRET}"},
+            body=None,
+            timeout=3,
+        ),
+        RecordedRequest(
+            method="GET",
+            url=(
+                "https://sheets.googleapis.com/v4/spreadsheets/fixture-spreadsheet/"
+                "values/Orders%21A1%3AB2?majorDimension=ROWS"
+            ),
+            headers={"Authorization": f"Bearer {_FIXTURE_SECRET}"},
+            body=None,
+            timeout=5,
+        ),
+    ]
+    assert _FIXTURE_SECRET not in (
+        sheet_result.stdout
+        + sheet_result.stderr
+        + range_result.stdout
+        + range_result.stderr
+    )
+
+
+def test_parse_csv_records_rejects_rows_with_missing_cells() -> None:
+    with pytest.raises(AssertionError, match="fewer values than the header"):
+        parse_csv_records("id,amount,note\n1,2.50\n")
 
 
 def test_cli_field_names_reach_feishu_adapter_and_filter_exact_columns() -> None:
