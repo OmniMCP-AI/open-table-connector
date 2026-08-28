@@ -186,14 +186,22 @@ Green result for the same command:
 
 ### Verification
 
-- Focused Task 6 tests: `42 passed in 1.18s`.
-- All universal tests: `237 passed in 4.11s`.
+- Focused Task 6 tests at committed snapshot `378e467`:
+  `42 passed in 1.26s`.
+- All universal tests at committed snapshot `378e467`:
+  `233 passed in 2.66s`.
 - CLI, format, import, parser, registry, and model regressions:
-  `106 passed in 3.75s`.
-- Full workspace suite: `424 passed in 6.93s`.
+  `106 passed in 2.90s`.
+- Full workspace suite at committed snapshot `378e467`:
+  `420 passed in 5.60s`.
 - `uv run python -m compileall -q packages specification/conformance/universal`
   — passed.
 - `git diff --check` — passed.
+
+The previously recorded `237` universal and `424` workspace totals included
+four tests from concurrent uncommitted Task 7 changes. The corrected values
+above were rerun in a detached worktree at the exact Task 6 round-1 commit, so
+only tracked files from that snapshot were collected.
 
 ### Fix-Round Concerns
 
@@ -201,3 +209,91 @@ Green result for the same command:
   plus untracked Task 7 files, `.DS_Store` files, and
   `tmp-review-universal/`, were left untouched and excluded from the
   implementation commit.
+
+## Fix Round 2
+
+Date: 2026-08-28
+
+### Implementation Commit
+
+`2cfeab158924b71756b6f3ecf8d146ec51f9fdbc` —
+`test: cover convert source receipt wire`
+
+No production CLI or connector implementation was changed.
+
+### Re-review Findings Addressed
+
+- The import test's complete receipt-wire comparison is now a shared test-side
+  helper. A dedicated `convert` test uses it to assert every public source
+  receipt field emitted by `convert_endpoint`, including closed wire keys,
+  connector and capability versions, operation and safe URI, mode, revision,
+  fingerprints, coordinate convention, row/batch counts, and the non-null
+  vendor receipt reference. It also verifies the public `receipt` alias.
+- `convert` writes through a local codec, so there is no connector destination
+  receipt to preserve. The test asserts the exact summary key set and therefore
+  also proves that no destination receipt is claimed for this path.
+- Round-1 aggregate verification totals were corrected using an isolated
+  checkout of committed snapshot `378e467`, excluding the dirty shared
+  worktree's Task 7 files.
+
+### TDD Evidence
+
+The production convert path already preserved the source receipt; this round
+adds missing conformance coverage rather than fixing a production behavior.
+After adding the test, a temporary uncommitted mutation removed only
+`convert_endpoint`'s `source_receipt` assignment.
+
+Red command:
+
+```bash
+uv run python -m pytest specification/conformance/universal/test_cli_surface.py::test_cli_convert_preserves_complete_source_receipt_wire -q
+```
+
+Red result:
+
+```text
+1 failed in 0.17s
+AssertionError: payload was missing `source_receipt` and `receipt`
+```
+
+The mutation was immediately reversed and never staged. The same command then
+passed with `1 passed in 0.03s`, demonstrating that the new test detects loss
+of the public convert receipt wire. The complete focused file subsequently
+passed with `43 passed in 1.30s` in the shared worktree.
+
+An initial command in the clean detached checkout stopped during collection
+because its new virtual environment had not yet installed `polars`. This was
+environment setup, not behavioral red evidence. After
+`uv sync --all-packages --group dev`, all committed-snapshot verification below
+ran successfully.
+
+### Committed-Snapshot Verification
+
+All commands in this section ran in a detached worktree at implementation
+commit `2cfeab1`, excluding every uncommitted Task 7 and local artifact from the
+shared main worktree.
+
+- `uv sync --all-packages --group dev` — passed; 28 packages resolved and all
+  workspace packages installed.
+- Focused Task 6 tests:
+  `uv run python -m pytest specification/conformance/universal/test_cli_surface.py -q`
+  — `43 passed in 1.80s`.
+- All committed universal tests:
+  `uv run python -m pytest specification/conformance/universal -q`
+  — `234 passed in 2.81s`.
+- CLI, format, import, parser, registry, and model regressions:
+  `uv run python -m pytest packages/cli/tests/test_commands.py packages/cli/tests/test_formats.py packages/cli/tests/test_pipeline.py packages/cli/tests/test_cli_e2e.py packages/cli/tests/test_registry.py packages/cli/tests/test_model.py -q`
+  — `106 passed in 3.20s`.
+- Full committed workspace suite: `uv run python -m pytest -q`
+  — `421 passed in 6.49s`.
+- `uv lock --check` — passed.
+- `uv run python -m compileall -q packages specification/conformance/universal`
+  — passed.
+- `git diff --check` — passed in the committed-snapshot worktree.
+
+### Fix-Round Concerns
+
+- Concurrent Task 7 modifications and untracked files remain untouched in the
+  shared main worktree and were excluded from all aggregate totals above.
+- The pre-sync missing-dependency collection stop in the temporary checkout is
+  not a test failure and is not presented as TDD evidence.
