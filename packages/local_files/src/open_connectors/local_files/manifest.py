@@ -20,4 +20,22 @@ CAPABILITY_MANIFEST = CapabilityManifest(
     ),
     modes=(TableMode.SHEET,),
     uri_schemes=("file",),
+    managed_io={
+        "read": {
+            "capability_id": TABLE_READ_POLARS_CAPABILITY.capability_id,
+            "config_schema": {
+                "type": "object",
+                "properties": {
+                    "separator": {"type": "string", "minLength": 1, "maxLength": 1},
+                    "encoding": {"type": "string", "minLength": 1},
+                    "sheet": {"type": ["string", "null"]},
+                    "header_row": {"type": "integer", "minimum": 1},
+                    "credential_ref": {"type": "string", "minLength": 1},
+                },
+                "additionalProperties": False,
+            },
+            "boundedness": "bounded",
+            "features": [],
+        }
+    },
 )

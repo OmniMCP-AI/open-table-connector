@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from jsonschema import validate
+import pytest
 
 from open_connectors.contract import (
     BaseConvention,
@@ -34,6 +35,59 @@ def test_capability_manifest_wire_validates_against_schema() -> None:
     )
 
     validate(manifest.to_wire(), _schema("capability-manifest-v1.schema.json"))
+
+
+def test_capability_manifest_managed_io_round_trips_and_validates() -> None:
+    manifest = CapabilityManifest(
+        connector=ConnectorIdentity("local_files", "0.2.0", "1.0"),
+        capabilities=(CapabilityIdentity("table.read.polars", "1.0"),),
+        modes=(TableMode.SHEET,),
+        uri_schemes=("file",),
+        managed_io={
+            "read": {
+                "capability_id": "table.read.polars",
+                "config_schema": {
+                    "type": "object",
+                    "properties": {
+                        "credential_ref": {"type": "string"},
+                    },
+                },
+                "boundedness": "bounded",
+                "features": ["readback"],
+            }
+        },
+    )
+
+    wire = manifest.to_wire()
+    validate(wire, _schema("capability-manifest-v2.schema.json"))
+    assert CapabilityManifest.from_wire(wire) == manifest
+
+
+@pytest.mark.parametrize(
+    "managed_io",
+    [
+        {"scan": {}},
+        {"read": {"capability_id": "unlisted", "config_schema": {}, "boundedness": "bounded", "features": []}},
+        {"read": {"capability_id": "table.read.arrow", "config_schema": {}, "boundedness": "bounded", "features": ["unknown"]}},
+        {"read": {"capability_id": "table.read.arrow", "config_schema": {"properties": {"token": {"default": "secret"}}}, "boundedness": "bounded", "features": []}},
+    ],
+)
+def test_capability_manifest_rejects_invalid_managed_io(managed_io) -> None:
+    manifest = CapabilityManifest(
+        connector=ConnectorIdentity("local_files", "0.2.0", "1.0"),
+        capabilities=(CapabilityIdentity("table.read.arrow", "1.0"),),
+        modes=(TableMode.SHEET,),
+        uri_schemes=("file",),
+    )
+
+    with pytest.raises(ValueError):
+        CapabilityManifest(
+            connector=manifest.connector,
+            capabilities=manifest.capabilities,
+            modes=manifest.modes,
+            uri_schemes=manifest.uri_schemes,
+            managed_io=managed_io,
+        )
 
 
 def test_receipt_wire_validates_against_schema() -> None:

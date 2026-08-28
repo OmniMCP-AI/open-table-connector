@@ -26,6 +26,8 @@ from open_connectors.contract import (
 
 from .csv_reader import read_csv_arrow
 from .excel_reader import read_excel_arrow
+from .json_reader import read_json_arrow
+from .xls_reader import read_xls_arrow
 from .identity import CONNECTOR_IDENTITY, TABLE_READ_ARROW_CAPABILITY, TABLE_READ_POLARS_CAPABILITY
 from .inspection import inspection_from_read
 from .manifest import CAPABILITY_MANIFEST
@@ -81,14 +83,28 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
         resource = resolved.resource
         sheet = self._resolve_sheet(request, resource)
         if resource.format.value == "csv":
+            separator = request.options.separator
+            if resource.path.suffix.casefold() == ".tsv" and separator == ",":
+                separator = "\t"
             table = read_csv_arrow(
                 resource.path,
-                separator=request.options.separator,
+                separator=separator,
                 encoding=request.options.encoding,
                 limits=request.resource_limits,
             )
             selected_sheet = sheet or "data"
             worksheets = (selected_sheet,)
+        elif resource.format.value == "json":
+            table = read_json_arrow(resource.path, limits=request.resource_limits)
+            selected_sheet = sheet or "data"
+            worksheets = (selected_sheet,)
+        elif resource.format.value == "xls":
+            table, selected_sheet, worksheets = read_xls_arrow(
+                resource.path,
+                sheet=sheet,
+                header_row=request.options.header_row,
+                limits=request.resource_limits,
+            )
         else:
             table, selected_sheet, worksheets = read_excel_arrow(
                 resource.path,

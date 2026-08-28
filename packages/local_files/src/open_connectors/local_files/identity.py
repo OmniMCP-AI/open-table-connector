@@ -4,7 +4,7 @@ from open_connectors.contract import CapabilityIdentity, ConnectorIdentity
 
 CONNECTOR_IDENTITY = ConnectorIdentity(
     connector_id="local_files",
-    connector_version="0.1.0",
+    connector_version="0.2.0",
     contract_version="1.0",
 )
 URI_RESOLVER_CAPABILITY = CapabilityIdentity("uri.resolve", "1.0")

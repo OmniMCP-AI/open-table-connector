@@ -4,12 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "open-connectors-local-files"
-version = "0.1.0"
+version = "0.2.0"
 description = "Neutral local CSV and Excel Connector"
 requires-python = ">=3.11"
 dependencies = [
-  "open-connectors-contract==0.1.0",
+  "open-connectors-contract==0.2.0",
   "openpyxl>=3.1,<4",
+  "xlrd>=2.0,<3",
   "polars>=1.0,<2",
   "pyarrow>=14,<20",
 ]

@@ -198,11 +198,10 @@ def assert_capabilities_are_unique(
     if manifest is not None:
         wire = manifest.to_wire()
 
-        _assert_closed_wire(
-            wire,
-            {"connector", "capabilities", "modes", "uri_schemes"},
-            "CapabilityManifest",
-        )
+        expected_keys = {"connector", "capabilities", "modes", "uri_schemes"}
+        if manifest.managed_io:
+            expected_keys.add("managed_io")
+        _assert_closed_wire(wire, expected_keys, "CapabilityManifest")
         assert CapabilityManifest.from_wire(wire) == manifest
         assert manifest.connector == expected_connector
         assert tuple(manifest.capabilities) == capabilities

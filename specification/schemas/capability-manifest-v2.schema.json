@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-connectors.dev/schemas/capability-manifest-v2.schema.json",
+  "title": "Connector capability manifest v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["connector", "capabilities", "modes", "uri_schemes", "managed_io"],
+  "properties": {
+    "connector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["connector_id", "connector_version", "contract_version"],
+      "properties": {
+        "connector_id": {"type": "string", "minLength": 1},
+        "connector_version": {"type": "string", "minLength": 1},
+        "contract_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["capability_id", "capability_version"],
+        "properties": {
+          "capability_id": {"type": "string", "minLength": 1},
+          "capability_version": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "modes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"enum": ["base", "sheet"]}
+    },
+    "uri_schemes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "managed_io": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "read": {"$ref": "#/$defs/read"},
+        "write": {"$ref": "#/$defs/write"}
+      }
+    }
+  },
+  "$defs": {
+    "config_schema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "features": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": ["projection_pushdown", "predicate_pushdown", "readback"]
+      }
+    },
+    "read": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability_id", "config_schema", "boundedness", "features"],
+      "properties": {
+        "capability_id": {"type": "string", "minLength": 1},
+        "config_schema": {"$ref": "#/$defs/config_schema"},
+        "boundedness": {"enum": ["bounded", "unbounded"]},
+        "features": {"$ref": "#/$defs/features"}
+      }
+    },
+    "write": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability_id", "config_schema", "features"],
+      "properties": {
+        "capability_id": {"type": "string", "minLength": 1},
+        "config_schema": {"$ref": "#/$defs/config_schema"},
+        "features": {"$ref": "#/$defs/features"}
+      }
+    }
+  }
+}

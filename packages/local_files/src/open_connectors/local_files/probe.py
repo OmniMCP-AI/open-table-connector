@@ -11,10 +11,14 @@ from open_connectors.contract.errors import ConnectorError, ConnectorErrorCode
 
 class LocalFormat(StrEnum):
     CSV = "csv"
+    JSON = "json"
     EXCEL = "excel"
+    XLSX = "excel"
+    XLS = "xls"
 
 
 XLSX_ZIP_SIGNATURE = b"PK\x03\x04"
+XLS_OLE_SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 SAMPLE_BYTES = 65_536
 
 
@@ -35,7 +39,19 @@ def detect_format(path: Path) -> LocalFormat:
         ) from None
     if payload.startswith(XLSX_ZIP_SIGNATURE):
         return LocalFormat.EXCEL
+    if payload.startswith(XLS_OLE_SIGNATURE):
+        return LocalFormat.XLS
     text = payload.decode("utf-8", errors="replace")
+    if path.suffix.casefold() == ".json":
+        return LocalFormat.JSON
+    if text.lstrip().startswith(("[", "{")):
+        try:
+            import json
+
+            json.loads(payload.decode("utf-8"))
+            return LocalFormat.JSON
+        except (UnicodeError, ValueError):
+            pass
     lines = [line for line in text.splitlines() if line.strip()]
     if len(lines) >= 2:
         for delimiter in (",", "\t", ";"):
@@ -43,6 +59,6 @@ def detect_format(path: Path) -> LocalFormat:
                 return LocalFormat.CSV
     raise ConnectorError(
         ConnectorErrorCode.INVALID_URI,
-        "local file has no supported CSV or XLSX signature",
+        "local file has no supported CSV, JSON, XLSX, or XLS signature",
         {"path": str(path), "suffix": path.suffix.casefold()},
     )

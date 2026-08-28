@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "open-connectors-contract"
-version = "0.1.0"
-description = "Framework-neutral Connector contract v1"
+version = "0.2.0"
+description = "Framework-neutral Connector contract v2"
 requires-python = ">=3.11"
 dependencies = [
   "jsonschema>=4.23,<5",
