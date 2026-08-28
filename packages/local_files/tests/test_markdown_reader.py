@@ -21,3 +21,7 @@ def test_markdown_reader_round_trips_escaped_cells_and_hyphen_rows() -> None:
 def test_markdown_payload_requires_a_pipe_table_separator() -> None:
     assert is_markdown_payload("# title\nplain prose\n") is False
     assert is_markdown_payload("| id |\n| --- |\n| 1 |\n") is True
+
+
+def test_markdown_payload_rejects_body_rows_with_inconsistent_width() -> None:
+    assert is_markdown_payload("| id | note |\n| --- | --- |\n| 1 |\n") is False

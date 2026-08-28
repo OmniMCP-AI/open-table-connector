@@ -73,15 +73,21 @@ def is_markdown_payload(text: str) -> bool:
     if len(lines) < 2:
         return False
     try:
-        header = _split_markdown_row(lines[0], line_number=1, source="<probe>")
-        separator = _split_markdown_row(lines[1], line_number=2, source="<probe>")
+        rows = [
+            _split_markdown_row(line, line_number=index + 1, source="<probe>")
+            for index, line in enumerate(lines)
+        ]
     except ConnectorError:
         return False
+    header = rows[0]
+    separator = rows[1]
     if not header or len(header) != len(separator):
         return False
     if len(header) == 1 and "|" not in lines[0]:
         return False
-    return _is_separator_row(separator)
+    if not _is_separator_row(separator):
+        return False
+    return all(len(row) == len(header) for row in rows[2:])
 
 
 def _rows_to_table(rows: list[dict[str, object | None]], columns: Iterable[str]) -> pa.Table:
