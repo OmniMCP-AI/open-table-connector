@@ -54,7 +54,7 @@ def convert_endpoint(
 
     _validate_source_format(source, options)
     result = read_endpoint(source, registry, options)
-    write_local(result.table, destination, destination_format)
+    write_local(result.table, destination, destination_format, sheet=options.sheet)
     return PipelineSummary(
         status="completed",
         rows_read=result.table.num_rows,
@@ -95,7 +95,11 @@ def import_endpoint(
 
 
 def _is_local(endpoint: Endpoint) -> bool:
-    return endpoint.is_stdio or endpoint.path is not None
+    return (
+        endpoint.is_stdio
+        or endpoint.path is not None
+        or (endpoint.uri is not None and endpoint.uri.scheme in {"csv", "excel", "md"})
+    )
 
 
 def _validate_source_format(endpoint: Endpoint, options: CliOptions) -> None:

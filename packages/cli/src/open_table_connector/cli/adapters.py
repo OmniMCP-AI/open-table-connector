@@ -43,6 +43,17 @@ from open_table_connector.google_sheets import (
     GoogleSheetsReadOptions,
     GoogleSheetsTableReadRequest,
 )
+from open_table_connector.local_files import (
+    CsvConnector,
+    CsvReadOptions,
+    CsvTableReadRequest,
+    ExcelConnector,
+    ExcelReadOptions,
+    ExcelTableReadRequest,
+    MarkdownConnector,
+    MarkdownReadOptions,
+    MarkdownTableReadRequest,
+)
 from open_table_connector.maybe_sheet import MaybeSheetConnector, MaybeSheetReadRequest, SubprocessProcessClient
 
 from .formats import infer_format, read_local, write_local
@@ -93,6 +104,18 @@ def _local_uri(endpoint: Endpoint) -> TableURI:
     if endpoint.path is not None:
         return TableURI(endpoint.path.resolve().as_uri())
     return TableURI("stdio://stdin")
+
+
+def _connector_uri(endpoint: Endpoint) -> TableURI:
+    if endpoint.uri is not None:
+        return endpoint.uri
+    if endpoint.path is not None:
+        return TableURI(endpoint.path.resolve().as_uri())
+    raise ConnectorError(
+        ConnectorErrorCode.INVALID_URI,
+        "local connector endpoints require a URI or filesystem path",
+        {"endpoint": endpoint.raw},
+    )
 
 
 @dataclass
@@ -276,6 +299,102 @@ class MaybeSheetAdapter:
 
 
 @dataclass
+class CsvAdapter:
+    connector: CsvConnector
+    schemes: tuple[str, ...] = ("csv",)
+    identity: ConnectorIdentity = CsvConnector.identity
+    modes: tuple[TableMode, ...] = tuple(CsvConnector.manifest.modes)
+    capabilities: tuple[CapabilityIdentity, ...] = (
+        *tuple(CsvConnector.manifest.capabilities),
+        CapabilityIdentity("table.write", "1.0"),
+    )
+
+    def _request(self, endpoint: Endpoint, options: CliOptions) -> CsvTableReadRequest:
+        return CsvTableReadRequest(
+            _connector_uri(endpoint),
+            resource_limits=_limits(options),
+            options=CsvReadOptions(),
+        )
+
+    def read(self, endpoint: Endpoint, options: CliOptions) -> ArrowReadResult:
+        return self.connector.read_arrow(self._request(endpoint, options))
+
+    def inspect(self, endpoint: Endpoint, options: CliOptions) -> TableInspection:
+        return self.connector.inspect(InspectRequest(_connector_uri(endpoint), _limits(options)))
+
+    def write(self, endpoint: Endpoint, table: pa.Table, options: CliOptions) -> TableWriteResult:
+        write_local(table, endpoint, FormatName.CSV)
+        return TableWriteResult(_local_receipt(endpoint, table, _LOCAL_WRITE_CAPABILITY, connector=self.identity), table.num_rows)
+
+
+@dataclass
+class ExcelAdapter:
+    connector: ExcelConnector
+    schemes: tuple[str, ...] = ("excel",)
+    identity: ConnectorIdentity = ExcelConnector.identity
+    modes: tuple[TableMode, ...] = tuple(ExcelConnector.manifest.modes)
+    capabilities: tuple[CapabilityIdentity, ...] = (
+        *tuple(ExcelConnector.manifest.capabilities),
+        CapabilityIdentity("table.write", "1.0"),
+    )
+
+    def _request(self, endpoint: Endpoint, options: CliOptions) -> ExcelTableReadRequest:
+        return ExcelTableReadRequest(
+            _connector_uri(endpoint),
+            resource_limits=_limits(options),
+            options=ExcelReadOptions(sheet=options.sheet),
+        )
+
+    def read(self, endpoint: Endpoint, options: CliOptions) -> ArrowReadResult:
+        return self.connector.read_arrow(self._request(endpoint, options))
+
+    def inspect(self, endpoint: Endpoint, options: CliOptions) -> TableInspection:
+        result = self.read(endpoint, options)
+        return TableInspection(
+            _connector_uri(endpoint),
+            TableMode.SHEET,
+            tuple(result.table.column_names),
+            result.receipt.schema_fingerprint,
+            result.table.num_rows,
+            result.receipt.coordinate_convention,
+            {"provider": "local", "connector": self.identity.connector_id},
+        )
+
+    def write(self, endpoint: Endpoint, table: pa.Table, options: CliOptions) -> TableWriteResult:
+        write_local(table, endpoint, FormatName.EXCEL, sheet=options.sheet)
+        return TableWriteResult(_local_receipt(endpoint, table, _LOCAL_WRITE_CAPABILITY, connector=self.identity), table.num_rows)
+
+
+@dataclass
+class MarkdownAdapter:
+    connector: MarkdownConnector
+    schemes: tuple[str, ...] = ("md",)
+    identity: ConnectorIdentity = MarkdownConnector.identity
+    modes: tuple[TableMode, ...] = tuple(MarkdownConnector.manifest.modes)
+    capabilities: tuple[CapabilityIdentity, ...] = (
+        *tuple(MarkdownConnector.manifest.capabilities),
+        CapabilityIdentity("table.write", "1.0"),
+    )
+
+    def _request(self, endpoint: Endpoint, options: CliOptions) -> MarkdownTableReadRequest:
+        return MarkdownTableReadRequest(
+            _connector_uri(endpoint),
+            resource_limits=_limits(options),
+            options=MarkdownReadOptions(),
+        )
+
+    def read(self, endpoint: Endpoint, options: CliOptions) -> ArrowReadResult:
+        return self.connector.read_arrow(self._request(endpoint, options))
+
+    def inspect(self, endpoint: Endpoint, options: CliOptions) -> TableInspection:
+        return self.connector.inspect(InspectRequest(_connector_uri(endpoint), _limits(options)))
+
+    def write(self, endpoint: Endpoint, table: pa.Table, options: CliOptions) -> TableWriteResult:
+        write_local(table, endpoint, FormatName.TABLE)
+        return TableWriteResult(_local_receipt(endpoint, table, _LOCAL_WRITE_CAPABILITY, connector=self.identity), table.num_rows)
+
+
+@dataclass
 class LocalAdapter:
     schemes: tuple[str, ...] = ("file",)
     identity: ConnectorIdentity = ConnectorIdentity("local_files", "0.1.0", "1.0")
@@ -303,7 +422,7 @@ class LocalAdapter:
                                 {"provider": "local"})
 
     def write(self, endpoint: Endpoint, table: pa.Table, options: CliOptions) -> TableWriteResult:
-        write_local(table, endpoint, self._format(endpoint, options, output=True))
+        write_local(table, endpoint, self._format(endpoint, options, output=True), sheet=options.sheet)
         return TableWriteResult(_local_receipt(endpoint, table, _LOCAL_WRITE_CAPABILITY), table.num_rows)
 
 
@@ -312,14 +431,18 @@ _LOCAL_WRITE_CAPABILITY = CapabilityIdentity("table.write", "1.0")
 
 
 def _local_receipt(
-    endpoint: Endpoint, table: pa.Table, capability: CapabilityIdentity
+    endpoint: Endpoint,
+    table: pa.Table,
+    capability: CapabilityIdentity,
+    *,
+    connector: ConnectorIdentity = LocalAdapter.identity,
 ) -> NeutralReceipt:
-    uri = _local_uri(endpoint)
+    uri = _connector_uri(endpoint) if endpoint.uri is not None else _local_uri(endpoint)
     schema = arrow_schema_fingerprint(table.schema)
     content = arrow_content_fingerprint(table)
     source_revision = "sha256:" + content
     operation = operation_identity(
-        connector=LocalAdapter.identity,
+        connector=connector,
         capability=capability,
         uri=uri,
         source_revision=source_revision,
@@ -327,7 +450,7 @@ def _local_receipt(
         content_fingerprint=content,
     )
     return NeutralReceipt(
-        LocalAdapter.identity,
+        connector,
         capability,
         operation,
         uri,
@@ -350,6 +473,9 @@ def build_adapters(env: Mapping[str, str], transports: Mapping[str, Any] | None 
         GoogleSheetsAdapter(google, transports.get("google_sheets"), env.get("GOOGLE_SHEETS_ACCESS_TOKEN")),
         FeishuBitableAdapter(feishu, transports.get("feishu_bitable"), env.get("FEISHU_TENANT_ACCESS_TOKEN")),
         MaybeSheetAdapter(maybe),
+        CsvAdapter(CsvConnector()),
+        ExcelAdapter(ExcelConnector()),
+        MarkdownAdapter(MarkdownConnector()),
         LocalAdapter(),
     )
 

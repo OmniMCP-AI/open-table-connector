@@ -15,6 +15,7 @@ from open_table_connector.contract import TableURI
 class FormatName(StrEnum):
     AUTO = "auto"
     CSV = "csv"
+    EXCEL = "excel"
     JSON = "json"
     JSONL = "jsonl"
     TABLE = "table"

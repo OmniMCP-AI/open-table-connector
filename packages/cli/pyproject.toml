@@ -12,6 +12,7 @@ dependencies = [
   "open-table-connector-google-sheets==0.1.0",
   "open-table-connector-feishu-bitable==0.1.0",
   "open-table-connector-maybe-sheet==0.1.0",
+  "open-table-connector-local-files==0.1.0",
   "polars>=1.0,<2",
   "pyarrow>=14,<20",
 ]
@@ -26,6 +27,7 @@ open-table-connector-contract = { workspace = true }
 open-table-connector-google-sheets = { workspace = true }
 open-table-connector-feishu-bitable = { workspace = true }
 open-table-connector-maybe-sheet = { workspace = true }
+open-table-connector-local-files = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]

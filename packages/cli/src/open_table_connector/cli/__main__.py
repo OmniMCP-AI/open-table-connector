@@ -14,7 +14,7 @@ from .output import emit_error
 from .registry import build_default_registry
 
 
-_FORMATS = ("auto", "csv", "json", "jsonl", "table")
+_FORMATS = ("auto", "csv", "excel", "json", "jsonl", "table")
 _OUTPUT_FORMATS = ("csv", "json", "jsonl", "table")
 _PARSER_FLAGS = frozenset(
     {

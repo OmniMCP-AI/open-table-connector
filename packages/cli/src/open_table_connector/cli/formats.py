@@ -9,13 +9,17 @@ import math
 import sys
 from datetime import date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Iterable, Mapping, Sequence, TextIO
+from urllib.parse import unquote, urlsplit
 
 import pyarrow as pa
 
-from open_table_connector.contract import ConnectorError, ConnectorErrorCode
+from open_table_connector.contract import ConnectorError, ConnectorErrorCode, ResourceLimits
 from open_table_connector.local_files import (
+    read_excel_arrow,
     read_markdown_arrow,
+    write_excel,
     write_markdown_table as write_markdown_table_codec,
 )
 
@@ -23,9 +27,16 @@ from .model import Endpoint, FormatName
 
 
 _MARKDOWN_SUFFIXES = {".table", ".md", ".markdown"}
+_LOCAL_FORMAT_SCHEMES = {
+    "csv": FormatName.CSV,
+    "excel": FormatName.EXCEL,
+    "md": FormatName.TABLE,
+}
 
 
 def infer_format(endpoint: Endpoint, explicit: FormatName) -> FormatName:
+    if endpoint.uri is not None and endpoint.uri.scheme in _LOCAL_FORMAT_SCHEMES:
+        return _LOCAL_FORMAT_SCHEMES[endpoint.uri.scheme]
     if explicit is not FormatName.AUTO:
         return explicit
     if endpoint.path is None:
@@ -33,6 +44,8 @@ def infer_format(endpoint: Endpoint, explicit: FormatName) -> FormatName:
     suffix = endpoint.path.suffix.casefold()
     if suffix == ".csv":
         return FormatName.CSV
+    if suffix == ".xlsx":
+        return FormatName.EXCEL
     if suffix == ".json":
         return FormatName.JSON
     if suffix in {".jsonl", ".ndjson"}:
@@ -43,6 +56,20 @@ def infer_format(endpoint: Endpoint, explicit: FormatName) -> FormatName:
 
 
 def read_local(source: Endpoint, format_name: FormatName, stream: TextIO | None = None) -> pa.Table:
+    if format_name is FormatName.EXCEL:
+        if source.path is None:
+            raise ConnectorError(
+                ConnectorErrorCode.INVALID_URI,
+                "Excel local input requires a filesystem path",
+                {"endpoint": source.raw},
+            )
+        table, _, _ = read_excel_arrow(
+            source.path,
+            sheet=None,
+            header_row=1,
+            limits=ResourceLimits(),
+        )
+        return table
     text = _read_text(source, stream)
     if format_name is FormatName.CSV:
         return _read_csv(text, source)
@@ -64,7 +91,18 @@ def write_local(
     destination: Endpoint,
     format_name: FormatName,
     stream: TextIO | None = None,
+    *,
+    sheet: str | None = None,
 ) -> None:
+    if format_name is FormatName.EXCEL:
+        if destination.is_stdio:
+            raise ConnectorError(
+                ConnectorErrorCode.INVALID_URI,
+                "Excel local output requires a filesystem path",
+                {"endpoint": destination.raw},
+            )
+        write_excel(table, _local_path(destination), sheet)
+        return
     text_stream, should_close = _open_text_sink(destination, stream)
     try:
         if format_name is FormatName.CSV:
@@ -112,20 +150,47 @@ def _read_text(endpoint: Endpoint, stream: TextIO | None) -> str:
 def _open_text_sink(endpoint: Endpoint, stream: TextIO | None) -> tuple[TextIO, bool]:
     if endpoint.is_stdio:
         return (stream if stream is not None else sys.stdout, False)
-    if endpoint.path is None:
+    path = _local_path(endpoint)
+    try:
+        return path.open("w", encoding="utf-8", newline=""), True
+    except OSError as exc:
+        raise ConnectorError(
+            ConnectorErrorCode.EXECUTION_FAILED,
+            "local output could not be opened",
+            {"path": str(path), "reason": exc.strerror or str(exc)},
+        ) from None
+
+
+def _local_path(endpoint: Endpoint) -> Path:
+    if endpoint.path is not None:
+        return endpoint.path
+    if endpoint.uri is None or endpoint.uri.scheme not in _LOCAL_FORMAT_SCHEMES:
         raise ConnectorError(
             ConnectorErrorCode.INVALID_URI,
             "local endpoints require a filesystem path or stdout",
             {"endpoint": endpoint.raw},
         )
-    try:
-        return endpoint.path.open("w", encoding="utf-8", newline=""), True
-    except OSError as exc:
+    parsed = urlsplit(endpoint.uri.value)
+    if parsed.netloc.casefold() not in ("", "localhost"):
         raise ConnectorError(
-            ConnectorErrorCode.EXECUTION_FAILED,
-            "local output could not be opened",
-            {"path": str(endpoint.path), "reason": exc.strerror or str(exc)},
-        ) from None
+            ConnectorErrorCode.INVALID_URI,
+            "local output host is unsupported",
+            {"host": parsed.netloc},
+        )
+    if parsed.query:
+        raise ConnectorError(
+            ConnectorErrorCode.INVALID_URI,
+            "local output query parameters are unsupported",
+            {"endpoint": endpoint.raw},
+        )
+    path = Path(unquote(parsed.path))
+    if not path.is_absolute():
+        raise ConnectorError(
+            ConnectorErrorCode.INVALID_URI,
+            "local output URI must contain an absolute path",
+            {"endpoint": endpoint.raw},
+        )
+    return path
 
 
 def _read_csv(text: str, source: Endpoint) -> pa.Table:
