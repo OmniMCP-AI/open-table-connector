@@ -11,17 +11,24 @@ Each case owns its temporary files, database, recording transport, or process
 client. The suite does not read credentials, call the network, invoke vendor
 binaries, or share mutable databases.
 
+From a fresh checkout, install every workspace package and the development
+dependencies before running the suite:
+
+```bash
+uv sync --all-packages --group dev
+```
+
 The suite must maintain at least 120 collected test cases. Check the count
 with:
 
 ```bash
-uv run python -m pytest specification/conformance/universal --collect-only -q
+uv run --frozen python -m pytest specification/conformance/universal --collect-only -q
 ```
 
 Run the dedicated suite with:
 
 ```bash
-uv run python -m pytest specification/conformance/universal -q
+uv run --frozen python -m pytest specification/conformance/universal -q
 ```
 
 When adding coverage, prefer named behavior-focused tests in the relevant

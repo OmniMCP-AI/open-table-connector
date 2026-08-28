@@ -1,9 +1,18 @@
 from __future__ import annotations
 
 import polars as pl
+import pytest
 
-from open_connectors.contract import InspectRequest, TableReadRequest, TableURI, TableWriteRequest
+from open_connectors.contract import (
+    ConnectorError,
+    ConnectorErrorCode,
+    InspectRequest,
+    TableReadRequest,
+    TableURI,
+    TableWriteRequest,
+)
 from open_connectors.feishu_bitable import FeishuBitableConnector, FeishuBitableReadOptions, FeishuBitableTableReadRequest
+from open_connectors.feishu_bitable.connector import UrllibFeishuTransport
 
 
 class FakeTransport:
@@ -24,6 +33,34 @@ class FakeTransport:
                 },
             }
         return {"code": 0, "data": {"records": [{"record_id": "rec_3"}]}}
+
+
+def test_feishu_transport_redacts_credentials_from_provider_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential = "provider-credential-secret"
+
+    def fail_request(*_args, **_kwargs):
+        raise RuntimeError(f"provider rejected credential {credential}")
+
+    monkeypatch.setattr(
+        "open_connectors.feishu_bitable.connector.urlopen",
+        fail_request,
+    )
+
+    with pytest.raises(ConnectorError) as raised:
+        UrllibFeishuTransport().request(
+            "GET",
+            "https://open.feishu.cn/open-apis/bitable/v1/apps/fixture/tables/orders/records",
+            headers={"Authorization": f"Bearer {credential}"},
+        )
+
+    assert raised.value.code is ConnectorErrorCode.EXECUTION_FAILED
+    assert raised.value.message == "Feishu Bitable request failed"
+    assert raised.value.safe_details == {
+        "reason": "unexpected transport exception"
+    }
+    assert credential not in repr(raised.value.to_wire())
 
 
 def test_feishu_reads_records_and_preserves_record_ids() -> None:

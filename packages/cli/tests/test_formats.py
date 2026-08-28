@@ -102,6 +102,24 @@ def test_markdown_table_writer_output_round_trips_escaped_cells(value: str) -> N
     assert table.to_pylist() == [{"value": value}]
 
 
+def test_markdown_table_writer_preserves_separator_looking_data_rows() -> None:
+    stream = io.StringIO()
+    write_local(
+        pa.table({"a": ["---"], "b": ["---"]}),
+        parse_endpoint("-"),
+        FormatName.TABLE,
+        stream,
+    )
+
+    table = read_local(
+        parse_endpoint("-"),
+        FormatName.TABLE,
+        io.StringIO(stream.getvalue()),
+    )
+
+    assert table.to_pylist() == [{"a": "---", "b": "---"}]
+
+
 @pytest.mark.parametrize("format_name", (FormatName.JSON, FormatName.JSONL))
 def test_json_writers_normalize_arrow_scalars_to_strict_json(format_name) -> None:
     table = pa.table(

@@ -152,6 +152,7 @@ class FeishuBitableAdapter:
     schemes: tuple[str, ...] = ("feishu", "feishu_bitable")
     identity: ConnectorIdentity = ConnectorIdentity("feishu_bitable", "0.1.0", "1.0")
     capabilities: tuple[CapabilityIdentity, ...] = ()
+    provider_owned_fields: tuple[str, ...] = ("_record_id",)
 
     def __post_init__(self) -> None:
         self.capabilities = tuple(self.connector.manifest.capabilities)

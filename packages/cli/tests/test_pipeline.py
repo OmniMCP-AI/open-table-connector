@@ -327,6 +327,51 @@ def test_feishu_to_jsonl_preserves_record_id(tmp_path) -> None:
     assert transport.calls[0].body is None
 
 
+def test_feishu_to_feishu_import_removes_destination_owned_record_id() -> None:
+    transport = RecordingTransport({
+        "GET": {
+            "code": 0,
+            "data": {
+                "items": [
+                    {
+                        "record_id": "rec_source_1",
+                        "fields": {"name": "Ada", "score": 10},
+                    }
+                ],
+                "has_more": False,
+            },
+        },
+        "POST": {
+            "code": 0,
+            "data": {"records": [{"record_id": "rec_destination_1"}]},
+        },
+    })
+    registry = build_default_registry(
+        env={"FEISHU_TENANT_ACCESS_TOKEN": "tenant-token"},
+        transports={"feishu_bitable": transport},
+    )
+
+    summary = import_endpoint(
+        parse_endpoint("feishu://source-app/source-table"),
+        parse_endpoint("feishu://destination-app/destination-table"),
+        registry,
+        CliOptions(if_exists="append"),
+    )
+
+    assert summary.rows_read == summary.rows_written == 1
+    assert [call.method for call in transport.calls] == ["GET", "POST"]
+    assert transport.calls[1].url == (
+        "https://open.feishu.cn/open-apis/bitable/v1/apps/destination-app/"
+        "tables/destination-table/records/batch_create"
+    )
+    assert transport.calls[1].headers == {
+        "Authorization": "Bearer tenant-token"
+    }
+    assert transport.calls[1].body == {
+        "records": [{"fields": {"name": "Ada", "score": 10}}]
+    }
+
+
 def test_row_limit_is_applied_before_destination_write(tmp_path) -> None:
     transport = RecordingTransport({
         "GET": {"code": 0, "data": {"items": [

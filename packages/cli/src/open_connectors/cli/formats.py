@@ -248,7 +248,6 @@ def _read_markdown_table(text: str, source: Endpoint) -> pa.Table:
     data_rows = [
         {header[index]: _normalize_table_cell(value) for index, value in enumerate(row)}
         for _, row in rows[body_start:]
-        if row and not _is_separator_row(row)
     ]
     return _rows_to_table(data_rows, header)
 

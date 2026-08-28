@@ -38,8 +38,8 @@ class UrllibFeishuTransport:
         try:
             with urlopen(request, timeout=timeout) as response:
                 return json.loads(response.read())
-        except Exception as exc:
-            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "Feishu Bitable request failed", {"reason": str(exc)}) from None
+        except Exception:
+            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "Feishu Bitable request failed", {"reason": "unexpected transport exception"}) from None
 
 
 @dataclass(frozen=True)
