@@ -535,19 +535,49 @@ class RecordedDbtCall:
 
 
 class RecordingDbtRunner:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        credentials: Mapping[str, str] | None = None,
+        failures: Mapping[str, BaseException] | None = None,
+        expected_project_dir: Path | None = None,
+    ) -> None:
+        self.credentials = {
+            str(key): str(value)
+            for key, value in (
+                {} if credentials is None else credentials
+            ).items()
+        }
+        self._failures = dict(failures or {})
+        self._expected_project_dir = (
+            None if expected_project_dir is None else Path(expected_project_dir)
+        )
         self.calls: list[RecordedDbtCall] = []
+        self.readback_relations: list[str] = []
 
     def __call__(self, argv: tuple[str, ...], project_dir: Path) -> Mapping[str, Any]:
-        self.calls.append(RecordedDbtCall(tuple(argv), Path(project_dir)))
+        recorded_project_dir = Path(project_dir)
+        self.calls.append(RecordedDbtCall(tuple(argv), recorded_project_dir))
+        if (
+            self._expected_project_dir is not None
+            and recorded_project_dir != self._expected_project_dir
+        ):
+            raise AssertionError(
+                "recording dbt runner received an unexpected project directory: "
+                f"{recorded_project_dir!s}"
+            )
         if len(argv) < 2:
             raise KeyError(f"missing dbt operation in argv: {argv!r}")
         operation = argv[1]
+        failure = self._failures.get(operation)
+        if failure is not None:
+            raise failure
         if operation == "compile":
             return {
                 "artifacts": {"manifest.json": b'{"nodes":{"model.fixture.orders":{}}}'},
                 "status": "completed",
                 "artifact_refs": {"manifest.json": "manifest.json"},
+                "adapter_type": "fixture",
             }
         if operation == "run":
             return {
@@ -556,5 +586,26 @@ class RecordingDbtRunner:
                 "artifact_refs": {"run_results.json": "run_results.json"},
             }
         if operation == "cancel":
-            return {"run_results": b"cancelled"}
+            return {"run_results": b'{"status":"cancelled"}'}
         raise KeyError(f"missing recorded dbt response for operation {operation!r}")
+
+    def readback(self, relation: str) -> Mapping[str, Any]:
+        self.readback_relations.append(str(relation))
+        if relation != "analytics.orders":
+            raise KeyError(f"missing recorded dbt readback for relation {relation!r}")
+        return {
+            "relation": "analytics.orders",
+            "database": "fixture_warehouse",
+            "schema": "analytics",
+            "identifier": "orders",
+            "row_count": 2,
+        }
+
+
+@dataclass(frozen=True)
+class DbtProviderFixture:
+    runner: RecordingDbtRunner
+    project_dir: Path
+
+    def recorded_call(self, argv: tuple[str, ...]) -> RecordedDbtCall:
+        return RecordedDbtCall(tuple(argv), self.project_dir)

@@ -83,6 +83,7 @@ from open_connectors.sqlite import (
 
 from .fixtures import (
     DatabaseProviderFixture,
+    DbtProviderFixture,
     HttpProviderFixture,
     ProcessProviderFixture,
     ProviderFailureProbe,
@@ -148,6 +149,7 @@ class ConnectorCase:
     http_fixture: HttpProviderFixture | None = None
     process_fixture: ProcessProviderFixture | None = None
     database_fixture: DatabaseProviderFixture | None = None
+    dbt_fixture: DbtProviderFixture | None = None
 
     def __post_init__(self) -> None:
         connector_identity = getattr(self.connector, "identity", None)
@@ -893,7 +895,13 @@ def _dbt_compile_operation(connector: DbtConnector, project_dir: Path) -> DbtPre
 
 
 def _dbt_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
-    runner = RecordingDbtRunner()
+    runner = RecordingDbtRunner(
+        credentials={
+            "password": "fixture-dbt-password",
+            "token": "fixture-dbt-token",
+        },
+        expected_project_dir=bundle.dbt_project_dir,
+    )
     connector = DbtConnector(runner)
     table_uri = TableURI(bundle.dbt_project_dir.as_uri())
 
@@ -940,6 +948,10 @@ def _dbt_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
         inspect=None,
         write=None,
         capability_bindings=capability_bindings,
+        dbt_fixture=DbtProviderFixture(
+            runner=runner,
+            project_dir=bundle.dbt_project_dir,
+        ),
     )
 
 
