@@ -104,3 +104,83 @@ Result:
   current connector and refuses unknown hosts/statements. A deliberate future
   SQL-shape change will require updating the fixture and its conformance
   assertions together.
+
+## Fix Round 1
+
+Date: 2026-08-28
+
+### Implementation Commit
+
+`0f3198c2720725ef5a10bfef4454c5848fc925ed` —
+`fix: tighten database connector conformance`
+
+### Review Findings Resolved
+
+- SQLite `main.table` and Postgres `public.table` now have a distinct schema,
+  row count, and row values from `orders`. Database inspect/read agreement
+  compares inspection with an explicit default-resource read, so the test
+  detects the wrong target, schema, or row metadata.
+- PostgreSQL authentication and read-execution fixtures now raise diagnostics
+  containing `fixture-password`. The connector redacts the configured password
+  at its provider error-mapping boundary while preserving the existing error
+  code, message, and useful non-secret reason text.
+- Both `postgres://` and `postgresql://` are covered explicitly and resolve to
+  identical connection details without opening a connection.
+- SQLite failure cleanup is observed through a delegating recording connection
+  factory and asserts the connector calls `close()` exactly once.
+- The recording PostgreSQL DB-API returns a new cursor for every `cursor()`
+  call. Public connector tests assert each cursor is closed exactly once,
+  including while a transaction connection remains open; the recorder's own
+  fail-closed validation remains a separate test.
+- The shared inspection test now separates stable metadata checks from generic
+  inspect/read agreement. Database agreement stays in the database suite,
+  where both operations target the same default resource.
+
+### TDD Evidence
+
+Initial red command:
+
+```bash
+uv run python -m pytest specification/conformance/universal/test_database_connectors.py -q
+```
+
+Result: `12 failed, 26 passed in 1.59s`. Failures demonstrated
+indistinguishable default resources, raw password leakage, and the recorder's
+single-cursor model. The new URI-alias and SQLite boundary-close tests passed as
+characterization coverage of existing behavior.
+
+Direct cursor-close red command:
+
+```bash
+uv run python -m pytest specification/conformance/universal/test_database_connectors.py -q
+```
+
+Result: `7 failed, 32 passed in 0.83s`. Failures demonstrated that PostgreSQL
+read, write, execute, transaction, and failure paths did not directly close
+their DB-API cursors.
+
+Focused green result: `39 passed in 1.00s`.
+
+### Verification
+
+- Focused database suite:
+  `uv run python -m pytest specification/conformance/universal/test_database_connectors.py -q`
+  — `39 passed in 1.00s`.
+- All universal tests:
+  `uv run python -m pytest specification/conformance/universal -q`
+  — `170 passed in 2.36s`.
+- SQLite, Postgres, and dbt regressions:
+  `uv run python -m pytest packages/sqlite/tests packages/postgres/tests packages/dbt/tests -q`
+  — `7 passed in 0.53s`.
+- Full workspace suite: `uv run python -m pytest -q` —
+  `357 passed in 6.13s`.
+- `uv run python -m compileall -q packages specification/conformance/universal`
+  — passed.
+- `git diff --check` — passed.
+
+### Concerns
+
+- The original PostgreSQL provider-diagnostic leak concern is resolved for the
+  configured password while retaining useful diagnostics.
+- The PostgreSQL recorder remains intentionally SQL-shape-specific; future
+  production SQL changes must update its fixture whitelist and assertions.
