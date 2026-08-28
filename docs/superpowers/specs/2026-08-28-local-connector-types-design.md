@@ -125,8 +125,11 @@ The implementation is complete only when the following are covered:
 - Markdown reads and CLI writes round-trip escaped cells, separator-looking
   rows, empty cells, and hyphen-only data rows.
 - The facade continues to autodetect CSV and XLSX and now delegates Markdown.
-- CLI discovery lists `csv`, `excel`, `md`, and `local_files` with their schemes.
+- CLI discovery lists `csv`, `excel`, `md`, and `local_files` from their public
+  manifests with their schemes.
 - Explicit concrete schemes and compatibility `file://`/bare-path routing are
-  tested, including mismatched-format failures.
+  tested, including mismatched-format failures and CSV-to-Markdown conversion.
+- Universal conformance includes named `csv`, `excel`, `md`, and `local_files`
+  cases and remains above the 120-test collection floor.
 - The full workspace test suite, compilation check, lock check, package build,
   and CLI smoke tests pass.

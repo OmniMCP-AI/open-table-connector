@@ -117,6 +117,50 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
     assert result.stderr == ""
     assert records == (
         {
+            "connector_id": "csv",
+            "schemes": ["csv"],
+            "capabilities": [
+                {"capability_id": "uri.resolve", "capability_version": "1.0"},
+                {"capability_id": "table.inspect", "capability_version": "1.0"},
+                {"capability_id": "table.read.arrow", "capability_version": "1.0"},
+                {"capability_id": "table.read.polars", "capability_version": "1.0"},
+            ],
+            "modes": ["sheet"],
+        },
+        {
+            "connector_id": "excel",
+            "schemes": ["excel"],
+            "capabilities": [
+                {"capability_id": "uri.resolve", "capability_version": "1.0"},
+                {"capability_id": "table.inspect", "capability_version": "1.0"},
+                {"capability_id": "table.read.arrow", "capability_version": "1.0"},
+                {"capability_id": "table.read.polars", "capability_version": "1.0"},
+            ],
+            "modes": ["sheet"],
+        },
+        {
+            "connector_id": "md",
+            "schemes": ["md"],
+            "capabilities": [
+                {"capability_id": "uri.resolve", "capability_version": "1.0"},
+                {"capability_id": "table.inspect", "capability_version": "1.0"},
+                {"capability_id": "table.read.arrow", "capability_version": "1.0"},
+                {"capability_id": "table.read.polars", "capability_version": "1.0"},
+            ],
+            "modes": ["sheet"],
+        },
+        {
+            "connector_id": "local_files",
+            "schemes": ["file"],
+            "capabilities": [
+                {"capability_id": "table.read.arrow", "capability_version": "1.0"},
+                {"capability_id": "table.read.polars", "capability_version": "1.0"},
+                {"capability_id": "table.inspect", "capability_version": "1.0"},
+                {"capability_id": "table.write", "capability_version": "1.0"},
+            ],
+            "modes": ["base"],
+        },
+        {
             "connector_id": "google_sheets",
             "schemes": ["gsheets", "https"],
             "capabilities": [
@@ -150,17 +194,6 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
             ],
             "modes": ["base"],
         },
-        {
-            "connector_id": "local_files",
-            "schemes": ["file"],
-            "capabilities": [
-                {"capability_id": "table.read.arrow", "capability_version": "1.0"},
-                {"capability_id": "table.read.polars", "capability_version": "1.0"},
-                {"capability_id": "table.inspect", "capability_version": "1.0"},
-                {"capability_id": "table.write", "capability_version": "1.0"},
-            ],
-            "modes": ["base"],
-        },
     )
     connector_ids = [record["connector_id"] for record in records]
     assert len(connector_ids) == len(set(connector_ids))
@@ -185,6 +218,36 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
         "expected_facts",
     ),
     (
+        pytest.param(
+            "csv",
+            None,
+            {},
+            "sheet",
+            ["id", "amount", "note"],
+            3,
+            {"worksheets": ["data"]},
+            id="csv-explicit-scheme",
+        ),
+        pytest.param(
+            "excel",
+            None,
+            {},
+            "sheet",
+            ["id", "amount", "note"],
+            3,
+            {"provider": "local", "connector": "excel"},
+            id="excel-explicit-scheme",
+        ),
+        pytest.param(
+            "md",
+            None,
+            {},
+            "sheet",
+            ["id", "amount", "note"],
+            3,
+            {"worksheets": ["data"]},
+            id="md-explicit-scheme",
+        ),
         pytest.param(
             "google_sheets",
             "https://docs.google.com/spreadsheets/d/fixture-spreadsheet/edit#gid=0",
@@ -234,7 +297,7 @@ def test_cli_inspect_from_selects_exact_scheme_and_reports_safe_metadata(
     expected_mode: str,
     expected_columns: list[str],
     expected_rows: int,
-    expected_facts: dict[str, str],
+    expected_facts: dict[str, object],
 ) -> None:
     bridge = build_cli_registry_bridge()
     selected_source = bridge.sources[case_name] if source is None else source
@@ -291,6 +354,30 @@ def test_cli_inspect_from_selects_exact_scheme_and_reports_safe_metadata(
 @pytest.mark.parametrize(
     ("case_name", "source", "extra", "expected_first_row", "expected_rows"),
     (
+        pytest.param(
+            "csv",
+            None,
+            {},
+            {"id": "1", "amount": "2.50", "note": "first"},
+            3,
+            id="csv-explicit-rows",
+        ),
+        pytest.param(
+            "excel",
+            None,
+            {},
+            {"id": "1", "amount": "2.5", "note": "first"},
+            3,
+            id="excel-explicit-rows",
+        ),
+        pytest.param(
+            "md",
+            None,
+            {},
+            {"id": "1", "amount": "2.50", "note": "first"},
+            3,
+            id="md-explicit-rows",
+        ),
         pytest.param(
             "google_sheets",
             "gsheets://fixture-spreadsheet/Orders",
@@ -438,6 +525,35 @@ def test_cli_convert_infers_local_source_and_destination_formats(tmp_path) -> No
         {"amount": "2", "id": "b"},
     )
     assert strict_json_loads(result.stdout)["rows_written"] == 2
+
+
+def test_cli_convert_csv_scheme_to_markdown_scheme_preserves_rows(tmp_path) -> None:
+    source = tmp_path / "orders.csv"
+    destination = tmp_path / "orders.md"
+    source.write_text("id,amount,note\na,1,left|right\nb,,tail\n", encoding="utf-8")
+    bridge = build_cli_registry_bridge("csv", "md")
+
+    result = run_cli_command(
+        _args(
+            "convert",
+            from_value=f"csv://{source}",
+            to_value=f"md://{destination}",
+            output_format="json",
+        ),
+        bridge.registry,
+    )
+
+    payload = strict_json_loads(result.stdout)
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert payload["status"] == "completed"
+    assert payload["rows_read"] == payload["rows_written"] == 2
+    assert payload["source_receipt"]["connector"]["connector_id"] == "csv"
+    assert "destination_receipt" not in payload
+    assert parse_markdown_table(destination.read_text(encoding="utf-8")) == (
+        ("id", "amount", "note"),
+        (("a", "1", "left|right"), ("b", "", "tail")),
+    )
 
 
 def test_cli_convert_explicit_format_overrides_allow_extensionless_paths(tmp_path) -> None:

@@ -48,7 +48,16 @@ from open_table_connector.google_sheets.connector import (
     CAPABILITY_MANIFEST as GOOGLE_MANIFEST,
     UrllibSheetsTransport,
 )
-from open_table_connector.local_files import LocalFilesConnector, LocalTableReadRequest
+from open_table_connector.local_files import (
+    CsvConnector,
+    CsvTableReadRequest,
+    ExcelConnector,
+    ExcelTableReadRequest,
+    LocalFilesConnector,
+    LocalTableReadRequest,
+    MarkdownConnector,
+    MarkdownTableReadRequest,
+)
 from open_table_connector.maybe_sheet import MaybeSheetConnector, MaybeSheetReadRequest
 from open_table_connector.maybe_sheet.identity import (
     BASE_INSPECT_CAPABILITY,
@@ -228,6 +237,168 @@ def _binding(
         inspect=inspect,
         write=write,
         invoke=invoke,
+    )
+
+
+def _csv_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
+    connector = CsvConnector()
+    table_uri = TableURI(f"csv://{bundle.csv_path.as_posix()}")
+
+    def make_read_request(resource_limits: ResourceLimits) -> CsvTableReadRequest:
+        return CsvTableReadRequest(table_uri, resource_limits)
+
+    def make_inspect_request(resource_limits: ResourceLimits) -> InspectRequest:
+        return InspectRequest(table_uri, resource_limits)
+
+    capability_bindings = {
+        "uri.resolve": _binding(
+            "uri.resolve",
+            invoke=lambda: connector.resolve(table_uri, ResolveContext()),
+        ),
+        "table.inspect": _binding(
+            "table.inspect",
+            expected_mode=TableMode.SHEET,
+            make_request=make_inspect_request,
+            inspect=lambda resource_limits: connector.inspect(make_inspect_request(resource_limits)),
+        ),
+        "table.read.arrow": _binding(
+            "table.read.arrow",
+            expected_mode=TableMode.SHEET,
+            make_request=make_read_request,
+            read_arrow=lambda resource_limits: connector.read_arrow(make_read_request(resource_limits)),
+        ),
+        "table.read.polars": _binding(
+            "table.read.polars",
+            expected_mode=TableMode.SHEET,
+            make_request=make_read_request,
+            read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
+        ),
+    }
+
+    return ConnectorCase(
+        name="csv",
+        connector=connector,
+        identity=connector.identity,
+        capabilities=_capabilities(*connector.manifest.capabilities),
+        modes=frozenset(connector.manifest.modes),
+        schemes=frozenset(connector.manifest.uri_schemes),
+        table_uri=table_uri,
+        make_read_request=make_read_request,
+        make_inspect_request=make_inspect_request,
+        make_write_request=None,
+        read_arrow=capability_bindings["table.read.arrow"].read_arrow,
+        read_polars=capability_bindings["table.read.polars"].read_polars,
+        inspect=capability_bindings["table.inspect"].inspect,
+        write=None,
+        capability_bindings=capability_bindings,
+    )
+
+
+def _excel_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
+    connector = ExcelConnector()
+    table_uri = TableURI(f"excel://{bundle.xlsx_path.as_posix()}#sheet=orders")
+
+    def make_read_request(resource_limits: ResourceLimits) -> ExcelTableReadRequest:
+        return ExcelTableReadRequest(table_uri, resource_limits)
+
+    def make_inspect_request(resource_limits: ResourceLimits) -> InspectRequest:
+        return InspectRequest(table_uri, resource_limits)
+
+    capability_bindings = {
+        "uri.resolve": _binding(
+            "uri.resolve",
+            invoke=lambda: connector.resolve(table_uri, ResolveContext()),
+        ),
+        "table.inspect": _binding(
+            "table.inspect",
+            expected_mode=TableMode.SHEET,
+            make_request=make_inspect_request,
+            inspect=lambda resource_limits: connector.inspect(make_inspect_request(resource_limits)),
+        ),
+        "table.read.arrow": _binding(
+            "table.read.arrow",
+            expected_mode=TableMode.SHEET,
+            make_request=make_read_request,
+            read_arrow=lambda resource_limits: connector.read_arrow(make_read_request(resource_limits)),
+        ),
+        "table.read.polars": _binding(
+            "table.read.polars",
+            expected_mode=TableMode.SHEET,
+            make_request=make_read_request,
+            read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
+        ),
+    }
+
+    return ConnectorCase(
+        name="excel",
+        connector=connector,
+        identity=connector.identity,
+        capabilities=_capabilities(*connector.manifest.capabilities),
+        modes=frozenset(connector.manifest.modes),
+        schemes=frozenset(connector.manifest.uri_schemes),
+        table_uri=table_uri,
+        make_read_request=make_read_request,
+        make_inspect_request=make_inspect_request,
+        make_write_request=None,
+        read_arrow=capability_bindings["table.read.arrow"].read_arrow,
+        read_polars=capability_bindings["table.read.polars"].read_polars,
+        inspect=capability_bindings["table.inspect"].inspect,
+        write=None,
+        capability_bindings=capability_bindings,
+    )
+
+
+def _markdown_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
+    connector = MarkdownConnector()
+    table_uri = TableURI(f"md://{bundle.md_path.as_posix()}")
+
+    def make_read_request(resource_limits: ResourceLimits) -> MarkdownTableReadRequest:
+        return MarkdownTableReadRequest(table_uri, resource_limits)
+
+    def make_inspect_request(resource_limits: ResourceLimits) -> InspectRequest:
+        return InspectRequest(table_uri, resource_limits)
+
+    capability_bindings = {
+        "uri.resolve": _binding(
+            "uri.resolve",
+            invoke=lambda: connector.resolve(table_uri, ResolveContext()),
+        ),
+        "table.inspect": _binding(
+            "table.inspect",
+            expected_mode=TableMode.SHEET,
+            make_request=make_inspect_request,
+            inspect=lambda resource_limits: connector.inspect(make_inspect_request(resource_limits)),
+        ),
+        "table.read.arrow": _binding(
+            "table.read.arrow",
+            expected_mode=TableMode.SHEET,
+            make_request=make_read_request,
+            read_arrow=lambda resource_limits: connector.read_arrow(make_read_request(resource_limits)),
+        ),
+        "table.read.polars": _binding(
+            "table.read.polars",
+            expected_mode=TableMode.SHEET,
+            make_request=make_read_request,
+            read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
+        ),
+    }
+
+    return ConnectorCase(
+        name="md",
+        connector=connector,
+        identity=connector.identity,
+        capabilities=_capabilities(*connector.manifest.capabilities),
+        modes=frozenset(connector.manifest.modes),
+        schemes=frozenset(connector.manifest.uri_schemes),
+        table_uri=table_uri,
+        make_read_request=make_read_request,
+        make_inspect_request=make_inspect_request,
+        make_write_request=None,
+        read_arrow=capability_bindings["table.read.arrow"].read_arrow,
+        read_polars=capability_bindings["table.read.polars"].read_polars,
+        inspect=capability_bindings["table.inspect"].inspect,
+        write=None,
+        capability_bindings=capability_bindings,
     )
 
 
@@ -957,6 +1128,9 @@ def _dbt_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
 
 def _all_cases(bundle: UniversalFixtureBundle) -> tuple[ConnectorCase, ...]:
     return (
+        _csv_case(bundle),
+        _excel_case(bundle),
+        _markdown_case(bundle),
         _local_case(bundle),
         _google_case(bundle),
         _feishu_case(bundle),

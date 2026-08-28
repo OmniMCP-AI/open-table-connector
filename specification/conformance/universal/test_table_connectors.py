@@ -53,6 +53,30 @@ class ReadScenario:
 
 _READ_SCENARIOS = (
     ReadScenario(
+        "csv",
+        "table.read.arrow",
+        "table.inspect",
+        ("id", "amount", "note"),
+        TableMode.SHEET,
+        "data",
+    ),
+    ReadScenario(
+        "excel",
+        "table.read.arrow",
+        "table.inspect",
+        ("id", "amount", "note"),
+        TableMode.SHEET,
+        "orders",
+    ),
+    ReadScenario(
+        "md",
+        "table.read.arrow",
+        "table.inspect",
+        ("id", "amount", "note"),
+        TableMode.SHEET,
+        "data",
+    ),
+    ReadScenario(
         "local_files",
         "table.read.arrow",
         "table.inspect",
@@ -707,6 +731,16 @@ def test_maybe_sheet_process_timeouts_map_to_safe_stable_errors(
             "orders",
             id="xlsx",
         ),
+        pytest.param(
+            "md",
+            [
+                {"id": "1", "amount": "2.50", "note": "first"},
+                {"id": "2", "amount": None, "note": None},
+                {"id": "3", "amount": "7.00", "note": "last"},
+            ],
+            "data",
+            id="md",
+        ),
     ),
 )
 def test_local_table_formats_preserve_empty_cells_mixed_values_and_coordinates(
@@ -716,13 +750,13 @@ def test_local_table_formats_preserve_empty_cells_mixed_values_and_coordinates(
     isolated_universal_fixture_bundle: UniversalFixtureBundle,
 ) -> None:
     connector_case = case("local_files")
-    path = (
-        isolated_universal_fixture_bundle.csv_path
-        if format_name == "csv"
-        else isolated_universal_fixture_bundle.xlsx_path
-    )
+    paths = {
+        "csv": isolated_universal_fixture_bundle.csv_path,
+        "xlsx": isolated_universal_fixture_bundle.xlsx_path,
+        "md": isolated_universal_fixture_bundle.md_path,
+    }
     request = LocalTableReadRequest(
-        TableURI(path.as_uri()),
+        TableURI(paths[format_name].as_uri()),
         options=LocalReadOptions(sheet=None, header_row=1),
     )
 
@@ -735,6 +769,26 @@ def test_local_table_formats_preserve_empty_cells_mixed_values_and_coordinates(
     assert arrow_result.receipt.content_fingerprint == (
         polars_result.receipt.content_fingerprint
     )
+
+
+def test_local_files_facade_reads_markdown_fixture_as_sheet_resource(
+    isolated_universal_fixture_bundle: UniversalFixtureBundle,
+) -> None:
+    connector_case = case("local_files")
+    request = LocalTableReadRequest(
+        TableURI(isolated_universal_fixture_bundle.md_path.as_uri()),
+        options=LocalReadOptions(header_row=1),
+    )
+
+    result = connector_case.connector.read_arrow(request)
+
+    assert result.table.to_pylist() == [
+        {"id": "1", "amount": "2.50", "note": "first"},
+        {"id": "2", "amount": None, "note": None},
+        {"id": "3", "amount": "7.00", "note": "last"},
+    ]
+    assert result.receipt.connector.connector_id == "local_files"
+    assert result.receipt.coordinate_convention.sheet == "data"
 
 
 @pytest.mark.parametrize("scenario", _READ_SCENARIOS, ids=lambda item: item.id)

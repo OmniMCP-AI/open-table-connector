@@ -12,9 +12,12 @@ from openpyxl import Workbook
 import pyarrow as pa
 
 from open_table_connector.cli.adapters import (
+    CsvAdapter,
+    ExcelAdapter,
     FeishuBitableAdapter,
     GoogleSheetsAdapter,
     LocalAdapter,
+    MarkdownAdapter,
     MaybeSheetAdapter,
 )
 from open_table_connector.cli.commands import run_command
@@ -399,10 +402,13 @@ def build_cli_registry_bridge(*case_names: str) -> CliRegistryBridge:
     from .cases import case
 
     names = case_names or (
+        "csv",
+        "excel",
+        "md",
+        "local_files",
         "google_sheets",
         "feishu_bitable",
         "maybe_sheet",
-        "local_files",
     )
     registry = ConnectorRegistry()
     selected_cases: dict[str, Any] = {}
@@ -411,7 +417,13 @@ def build_cli_registry_bridge(*case_names: str) -> CliRegistryBridge:
     endpoints: dict[str, Endpoint] = {}
     for name in names:
         connector_case = case(name)
-        if name == "google_sheets":
+        if name == "csv":
+            adapter = CsvAdapter(connector_case.connector)
+        elif name == "excel":
+            adapter = ExcelAdapter(connector_case.connector)
+        elif name == "md":
+            adapter = MarkdownAdapter(connector_case.connector)
+        elif name == "google_sheets":
             assert connector_case.http_fixture is not None
             adapter = GoogleSheetsAdapter(
                 connector_case.connector,
@@ -443,6 +455,7 @@ def build_cli_registry_bridge(*case_names: str) -> CliRegistryBridge:
 class UniversalFixtureBundle:
     csv_path: Path
     xlsx_path: Path
+    md_path: Path
     sqlite_path: Path
     dbt_project_dir: Path
 
@@ -466,6 +479,16 @@ def build_fixture_bundle(root: Path) -> UniversalFixtureBundle:
     refunds.append(["refund_id", "amount"])
     refunds.append(["r1", "1.00"])
     workbook.save(xlsx_path)
+
+    md_path = root / "orders.md"
+    md_path.write_text(
+        "| id | amount | note |\n"
+        "| --- | --- | --- |\n"
+        "| 1 | 2.50 | first |\n"
+        "| 2 | | |\n"
+        "| 3 | 7.00 | last |\n",
+        encoding="utf-8",
+    )
 
     sqlite_path = root / "fixture.sqlite"
     connection = sqlite3.connect(sqlite_path)
@@ -495,6 +518,7 @@ def build_fixture_bundle(root: Path) -> UniversalFixtureBundle:
     return UniversalFixtureBundle(
         csv_path=csv_path,
         xlsx_path=xlsx_path,
+        md_path=md_path,
         sqlite_path=sqlite_path,
         dbt_project_dir=dbt_project_dir,
     )

@@ -27,7 +27,8 @@ The first workspace packages are:
   receipt, error, and Arrow/Polars read contracts;
 - `open-table-connector-conformance`: reusable parity and dependency-direction
   checks; and
-- `open-table-connector-local-files`: CSV and Excel read/inspect implementation.
+- `open-table-connector-local-files`: concrete `csv`, `excel`, and `md`
+  read/inspect connectors plus the `local_files` compatibility facade.
 
 The `open_table_connector` Python namespace is PEP 420 based; framework packages
 are never dependencies of the neutral packages.
@@ -39,5 +40,13 @@ Install the CLI package to use `otc` (or the equivalent
 
 ```console
 otc convert --from orders.csv --to - --to-format jsonl
+otc read --from csv:///absolute/path/orders.csv --output-format table
+otc read --from excel:///absolute/path/orders.xlsx --sheet Orders
+otc read --from md:///absolute/path/orders.md --output-format json
 otc read --from gsheets://SPREADSHEET/Orders --output-format json
 ```
+
+Use explicit local schemes when the format should be selected directly:
+`csv://`, `excel://`, and `md://`. Existing bare paths and `file://` URIs
+continue to route through `local_files`, which probes CSV, XLSX, and Markdown
+payloads for compatibility.

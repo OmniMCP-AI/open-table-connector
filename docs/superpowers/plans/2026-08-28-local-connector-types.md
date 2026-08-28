@@ -398,7 +398,7 @@ git commit -m "feat: route explicit local connector schemes"
 - Consumes: concrete connector identities/manifests, fixture bundles, and CLI adapters from Tasks 2–4.
 - Produces: named universal cases `csv`, `excel`, `md`, and `local_files`; literal metadata matrices for all four; explicit scheme and facade routing coverage; updated usage documentation.
 
-- [ ] **Step 1: Write failing universal case and discovery tests**
+- [x] **Step 1: Write failing universal case and discovery tests**
 
 ```python
 def test_all_current_connectors_have_named_cases() -> None:
@@ -426,13 +426,13 @@ Run: `uv run pytest specification/conformance/universal/test_discovery.py specif
 
 Expected: FAIL because the universal registry still has one local case and the CLI fixture bridge has no concrete local adapters.
 
-- [ ] **Step 2: Add concrete cases and capability bindings**
+- [x] **Step 2: Add concrete cases and capability bindings**
 
 Create CSV, Excel, and Markdown fixture resources in the existing temporary bundle. Give each case literal identity, capability, mode, and scheme metadata. Reuse shared Arrow/Polars parity, receipt, inspection, limits, and malformed-input assertions. Keep `local_files` as a separate compatibility case using the CSV fixture and add a Markdown facade read assertion.
 
 Update CLI fixture bridges to inject concrete local adapters and verify exact scheme dispatch, list output, explicit reads, compatibility file reads, and CSV-to-Markdown conversion. Keep all fixtures offline and temporary.
 
-- [ ] **Step 3: Update docs and run the dedicated suite**
+- [x] **Step 3: Update docs and run the dedicated suite**
 
 Document the four local identities, three explicit schemes, and compatibility `file://` behavior in both READMEs. Update the approved spec’s verification section only where the implementation makes an explicit behavior more precise. Run:
 
@@ -444,7 +444,7 @@ Then run: `uv run pytest specification/conformance/universal -q`
 
 Expected: PASS with all universal connector and CLI cases green.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add specification/conformance/universal README.md packages/cli/README.md docs/superpowers/specs/2026-08-28-local-connector-types-design.md docs/superpowers/plans/2026-08-28-local-connector-types.md

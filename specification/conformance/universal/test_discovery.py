@@ -5,6 +5,8 @@ import importlib
 
 import pytest
 
+from open_table_connector.cli.model import parse_endpoint
+from open_table_connector.cli.registry import build_default_registry
 from open_table_connector.contract import CapabilityIdentity, CapabilityManifest, ResourceLimits, TableMode
 
 from specification.conformance.universal.assertions import (
@@ -16,6 +18,9 @@ from specification.conformance.universal import cases as cases_module
 from specification.conformance.universal.cases import ConnectorCase, all_cases, case
 
 _CASE_NAMES = (
+    "csv",
+    "excel",
+    "md",
     "local_files",
     "google_sheets",
     "feishu_bitable",
@@ -38,6 +43,45 @@ class _ExpectedConnectorMetadata:
 
 
 _EXPECTED_METADATA = {
+    "csv": _ExpectedConnectorMetadata(
+        connector_id="csv",
+        connector_version="0.1.0",
+        contract_version="1.0",
+        capabilities=(
+            ("uri.resolve", "1.0"),
+            ("table.inspect", "1.0"),
+            ("table.read.arrow", "1.0"),
+            ("table.read.polars", "1.0"),
+        ),
+        modes=("sheet",),
+        schemes=("csv",),
+    ),
+    "excel": _ExpectedConnectorMetadata(
+        connector_id="excel",
+        connector_version="0.1.0",
+        contract_version="1.0",
+        capabilities=(
+            ("uri.resolve", "1.0"),
+            ("table.inspect", "1.0"),
+            ("table.read.arrow", "1.0"),
+            ("table.read.polars", "1.0"),
+        ),
+        modes=("sheet",),
+        schemes=("excel",),
+    ),
+    "md": _ExpectedConnectorMetadata(
+        connector_id="md",
+        connector_version="0.1.0",
+        contract_version="1.0",
+        capabilities=(
+            ("uri.resolve", "1.0"),
+            ("table.inspect", "1.0"),
+            ("table.read.arrow", "1.0"),
+            ("table.read.polars", "1.0"),
+        ),
+        modes=("sheet",),
+        schemes=("md",),
+    ),
     "local_files": _ExpectedConnectorMetadata(
         connector_id="local_files",
         connector_version="0.1.0",
@@ -139,6 +183,9 @@ _EXPECTED_METADATA = {
 
 def test_all_current_connectors_have_named_cases() -> None:
     assert tuple(item.name for item in all_cases()) == (
+        "csv",
+        "excel",
+        "md",
         "local_files",
         "google_sheets",
         "feishu_bitable",
@@ -158,6 +205,9 @@ def test_all_cases_bootstrap_fixtures_without_pytest_configure() -> None:
     reloaded = importlib.reload(cases_module)
 
     assert tuple(item.name for item in reloaded.all_cases()) == (
+        "csv",
+        "excel",
+        "md",
         "local_files",
         "google_sheets",
         "feishu_bitable",
@@ -166,6 +216,23 @@ def test_all_cases_bootstrap_fixtures_without_pytest_configure() -> None:
         "postgres",
         "dbt",
     )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected_connector_id"),
+    (
+        ("csv:///tmp/orders.csv", "csv"),
+        ("excel:///tmp/orders.xlsx", "excel"),
+        ("md:///tmp/orders.md", "md"),
+    ),
+)
+def test_universal_cli_fixture_routes_explicit_local_schemes(
+    raw: str,
+    expected_connector_id: str,
+) -> None:
+    adapter = build_default_registry().connector_for(parse_endpoint(raw))
+
+    assert adapter.identity.connector_id == expected_connector_id
 
 
 @pytest.mark.parametrize("connector_case", _CASE_NAMES, ids=str, indirect=True)

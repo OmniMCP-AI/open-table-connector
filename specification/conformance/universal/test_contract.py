@@ -21,6 +21,9 @@ from specification.conformance.universal.assertions import (
 from specification.conformance.universal.cases import ConnectorCase
 
 _CASE_NAMES = (
+    "csv",
+    "excel",
+    "md",
     "local_files",
     "google_sheets",
     "feishu_bitable",
@@ -30,6 +33,9 @@ _CASE_NAMES = (
     "dbt",
 )
 _READ_ARROW_CASE_NAMES = (
+    "csv",
+    "excel",
+    "md",
     "local_files",
     "google_sheets",
     "feishu_bitable",
@@ -38,6 +44,9 @@ _READ_ARROW_CASE_NAMES = (
 )
 _INSPECT_CASE_NAMES = _READ_ARROW_CASE_NAMES
 _SHARED_INSPECT_READ_CASE_NAMES = (
+    "csv",
+    "excel",
+    "md",
     "local_files",
     "google_sheets",
     "feishu_bitable",
