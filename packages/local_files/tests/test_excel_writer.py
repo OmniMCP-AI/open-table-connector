@@ -24,6 +24,23 @@ def test_excel_writer_writes_headers_and_rows_to_named_sheet(tmp_path) -> None:
         workbook.close()
 
 
+def test_excel_writer_uses_default_sheet_name_and_writes_data(tmp_path) -> None:
+    destination = tmp_path / "orders.xlsx"
+    table = pa.table({"id": ["1"], "amount": ["10"]})
+
+    write_excel(table, destination)
+
+    workbook = load_workbook(destination, read_only=True, data_only=True)
+    try:
+        assert workbook.sheetnames == ["Sheet1"]
+        assert list(workbook["Sheet1"].values) == [
+            ("id", "amount"),
+            ("1", "10"),
+        ]
+    finally:
+        workbook.close()
+
+
 def test_excel_writer_maps_file_errors_to_connector_error(tmp_path) -> None:
     destination = tmp_path / "missing" / "orders.xlsx"
 

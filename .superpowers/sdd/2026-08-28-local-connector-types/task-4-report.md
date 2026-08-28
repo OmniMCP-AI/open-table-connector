@@ -82,3 +82,35 @@ The equivalent workspace invocation `uv run python -m pytest ...` worked and was
 
 - None about the implementation.
 - The local shell cannot execute the bare `uv run pytest` command form even though `uv run python -m pytest` works.
+
+## Fix Round 1: Default Excel Sheet Regression
+
+The review finding was addressed by adding `test_excel_writer_uses_default_sheet_name_and_writes_data` to `packages/local_files/tests/test_excel_writer.py`. The test calls `write_excel(table, destination)` without a sheet argument and asserts that the workbook contains the `Sheet1` worksheet with the expected headers and row values.
+
+Covering test command and output:
+
+```text
+$ uv run python -m pytest packages/cli/tests/test_local_format_adapters.py packages/local_files/tests/test_excel_writer.py -q
+............                                                             [100%]
+12 passed in 1.15s
+exit_code=0
+```
+
+Directly affected local-files test command and output:
+
+```text
+$ uv run python -m pytest packages/local_files/tests -q
+...................................................                      [100%]
+51 passed in 0.62s
+exit_code=0
+```
+
+Directly affected CLI test command and output:
+
+```text
+$ uv run python -m pytest packages/cli/tests/test_local_format_adapters.py packages/cli/tests/test_registry.py packages/cli/tests/test_pipeline.py packages/cli/tests/test_commands.py packages/cli/tests/test_cli_e2e.py -q
+........................................................................ [ 82%]
+...............                                                          [100%]
+87 passed in 3.58s
+exit_code=0
+```
