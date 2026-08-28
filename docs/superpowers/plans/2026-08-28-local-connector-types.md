@@ -63,7 +63,7 @@
 - Consumes: the existing CLI Markdown grammar in `_read_markdown_table`, `write_markdown_table`, `_split_markdown_row`, and separator validation.
 - Produces: `read_markdown_arrow(text: str, *, source: str) -> pyarrow.Table`, `write_markdown_table(headers, rows, stream)`, `is_markdown_payload(text: str) -> bool`, and `LocalFormat.MARKDOWN` for Tasks 2 and 3.
 
-- [ ] **Step 1: Write failing codec and detection tests**
+- [x] **Step 1: Write failing codec and detection tests**
 
 ```python
 def test_markdown_reader_round_trips_escaped_cells_and_hyphen_rows() -> None:
@@ -92,19 +92,19 @@ Run: `uv run pytest packages/local_files/tests/test_markdown_reader.py packages/
 
 Expected: FAIL because the neutral Markdown module and `LocalFormat.MARKDOWN` do not exist yet.
 
-- [ ] **Step 2: Implement the neutral codec and probe branch**
+- [x] **Step 2: Implement the neutral codec and probe branch**
 
 Move the CLI parser’s grammar into `markdown_reader.py` without importing any CLI type. Keep source labels as plain strings so connector errors expose only the existing safe path label. Implement `is_markdown_payload` by requiring a non-empty first row, a valid second separator row, equal widths, and at least one pipe cell. Add `MARKDOWN = "md"` to `LocalFormat`; keep XLSX signature detection first and CSV delimiter detection second.
 
 Update `formats.py` so `_read_markdown_table` delegates to `read_markdown_arrow` and its writer delegates to `write_markdown_table`. Preserve JSON/JSONL/CSV behavior and all existing error codes.
 
-- [ ] **Step 3: Run focused tests**
+- [x] **Step 3: Run focused tests**
 
 Run: `uv run pytest packages/local_files/tests/test_markdown_reader.py packages/local_files/tests/test_probe.py packages/cli/tests/test_formats.py -q`
 
 Expected: PASS, including escaped cells, separator-looking data, empty cells, malformed widths, and Markdown detection.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add packages/local_files/src/open_table_connector/local_files/markdown_reader.py packages/local_files/src/open_table_connector/local_files/probe.py packages/local_files/src/open_table_connector/local_files/__init__.py packages/cli/src/open_table_connector/cli/formats.py packages/local_files/tests/test_markdown_reader.py packages/local_files/tests/test_probe.py packages/cli/tests/test_formats.py
