@@ -10,17 +10,19 @@
 
 **Spec:** \`docs/superpowers/specs/2026-08-28-universal-connector-conformance-design.md\`
 
-**Current status (2026-08-28):** Tasks 1–8 are complete. Final-review round 1
-added independent literal metadata expectations for all seven connectors,
-credential-isolated subprocess coverage, exact MaybeSheet JSONL bytes, and the
-approved formula-negative and timeout tests. The dedicated suite collects and
-passes 245 cases, and the full workspace passes 432 tests. Dependency sync and
-lock checks, bytecode compilation, \`uv build --all-packages\`, ordered
-collection-ID determinism, and offline CLI smoke checks pass. Exact commands,
-exit statuses, build artifacts, and remaining concerns are recorded in
+**Current status (2026-08-28):** Tasks 1–8 and final-review fix round 2 are
+complete. The separately authorized production corrections redact raw Feishu
+transport diagnostics, declare Feishu \`_record_id\` destination ownership,
+and preserve Markdown body rows that resemble separators. The universal README
+now documents fresh dependency setup followed by frozen runs. The dedicated
+suite collects and passes 245 cases, and the full workspace passes 435 tests.
+Dependency sync and lock checks, bytecode compilation,
+\`uv build --all-packages\`, ordered collection-ID determinism, and offline CLI
+smoke checks pass. Exact TDD commands, exit statuses, build artifacts, and
+remaining concerns are recorded in
 \`.superpowers/sdd/2026-08-28-universal-connector-conformance/task-8-report.md\`.
 Independent release artifacts/tags and owner-supplied live evidence remain
-outside this test-only plan.
+outside this offline plan.
 
 ## Global Constraints
 

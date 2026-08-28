@@ -124,3 +124,117 @@ build and are not counted as final build evidence.
   outside this offline conformance plan.
 - The pre-existing `.DS_Store` files and `tmp-review-universal/` remain
   untouched and untracked.
+
+## Final Review Fix Round 2
+
+Date: 2026-08-28
+
+Implementation commit:
+`2922fb649b266f673a85761c5ea0fa1c09353a92` —
+`fix: address final Feishu and CLI review findings`
+
+### Scope and Root Causes
+
+This separately authorized production round resolved all four Important final
+review findings:
+
+- `UrllibFeishuTransport` copied arbitrary `str(exc)` diagnostics into
+  `safe_details["reason"]`. It now preserves the stable
+  `execution_failed` code and `Feishu Bitable request failed` message while
+  using the credential-safe reason `unexpected transport exception`.
+- `_table_for_destination(...)` already honored an explicit destination-owned
+  field policy, but the built-in `FeishuBitableAdapter` did not declare one.
+  The adapter now declares `provider_owned_fields = ("_record_id",)`, so an
+  exact Feishu-to-Feishu import POST omits only `_record_id` and retains user
+  fields.
+- Markdown parsing consumed an optional second-line separator correctly, then
+  incorrectly filtered every separator-shaped body row. Body rows are now
+  preserved after the optional separator position is handled.
+- The universal README now requires `uv sync --all-packages --group dev` for a
+  fresh checkout and uses `uv run --frozen` for collection and execution.
+
+No URI grammar, provider payload mapping, write policy, receipt, or non-Feishu
+pipeline behavior was changed.
+
+### TDD Red/Green Evidence
+
+Red command:
+
+```bash
+uv run --frozen python -m pytest \
+  packages/feishu_bitable/tests/test_connector.py::test_feishu_transport_redacts_credentials_from_provider_errors \
+  packages/cli/tests/test_pipeline.py::test_feishu_to_feishu_import_removes_destination_owned_record_id \
+  packages/cli/tests/test_formats.py::test_markdown_table_writer_preserves_separator_looking_data_rows -q
+```
+
+Red result: exit `1`, `3 failed in 0.63s`. The diffs showed the injected
+credential in Feishu `safe_details["reason"]`, `_record_id` in the destination
+POST body, and an empty Markdown round trip instead of the literal
+`{"a": "---", "b": "---"}` row.
+
+The same command after the three minimal production changes returned exit `0`
+with `3 passed in 0.40s`.
+
+### Focused Regression Evidence
+
+- Feishu connector plus CLI format/pipeline modules:
+  `uv run --frozen python -m pytest packages/feishu_bitable/tests
+  packages/cli/tests/test_pipeline.py packages/cli/tests/test_formats.py -q`
+  — exit `0`, `46 passed in 0.73s`.
+- Universal Feishu/CLI/count slice with all provider credential variables
+  absent:
+
+  ```bash
+  env -u GOOGLE_SHEETS_ACCESS_TOKEN \
+    -u FEISHU_TENANT_ACCESS_TOKEN \
+    -u MAYBESHEET_ACCESS_TOKEN \
+    uv run --frozen python -m pytest \
+    specification/conformance/universal/test_table_connectors.py \
+    specification/conformance/universal/test_cli_surface.py \
+    specification/conformance/universal/test_suite_count.py -q
+  ```
+
+  Result: exit `0`, `109 passed in 2.50s`.
+- Complete Feishu and CLI package tests:
+  `uv run --frozen python -m pytest packages/feishu_bitable/tests
+  packages/cli/tests -q` — exit `0`, `113 passed in 2.98s`.
+
+### Fresh Setup and Final Verification
+
+- `uv sync --all-packages --group dev` — exit `0`; `Resolved 28 packages in
+  7ms`, `Checked 27 packages in 6ms`.
+- `uv lock --check` — exit `0`; `Resolved 28 packages in 10ms`.
+- Credential-isolated `uv run --frozen python -m pytest
+  specification/conformance/universal --collect-only -q` — exit `0`; `245
+  tests collected in 0.04s`, preserving the 120-test floor.
+- Repeated ordered universal node-ID comparison — exit `0` with no diff.
+- Credential-isolated `uv run --frozen python -m pytest
+  specification/conformance/universal -q` — exit `0`; `245 passed in 3.84s`.
+- Credential-isolated `uv run --frozen python -m pytest -q` — exit `0`; `435
+  passed in 7.42s`.
+- `python3 -m compileall -q packages specification/conformance/universal` —
+  exit `0` with no output.
+- `git diff --check` — exit `0` with no output before the implementation
+  commit.
+- `uv build --all-packages` — exit `0`; both sdist and wheel artifacts were
+  successfully built for all 11 workspace packages listed in the prior build
+  section.
+- `uv run --frozen otc list --output-format jsonl` — exit `0` with exactly four
+  records: `google_sheets`, `feishu_bitable`, `maybesheet`, and `local_files`.
+- `uv run --frozen otc --help`, `uv run --frozen open-table-connector --help`,
+  and `uv run --frozen open-connectors --help` — each exited `0` and began
+  `usage: otc`.
+
+### Concerns
+
+- Arbitrary Feishu transport diagnostics are intentionally generic because
+  provider exception text cannot be proven credential-free. Stable code and
+  message details remain available, and normal Feishu provider response codes
+  are unchanged.
+- The successful build retains the pre-existing setuptools sdist warnings for
+  workspace packages without package-level READMEs. Adding those READMEs is
+  outside this round.
+- Release artifacts/tags and owner-supplied live-provider evidence remain
+  outside this offline review round.
+- The pre-existing `.DS_Store` files and `tmp-review-universal/` remained
+  untouched and untracked.
