@@ -41,5 +41,3 @@ Install the CLI package to use `otc` (or the equivalent
 otc convert --from orders.csv --to - --to-format jsonl
 otc read --from gsheets://SPREADSHEET/Orders --output-format json
 ```
-
-`open-connectors` remains available as a deprecated compatibility alias.
