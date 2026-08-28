@@ -161,6 +161,13 @@ def _open_text_sink(endpoint: Endpoint, stream: TextIO | None) -> tuple[TextIO, 
         ) from None
 
 
+def _structured_uri_component_keys(component: str) -> list[str]:
+    pairs = [item for item in component.split("&") if "=" in item]
+    if not pairs:
+        return []
+    return sorted({key for key, _ in parse_qsl("&".join(pairs), keep_blank_values=True)})
+
+
 def _local_path(endpoint: Endpoint) -> Path:
     if endpoint.path is not None:
         return endpoint.path
@@ -181,21 +188,13 @@ def _local_path(endpoint: Endpoint) -> Path:
         raise ConnectorError(
             ConnectorErrorCode.INVALID_URI,
             "local output query parameters are unsupported",
-            {
-                "query_keys": sorted(
-                    {key for key, _ in parse_qsl(parsed.query, keep_blank_values=True)}
-                )
-            },
+            {"query_keys": _structured_uri_component_keys(parsed.query)},
         )
     if parsed.fragment:
         raise ConnectorError(
             ConnectorErrorCode.INVALID_URI,
             "local output URI fragments are unsupported",
-            {
-                "fragment_keys": sorted(
-                    {key for key, _ in parse_qsl(parsed.fragment, keep_blank_values=True)}
-                )
-            },
+            {"fragment_keys": _structured_uri_component_keys(parsed.fragment)},
         )
     path = Path(unquote(parsed.path))
     if not path.is_absolute():
