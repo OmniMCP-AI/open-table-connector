@@ -1,12 +1,40 @@
 from __future__ import annotations
 
+from argparse import Namespace
 from dataclasses import dataclass
+from io import StringIO
 import json
 from pathlib import Path
 import sqlite3
 from typing import Any, Callable, Iterable, Mapping
 
 from openpyxl import Workbook
+import pyarrow as pa
+
+from open_connectors.cli.adapters import (
+    FeishuBitableAdapter,
+    GoogleSheetsAdapter,
+    LocalAdapter,
+    MaybeSheetAdapter,
+)
+from open_connectors.cli.commands import run_command
+from open_connectors.cli.model import CliOptions, Endpoint, parse_endpoint
+from open_connectors.cli.registry import ConnectorRegistry
+from open_connectors.contract import (
+    ArrowReadResult,
+    BaseConvention,
+    CapabilityIdentity,
+    ConnectorIdentity,
+    NeutralReceipt,
+    TableInspection,
+    TableMode,
+    TableURI,
+    TableWriteResult,
+)
+from open_connectors.contract.fingerprints import (
+    arrow_content_fingerprint,
+    arrow_schema_fingerprint,
+)
 
 
 @dataclass(frozen=True)
@@ -229,6 +257,183 @@ class RecordingProcessClient:
                     f"missing recorded process response for operation {operation_key!r}"
                 ) from exc
         return _copy_payload(payload)
+
+
+@dataclass(frozen=True)
+class CliRunResult:
+    exit_code: int
+    stdout: str
+    stderr: str
+
+
+def run_cli_command(args: Namespace, registry: ConnectorRegistry) -> CliRunResult:
+    stdout = StringIO()
+    stderr = StringIO()
+    exit_code = run_command(args, registry, stdout, stderr)
+    return CliRunResult(exit_code, stdout.getvalue(), stderr.getvalue())
+
+
+@dataclass(frozen=True)
+class RecordedCliCall:
+    endpoint: Endpoint
+    options: CliOptions
+    table: pa.Table | None = None
+
+
+class RecordingCliAdapter:
+    def __init__(
+        self,
+        *,
+        connector_id: str,
+        schemes: tuple[str, ...],
+        capabilities: tuple[str, ...],
+        table: pa.Table,
+        failures: Mapping[str, BaseException] | None = None,
+    ) -> None:
+        self.identity = ConnectorIdentity(connector_id, "1.0.0", "1.0")
+        self.schemes = tuple(schemes)
+        self.capabilities = tuple(
+            CapabilityIdentity(capability, "1.0") for capability in capabilities
+        )
+        self.modes = (TableMode.BASE,)
+        self.provider_owned_fields: tuple[str, ...] = ()
+        self._table = table
+        self._failures = dict(failures or {})
+        self.read_calls: list[RecordedCliCall] = []
+        self.inspect_calls: list[RecordedCliCall] = []
+        self.preflight_calls: list[RecordedCliCall] = []
+        self.write_calls: list[RecordedCliCall] = []
+
+    def _raise_failure(self, operation: str) -> None:
+        failure = self._failures.get(operation)
+        if failure is not None:
+            raise failure
+
+    @staticmethod
+    def _safe_uri(endpoint: Endpoint) -> TableURI:
+        if endpoint.uri is not None:
+            return endpoint.uri
+        if endpoint.path is not None:
+            return TableURI(endpoint.path.resolve().as_uri())
+        return TableURI("stdio://fixture")
+
+    def _receipt(
+        self,
+        endpoint: Endpoint,
+        table: pa.Table,
+        operation: str,
+        capability: str,
+    ) -> NeutralReceipt:
+        schema = arrow_schema_fingerprint(table.schema)
+        content = arrow_content_fingerprint(table)
+        source_revision = f"{self.identity.connector_id}-{operation}-revision"
+        return NeutralReceipt(
+            self.identity,
+            CapabilityIdentity(capability, "1.0"),
+            f"{self.identity.connector_id}-{operation}-operation",
+            self._safe_uri(endpoint),
+            TableMode.BASE,
+            source_revision,
+            schema,
+            content,
+            BaseConvention(ordinal_snapshot_id=source_revision),
+            table.num_rows,
+            1,
+        )
+
+    def read(self, endpoint: Endpoint, options: CliOptions) -> ArrowReadResult:
+        self.read_calls.append(RecordedCliCall(endpoint, options))
+        self._raise_failure("read")
+        table = self._table if options.limit is None else self._table.slice(0, options.limit)
+        return ArrowReadResult(
+            table,
+            self._receipt(endpoint, table, "read", "table.read.arrow"),
+        )
+
+    def inspect(self, endpoint: Endpoint, options: CliOptions) -> TableInspection:
+        self.inspect_calls.append(RecordedCliCall(endpoint, options))
+        self._raise_failure("inspect")
+        table = self._table if options.limit is None else self._table.slice(0, options.limit)
+        receipt = self._receipt(endpoint, table, "inspect", "table.inspect")
+        return TableInspection(
+            receipt.safe_uri,
+            TableMode.BASE,
+            tuple(table.column_names),
+            receipt.schema_fingerprint,
+            table.num_rows,
+            receipt.coordinate_convention,
+            {"provider": self.identity.connector_id},
+        )
+
+    def preflight_write(self, endpoint: Endpoint, options: CliOptions) -> None:
+        self.preflight_calls.append(RecordedCliCall(endpoint, options))
+        self._raise_failure("preflight")
+
+    def write(
+        self,
+        endpoint: Endpoint,
+        table: pa.Table,
+        options: CliOptions,
+    ) -> TableWriteResult:
+        self.write_calls.append(RecordedCliCall(endpoint, options, table))
+        self._raise_failure("write")
+        return TableWriteResult(
+            self._receipt(endpoint, table, "write", "table.write"),
+            table.num_rows,
+        )
+
+
+@dataclass(frozen=True)
+class CliRegistryBridge:
+    registry: ConnectorRegistry
+    cases: Mapping[str, Any]
+    adapters: Mapping[str, Any]
+    sources: Mapping[str, str]
+    endpoints: Mapping[str, Endpoint]
+
+
+def build_cli_registry_bridge(*case_names: str) -> CliRegistryBridge:
+    from .cases import case
+
+    names = case_names or (
+        "google_sheets",
+        "feishu_bitable",
+        "maybesheet",
+        "local_files",
+    )
+    registry = ConnectorRegistry()
+    selected_cases: dict[str, Any] = {}
+    adapters: dict[str, Any] = {}
+    sources: dict[str, str] = {}
+    endpoints: dict[str, Endpoint] = {}
+    for name in names:
+        connector_case = case(name)
+        if name == "google_sheets":
+            assert connector_case.http_fixture is not None
+            adapter = GoogleSheetsAdapter(
+                connector_case.connector,
+                transport=connector_case.http_fixture.transport,
+            )
+        elif name == "feishu_bitable":
+            assert connector_case.http_fixture is not None
+            adapter = FeishuBitableAdapter(
+                connector_case.connector,
+                transport=connector_case.http_fixture.transport,
+            )
+        elif name == "maybesheet":
+            adapter = MaybeSheetAdapter(connector_case.connector)
+        elif name == "local_files":
+            adapter = LocalAdapter()
+        else:
+            raise KeyError(f"connector case has no CLI bridge: {name}")
+        source = connector_case.table_uri.value
+        endpoint = parse_endpoint(source)
+        registry.register(adapter)
+        selected_cases[name] = connector_case
+        adapters[name] = adapter
+        sources[name] = source
+        endpoints[name] = endpoint
+    return CliRegistryBridge(registry, selected_cases, adapters, sources, endpoints)
 
 
 @dataclass(frozen=True)

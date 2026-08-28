@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
+import re
 from typing import Any, Iterable, Mapping
 
 import pyarrow as pa
@@ -45,6 +48,109 @@ _SECRET_DETAIL_KEYS = {
     "secret",
     "token",
 }
+_MARKDOWN_SEPARATOR = re.compile(r"-{3,}")
+
+
+def strict_json_loads(text: str) -> Any:
+    def reject_constant(value: str) -> None:
+        raise ValueError(f"non-standard JSON constant: {value}")
+
+    return json.loads(text, parse_constant=reject_constant)
+
+
+def parse_json_lines(text: str) -> tuple[Any, ...]:
+    if not text:
+        return ()
+    lines = text.splitlines()
+    assert lines, "JSONL output must contain at least one record"
+    assert all(line.strip() for line in lines), "JSONL output contains a blank record"
+    return tuple(strict_json_loads(line) for line in lines)
+
+
+def parse_csv_records(text: str) -> tuple[dict[str, str | None], ...]:
+    reader = csv.DictReader(io.StringIO(text, newline=""))
+    assert reader.fieldnames is not None, "CSV output is missing a header"
+    assert len(reader.fieldnames) == len(set(reader.fieldnames)), "CSV headers must be unique"
+    rows: list[dict[str, str | None]] = []
+    for row in reader:
+        assert None not in row, "CSV row has more values than the header"
+        assert set(row) == set(reader.fieldnames), "CSV row does not match the header"
+        rows.append(
+            {
+                name: None if row[name] == "" else row[name]
+                for name in reader.fieldnames
+            }
+        )
+    return tuple(rows)
+
+
+def _split_markdown_cells(line: str) -> tuple[str, ...]:
+    assert line.startswith("| ") and line.endswith(" |"), (
+        f"Markdown table row is not pipe-delimited: {line!r}"
+    )
+    content = line[2:-2]
+    cells: list[str] = []
+    cell: list[str] = []
+    index = 0
+    while index < len(content):
+        character = content[index]
+        if character == "\\" and index + 1 < len(content):
+            cell.extend((character, content[index + 1]))
+            index += 2
+            continue
+        if character == "|":
+            cells.append("".join(cell).strip())
+            cell = []
+        else:
+            cell.append(character)
+        index += 1
+    cells.append("".join(cell).strip())
+    return tuple(cells)
+
+
+def _unescape_markdown_cell(value: str) -> str:
+    characters: list[str] = []
+    index = 0
+    while index < len(value):
+        if value[index] != "\\" or index + 1 == len(value):
+            characters.append(value[index])
+            index += 1
+            continue
+        escaped = value[index + 1]
+        if escaped == "n":
+            characters.append("\n")
+        elif escaped in {"\\", "|"}:
+            characters.append(escaped)
+        else:
+            characters.extend(("\\", escaped))
+        index += 2
+    return "".join(characters)
+
+
+def parse_markdown_table(
+    text: str,
+) -> tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]:
+    lines = text.splitlines()
+    assert len(lines) >= 2, "Markdown table requires a header and separator"
+    assert len({len(line) for line in lines}) == 1, "Markdown table rows are not aligned"
+    raw_header = _split_markdown_cells(lines[0])
+    separator = _split_markdown_cells(lines[1])
+    assert raw_header and all(raw_header), "Markdown table headers must be non-empty"
+    assert len(separator) == len(raw_header), "Markdown separator width mismatch"
+    assert all(_MARKDOWN_SEPARATOR.fullmatch(cell) for cell in separator), (
+        "Markdown table separator is malformed"
+    )
+    raw_rows = tuple(_split_markdown_cells(line) for line in lines[2:])
+    assert all(len(row) == len(raw_header) for row in raw_rows), (
+        "Markdown table body width mismatch"
+    )
+    return (
+        tuple(_unescape_markdown_cell(cell) for cell in raw_header),
+        tuple(
+            tuple(_unescape_markdown_cell(cell) for cell in row)
+            for row in raw_rows
+        ),
+    )
 
 
 def _assert_closed_wire(payload: Mapping[str, Any], expected_keys: set[str], label: str) -> None:
