@@ -17,7 +17,7 @@ _READ_SCHEMA = {
     "properties": {
         "target": {"type": "string", "minLength": 1},
         "credential_ref": {"type": "string", "minLength": 1},
-        "max_rows": {"type": ["integer", "null"], "minimum": 0},
+        "max_rows": {"type": ["integer", "null"], "minimum": 1},
     },
     "additionalProperties": False,
 }
