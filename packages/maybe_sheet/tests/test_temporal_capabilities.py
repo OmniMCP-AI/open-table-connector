@@ -189,10 +189,17 @@ def test_recording_managed_store_uses_only_proven_receipts(tmp_path: Path) -> No
             target,
             target,
             "mbs-idem",
+            ResourceBounds(100, 10_000_000, 1_000),
         )
     )
     committed = store.commit(
-        ManagedCommitRequest("mbs-commit", target, staged.stage_id, staged.idempotency_key)
+        ManagedCommitRequest(
+            "mbs-commit",
+            target,
+            staged.stage_id,
+            staged.idempotency_key,
+            ResourceBounds(100, 10_000_000, 1_000),
+        )
     )
     result = store.readback(
         ManagedReadbackRequest(

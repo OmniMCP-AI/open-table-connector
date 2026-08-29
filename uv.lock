@@ -234,6 +234,10 @@ version = "0.1.0"
 source = { editable = "packages/process" }
 dependencies = [
     { name = "open-table-connector-contract" },
+    { name = "open-table-connector-local-files" },
+    { name = "open-table-connector-maybe-sheet" },
+    { name = "open-table-connector-postgres" },
+    { name = "open-table-connector-sqlite" },
     { name = "open-table-connector-timeseries" },
     { name = "pyarrow" },
 ]
@@ -241,6 +245,10 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "open-table-connector-contract", editable = "packages/contract" },
+    { name = "open-table-connector-local-files", editable = "packages/local_files" },
+    { name = "open-table-connector-maybe-sheet", editable = "packages/maybe_sheet" },
+    { name = "open-table-connector-postgres", editable = "packages/postgres" },
+    { name = "open-table-connector-sqlite", editable = "packages/sqlite" },
     { name = "open-table-connector-timeseries", editable = "packages/timeseries" },
     { name = "pyarrow", specifier = ">=14,<20" },
 ]

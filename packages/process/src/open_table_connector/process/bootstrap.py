@@ -1,0 +1,180 @@
+"""Closed, deployment-owned bootstrap for the ``otc-process`` executable."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import stat
+from typing import Mapping
+
+from open_table_connector.contract import TableURI
+from open_table_connector.local_files import (
+    CsvManagedTemporalStore,
+    CsvTemporalExecutor,
+    ExcelManagedTemporalStore,
+    ExcelTemporalExecutor,
+    JsonManagedTemporalStore,
+    JsonTemporalExecutor,
+)
+from open_table_connector.maybe_sheet import (
+    MaybeSheetTemporalExecutor,
+    SubprocessProcessClient,
+)
+from open_table_connector.postgres import (
+    PostgresManagedTemporalStore,
+    PostgresTemporalExecutor,
+)
+from open_table_connector.sqlite import SQLiteManagedTemporalStore, SQLiteTemporalExecutor
+from open_table_connector.timeseries import (
+    TemporalExecutionRequest,
+    TemporalExecutionResult,
+    TemporalTableDescriptor,
+    descriptor_from_wire,
+)
+
+from .credentials import CredentialResolver
+from .registry import ConnectorProcessRegistry
+from .timeseries import TemporalProcessHandler, temporal_registration
+
+
+_COMMON_FIELDS = {"schema_version", "provider", "descriptor", "target", "managed"}
+_PROVIDER_FIELDS = {
+    "csv": set(),
+    "json": set(),
+    "jsonl": set(),
+    "excel": {"worksheet"},
+    "sqlite": {"physical_table"},
+    "postgres": {"physical_table"},
+    "maybe_sheet": {"maybe_sheet_binary"},
+}
+_TARGET_SCHEMES = {
+    "csv": {"csv", "managed+csv"},
+    "json": {"json"},
+    "jsonl": {"jsonl"},
+    "excel": {"excel", "xlsx", "managed+xlsx"},
+    "sqlite": {"sqlite"},
+    "postgres": {"postgres"},
+    "maybe_sheet": {"maybe"},
+}
+
+
+class _BoundExecutor:
+    def __init__(self, target: TableURI, executor) -> None:
+        self._target = target
+        self._executor = executor
+
+    def execute(self, request: TemporalExecutionRequest) -> TemporalExecutionResult:
+        if request.target != self._target:
+            raise ValueError("process request target does not match the bootstrapped target")
+        return self._executor.execute(request)
+
+
+def build_process_runtime(
+    config_path: str | os.PathLike[str],
+    artifact_root: str | os.PathLike[str],
+) -> tuple[ConnectorProcessRegistry, CredentialResolver]:
+    """Build one explicit provider binding from a closed, non-secret JSON file."""
+
+    document = _load_config(Path(config_path))
+    provider = document.get("provider")
+    if provider not in _PROVIDER_FIELDS:
+        raise ValueError("process provider is unsupported")
+    expected = _COMMON_FIELDS | _PROVIDER_FIELDS[provider]
+    if set(document) != expected:
+        raise ValueError("process bootstrap configuration is not closed")
+    if document.get("schema_version") != "otc.process-bootstrap/v1":
+        raise ValueError("process bootstrap schema version is unsupported")
+    if not isinstance(document.get("managed"), bool):
+        raise ValueError("process managed flag must be boolean")
+    descriptor_document = document.get("descriptor")
+    if not isinstance(descriptor_document, Mapping):
+        raise ValueError("process temporal descriptor must be an object")
+    descriptor = descriptor_from_wire(descriptor_document)
+    target = TableURI(str(document.get("target")))
+    if target.scheme not in _TARGET_SCHEMES[provider]:
+        raise ValueError("process target scheme does not match provider")
+
+    root = Path(artifact_root).absolute()
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    executor, store = _provider_binding(provider, document, target, descriptor, root)
+    handler = TemporalProcessHandler(
+        executor=_BoundExecutor(target, executor),
+        store=store,
+    )
+    registry = ConnectorProcessRegistry((temporal_registration(provider, handler),))
+    return registry, CredentialResolver()
+
+
+def _provider_binding(
+    provider: str,
+    document: Mapping[str, object],
+    target: TableURI,
+    descriptor: TemporalTableDescriptor,
+    root: Path,
+):
+    managed = bool(document["managed"])
+    if provider == "csv":
+        store = CsvManagedTemporalStore(root, descriptor) if managed else None
+        return CsvTemporalExecutor(descriptor, store), store
+    if provider in {"json", "jsonl"}:
+        store = JsonManagedTemporalStore(provider, root, descriptor) if managed else None
+        return JsonTemporalExecutor(descriptor, store), store
+    if provider == "excel":
+        worksheet = _required_text(document, "worksheet")
+        store = (
+            ExcelManagedTemporalStore(root, descriptor, worksheet=worksheet)
+            if managed
+            else None
+        )
+        return ExcelTemporalExecutor(descriptor, worksheet=worksheet, managed_store=store), store
+    if provider == "sqlite":
+        table = _required_text(document, "physical_table")
+        store = SQLiteManagedTemporalStore(target, root, descriptor) if managed else None
+        return SQLiteTemporalExecutor(descriptor, table, managed_store=store), store
+    if provider == "postgres":
+        table = _required_text(document, "physical_table")
+        store = PostgresManagedTemporalStore(target, root, descriptor) if managed else None
+        return PostgresTemporalExecutor(descriptor, table, managed_store=store), store
+    if managed:
+        raise ValueError("MaybeSheet managed storage requires live capability proof")
+    client = SubprocessProcessClient(binary=_required_text(document, "maybe_sheet_binary"))
+    return MaybeSheetTemporalExecutor(client, descriptor), None
+
+
+def _required_text(document: Mapping[str, object], field: str) -> str:
+    value = document.get(field)
+    if not isinstance(value, str) or not value.strip() or value != value.strip():
+        raise ValueError(f"process {field} must be a non-empty string")
+    return value
+
+
+def _load_config(path: Path) -> dict[str, object]:
+    if not path.is_absolute():
+        raise ValueError("OTC_PROCESS_CONFIG must be an absolute path")
+    metadata = path.lstat()
+    if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+        raise ValueError("process bootstrap config must be a regular non-symlink file")
+    if metadata.st_size > 1_048_576:
+        raise ValueError("process bootstrap config exceeds one MiB")
+    if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
+        raise ValueError("process bootstrap config ownership is not trusted")
+    if stat.S_IMODE(metadata.st_mode) & 0o022:
+        raise ValueError("process bootstrap config is group/world writable")
+    with path.open("r", encoding="utf-8") as stream:
+        document = json.load(stream, object_pairs_hook=_reject_duplicate_keys)
+    if not isinstance(document, dict):
+        raise ValueError("process bootstrap config must be an object")
+    return document
+
+
+def _reject_duplicate_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate process bootstrap key: {key}")
+        result[key] = value
+    return result
+
+
+__all__ = ["build_process_runtime"]

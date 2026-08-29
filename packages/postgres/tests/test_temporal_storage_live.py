@@ -98,11 +98,16 @@ def test_live_postgres_temporal_storage(tmp_path: Path) -> None:
                 target,
                 target,
                 "live-idempotency",
+                ResourceBounds(100, 10_000_000, 2_000),
             )
         )
         committed = store.commit(
             ManagedCommitRequest(
-                "live-commit", target, staged.stage_id, "live-idempotency"
+                "live-commit",
+                target,
+                staged.stage_id,
+                "live-idempotency",
+                ResourceBounds(100, 10_000_000, 2_000),
             )
         )
         readback = store.readback(

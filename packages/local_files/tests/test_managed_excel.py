@@ -38,6 +38,7 @@ def _stage_request(root: Path, source: Path, logical: Path) -> ManagedStageReque
         _uri("managed+xlsx", logical),
         _uri("xlsx", source),
         "excel-idem",
+        ResourceBounds(100, 10_000_000, 1_000),
     )
 
 
@@ -64,7 +65,13 @@ def test_managed_excel_publishes_immutable_formula_free_snapshot(tmp_path: Path)
     )
     staged = store.stage(_stage_request(root, source, logical))
     committed = store.commit(
-        ManagedCommitRequest("excel-commit", staged.logical_target, staged.stage_id, staged.idempotency_key)
+        ManagedCommitRequest(
+            "excel-commit",
+            staged.logical_target,
+            staged.stage_id,
+            staged.idempotency_key,
+            ResourceBounds(100, 10_000_000, 1_000),
+        )
     )
     source.unlink()
     readback = store.readback(

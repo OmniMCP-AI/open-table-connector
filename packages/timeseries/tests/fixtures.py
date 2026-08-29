@@ -20,10 +20,10 @@ from open_table_connector.timeseries import (
     TemporalOrdering,
     TemporalTableDescriptor,
     TimestampPrecision,
+    temporal_descriptor_hash,
 )
 
 
-DESCRIPTOR_HASH = "sha256:" + "a" * 64
 TARGET = TableURI("json:///fixtures/ticks.json")
 
 
@@ -115,7 +115,7 @@ def portable(operation, *, resource_bounds: ResourceBounds | None = None, limit:
         )
     return PortableTemporalPlan(
         schema_version="otc.portable-temporal-plan/v1",
-        descriptor_hash=DESCRIPTOR_HASH,
+        descriptor_hash=temporal_descriptor_hash(descriptor(), ticks_table().schema),
         relation="ticks",
         required_capabilities=(),
         resource_bounds=resource_bounds or bounds(),

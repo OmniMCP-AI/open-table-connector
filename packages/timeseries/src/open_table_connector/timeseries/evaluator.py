@@ -19,7 +19,12 @@ from open_table_connector.contract import (
     TableURI,
 )
 
-from .descriptor import DuplicatePolicy, TemporalTableDescriptor, TimestampPrecision
+from .descriptor import (
+    DuplicatePolicy,
+    TemporalTableDescriptor,
+    TimestampPrecision,
+    temporal_descriptor_hash,
+)
 from .buckets import calendar_bucket_next, calendar_bucket_start, fixed_bucket_start
 from .plan import (
     AggregateFunction,
@@ -89,9 +94,10 @@ class PolarsTemporalExecutor:
 
         started = time.monotonic_ns()
         required = _required_fields(request.plan, descriptor)
+        identity_fields = list(descriptor.declared_fields)
         table = self._source.read_bounded(
             request.target,
-            required,
+            identity_fields,
             operation.tag_predicates,
             request.plan.resource_bounds,
         )
@@ -99,6 +105,18 @@ class PolarsTemporalExecutor:
         if not isinstance(table, pa.Table):
             raise TypeError("temporal source must return a pyarrow.Table")
         _validate_arrow_schema(table.schema, descriptor, required)
+        actual_descriptor_hash = temporal_descriptor_hash(descriptor, table.schema)
+        if actual_descriptor_hash != request.plan.descriptor_hash:
+            raise TemporalExtensionError(
+                TemporalErrorCode.PROTOCOL_INVALID,
+                "portable plan descriptor hash does not match the resolved source schema",
+                {
+                    "expected": request.plan.descriptor_hash,
+                    "actual": actual_descriptor_hash,
+                },
+            )
+        examined_rows = table.num_rows
+        examined_bytes = len(_arrow_ipc_bytes(table))
         table = table.select(required)
         if table[descriptor.time_field].null_count:
             raise ValueError("event-time field cannot contain null values")
@@ -108,8 +126,6 @@ class PolarsTemporalExecutor:
             and table[descriptor.ingestion_time_field].null_count
         ):
             raise ValueError("replace-latest ingestion-time field cannot contain null values")
-        examined_rows = table.num_rows
-        examined_bytes = len(_arrow_ipc_bytes(table))
         _check_size_bounds(
             examined_rows,
             examined_bytes,
@@ -519,7 +535,7 @@ def _receipt(
         else BaseConvention(ordinal_snapshot_id=source_revision)
     )
     neutral = NeutralReceipt(
-        connector=ConnectorIdentity("portable_temporal", "0.1.0", "1.0"),
+        connector=ConnectorIdentity(request.target.scheme, "0.1.0", "1.0"),
         capability=CapabilityIdentity(capability, "1.0"),
         operation_id=request.operation_id,
         safe_uri=request.target,

@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import sqlite3
 import stat
+import time
 from typing import Iterator
 
 import pyarrow as pa
@@ -229,6 +230,32 @@ def _timestamp_ns(value: str) -> int:
     return seconds * 1_000_000_000 + int((fraction + "000000000")[:9])
 
 
+def _check_deadline(started: float, bounds: ResourceBounds, operation: str) -> None:
+    elapsed_ms = (time.monotonic() - started) * 1_000
+    if elapsed_ms > bounds.max_duration_ms:
+        raise TemporalExtensionError(
+            TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
+            f"{operation} exceeds max_duration_ms",
+            {"elapsed_ms": int(elapsed_ms)},
+        )
+
+
+def _check_operation_bounds(
+    data: bytes,
+    table: pa.Table,
+    bounds: ResourceBounds,
+    started: float,
+    operation: str,
+) -> None:
+    if len(data) > bounds.max_bytes or table.num_rows > bounds.max_rows:
+        raise TemporalExtensionError(
+            TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
+            f"{operation} exceeds resource bounds",
+            {"bytes": len(data), "rows": table.num_rows},
+        )
+    _check_deadline(started, bounds, operation)
+
+
 class SQLiteManagedTemporalStore:
     def __init__(
         self,
@@ -252,9 +279,11 @@ class SQLiteManagedTemporalStore:
             pass
 
     def stage(self, request: ManagedStageRequest) -> ManagedStageReceipt:
+        started = time.monotonic()
         self._bind_target(request.logical_target)
         self._bind_target(request.physical_target)
-        data, table = self._read_artifact(request.artifact)
+        data, table = self._read_artifact(request.artifact, request.resource_bounds)
+        _check_operation_bounds(data, table, request.resource_bounds, started, "SQLite stage")
         if temporal_descriptor_hash(self.descriptor, table.schema) != request.descriptor_hash:
             raise TemporalExtensionError(
                 TemporalErrorCode.PROTOCOL_INVALID,
@@ -281,7 +310,9 @@ class SQLiteManagedTemporalStore:
                     row[5],
                     False,
                 )
-                return validate_stage_retry(existing, request)
+                receipt = validate_stage_retry(existing, request)
+                _check_deadline(started, request.resource_bounds, "SQLite stage")
+                return receipt
             stage_id = "stage:" + hashlib.sha256(
                 json.dumps(
                     {
@@ -325,9 +356,11 @@ class SQLiteManagedTemporalStore:
                 ),
             )
             self._record_receipt(connection, request.operation_id, "stage", receipt.to_wire())
+            _check_deadline(started, request.resource_bounds, "SQLite stage")
             return receipt
 
     def commit(self, request: ManagedCommitRequest) -> ManagedCommitReceipt:
+        started = time.monotonic()
         self._bind_target(request.logical_target)
         with self._connection(immediate=True) as connection:
             existing = connection.execute(
@@ -342,7 +375,7 @@ class SQLiteManagedTemporalStore:
                         "commit idempotency key is bound to another stage",
                         {},
                     )
-                return ManagedCommitReceipt(
+                receipt = ManagedCommitReceipt(
                     "otc.managed-commit-receipt/v1",
                     existing[0],
                     request.logical_target,
@@ -353,6 +386,8 @@ class SQLiteManagedTemporalStore:
                     existing[4],
                     VisibilityGuarantee.ATOMIC,
                 )
+                _check_deadline(started, request.resource_bounds, "SQLite commit")
+                return receipt
             stage = connection.execute(
                 "SELECT idempotency_key, arrow_blob, artifact_hash FROM _otc_ts_stages "
                 "WHERE stage_id = ? AND logical_target = ?",
@@ -377,6 +412,8 @@ class SQLiteManagedTemporalStore:
                     "SQLite staged Arrow hash verification failed",
                     {},
                 )
+            table = pa.ipc.open_stream(pa.BufferReader(data)).read_all()
+            _check_operation_bounds(data, table, request.resource_bounds, started, "SQLite commit")
             snapshot_id = _sha256(data)
             snapshot_reference = "sqlite-snapshot:" + snapshot_id[7:]
             committed_at = self._now()
@@ -420,6 +457,7 @@ class SQLiteManagedTemporalStore:
                 VisibilityGuarantee.ATOMIC,
             )
             self._record_receipt(connection, request.operation_id, "commit", receipt.to_wire())
+            _check_deadline(started, request.resource_bounds, "SQLite commit")
             return receipt
 
     def readback(self, request: ManagedReadbackRequest) -> ManagedReadbackResult:
@@ -453,6 +491,7 @@ class SQLiteManagedTemporalStore:
         *,
         snapshot_id: str | None = None,
     ) -> pa.Table:
+        started = time.monotonic()
         self._bind_target(target)
         with self._connection(immediate=False) as connection:
             row = connection.execute(
@@ -481,6 +520,7 @@ class SQLiteManagedTemporalStore:
                 "SQLite snapshot exceeds max_rows",
                 {"rows": table.num_rows},
             )
+        _check_deadline(started, bounds, "SQLite snapshot read")
         return table
 
     def abort(self, request: ManagedAbortRequest) -> ManagedAbortReceipt:
@@ -563,7 +603,11 @@ class SQLiteManagedTemporalStore:
             ),
         )
 
-    def _read_artifact(self, reference: ArrowArtifactReference):
+    def _read_artifact(
+        self,
+        reference: ArrowArtifactReference,
+        bounds: ResourceBounds,
+    ):
         expected = f"sha256/{reference.sha256[7:]}.arrow"
         if reference.relative_path != expected:
             raise TemporalExtensionError(
@@ -586,6 +630,12 @@ class SQLiteManagedTemporalStore:
             raise PermissionError("Arrow artifact ownership is not trusted")
         if stat.S_IMODE(metadata.st_mode) & 0o077:
             raise PermissionError("Arrow artifact permissions are too broad")
+        if metadata.st_size > bounds.max_bytes or reference.size_bytes > bounds.max_bytes:
+            raise TemporalExtensionError(
+                TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
+                "SQLite Arrow artifact exceeds max_bytes",
+                {"bytes": max(metadata.st_size, reference.size_bytes)},
+            )
         descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         with os.fdopen(descriptor, "rb", closefd=True) as stream:
             current = os.fstat(stream.fileno())
@@ -667,7 +717,7 @@ class SQLiteTemporalExecutor:
         path = _database_path(request.target)
         connection = self._connection_factory(path)
         try:
-            fields = _required_fields(request.plan, self.descriptor)
+            fields = self.descriptor.declared_fields
             table = ".".join(_quote(part) for part in self.physical_table.split("."))
             storage_type = connection.execute(
                 f"SELECT typeof({_quote(self.descriptor.time_field)}) FROM {table} "
@@ -711,29 +761,10 @@ class SQLiteTemporalExecutor:
                         arrays.append(pa.array(values, type=timestamp_type))
                 else:
                     array = pa.array(values)
-                    if pa.types.is_string(array.type):
-                        array = pa.array(values, type=pa.large_string())
                     arrays.append(array)
             return pa.Table.from_arrays(arrays, names=fields)
         finally:
             connection.close()
-
-
-def _required_fields(plan: PortableTemporalPlan, descriptor: TemporalTableDescriptor):
-    operation = plan.operation
-    if isinstance(operation, (ScanRange, Latest, AsOf)):
-        fields = list(operation.projection)
-    else:
-        fields = [*operation.group_by]
-        fields.extend(
-            measure.value_field for measure in operation.measures if measure.value_field is not None
-        )
-    fields.extend(predicate.field for predicate in operation.tag_predicates)
-    fields.extend(descriptor.series_key_fields)
-    fields.append(descriptor.time_field)
-    if descriptor.ingestion_time_field is not None:
-        fields.append(descriptor.ingestion_time_field)
-    return tuple(dict.fromkeys(fields))
 
 
 def _storage_where(

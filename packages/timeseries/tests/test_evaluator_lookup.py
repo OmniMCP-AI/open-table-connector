@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from open_table_connector.timeseries import (
@@ -8,6 +10,7 @@ from open_table_connector.timeseries import (
     TagOperator,
     TagPredicate,
     TemporalExecutionRequest,
+    temporal_descriptor_hash,
 )
 
 from packages.timeseries.tests.fixtures import (
@@ -21,6 +24,10 @@ from packages.timeseries.tests.fixtures import (
 
 
 def execute(source: MemoryTemporalSource, plan):
+    plan = replace(
+        plan,
+        descriptor_hash=temporal_descriptor_hash(source.descriptor, source.table.schema),
+    )
     return PolarsTemporalExecutor(source).execute(
         TemporalExecutionRequest(
             target=TARGET,

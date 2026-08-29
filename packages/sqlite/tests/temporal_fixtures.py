@@ -11,10 +11,13 @@ from open_table_connector.timeseries import (
     ArrowArtifactReference,
     ManagedCommitRequest,
     ManagedStageRequest,
+    ResourceBounds,
     temporal_descriptor_hash,
 )
 
 from packages.timeseries.tests.fixtures import descriptor, ticks_table
+
+BOUNDS = ResourceBounds(10_000, 64 * 1024 * 1024, 30_000)
 
 
 def sqlite_uri(path: Path) -> TableURI:
@@ -44,6 +47,7 @@ def stage_request(root: Path, target: TableURI, *, operation="stage-1", idem="id
         target,
         target,
         idem,
+        BOUNDS,
     )
 
 
@@ -53,6 +57,7 @@ def commit_request(stage, *, operation="commit-1"):
         stage.logical_target,
         stage.stage_id,
         stage.idempotency_key,
+        BOUNDS,
     )
 
 

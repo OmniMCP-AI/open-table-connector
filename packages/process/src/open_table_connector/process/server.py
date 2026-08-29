@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
 import os
 import re
+import threading
 from types import MappingProxyType
 from typing import BinaryIO, Iterable, Mapping, TextIO
 
@@ -59,6 +61,12 @@ class ProcessRequestContext:
     credentials: CredentialLease
 
 
+@dataclass(frozen=True, slots=True)
+class _ProcessSession:
+    registration: ConnectorRegistration
+    capability_versions: Mapping[str, str]
+
+
 class ConnectorProcessServer:
     def __init__(
         self,
@@ -72,21 +80,34 @@ class ConnectorProcessServer:
         self._artifacts = artifact_store
         self._credentials = credential_resolver
         self._messages: set[str] = set()
-        self._sessions: dict[str, ConnectorRegistration] = {}
+        self._sessions: dict[str, _ProcessSession] = {}
         self._cancelled: set[str] = set()
+        self._state_lock = threading.RLock()
 
     def handle(self, envelope: ConnectorProcessEnvelope) -> ConnectorProcessEnvelope:
         if not isinstance(envelope, ConnectorProcessEnvelope):
             raise TypeError("envelope must be a ConnectorProcessEnvelope")
-        if envelope.message_id in self._messages:
-            raise ProcessError("protocol_invalid", "message_id has already been used")
-        if envelope.operation is ProcessOperation.HELLO:
-            result = self._hello(envelope)
-        elif envelope.operation is ProcessOperation.CANCEL:
-            result = self._cancel(envelope)
-        else:
+        with self._state_lock:
+            if envelope.message_id in self._messages:
+                raise ProcessError("protocol_invalid", "message_id has already been used")
+            self._messages.add(envelope.message_id)
+            if envelope.operation is ProcessOperation.HELLO:
+                result = self._hello(envelope)
+                return self._response(envelope, result)
+            if envelope.operation is ProcessOperation.CANCEL:
+                result = self._cancel(envelope)
+                return self._response(envelope, result)
+        try:
             result = self._dispatch(envelope)
-        self._messages.add(envelope.message_id)
+            with self._state_lock:
+                if envelope.session_id in self._cancelled:
+                    raise ProcessError(
+                        "execution_failed", "operation completed after session cancellation"
+                    )
+        except Exception:
+            with self._state_lock:
+                self._messages.discard(envelope.message_id)
+            raise
         return self._response(envelope, result)
 
     def error_response(
@@ -138,27 +159,36 @@ class ConnectorProcessServer:
                     {"capability": str(capability)},
                 )
         existing = self._sessions.get(envelope.session_id)
-        if existing is not None and existing is not registration:
+        if existing is not None and existing.registration is not registration:
             raise ProcessError("protocol_invalid", "session_id is already bound")
-        self._sessions[envelope.session_id] = registration
+        negotiated = dict(requested)
+        self._sessions[envelope.session_id] = _ProcessSession(registration, negotiated)
         return ProcessResult(
             {
                 "process_protocol": PROCESS_PROTOCOL,
                 "connector_version": registration.connector_version,
                 "contract_version": registration.contract_version,
                 "portable_plan_version": registration.portable_plan_version,
-                "capability_versions": dict(sorted(registration.capability_versions.items())),
+                "capability_versions": dict(sorted(negotiated.items())),
             }
         )
 
     def _dispatch(self, envelope: ConnectorProcessEnvelope) -> ProcessResult:
-        registration = self._session(envelope.session_id)
+        with self._state_lock:
+            session = self._session(envelope.session_id)
+        registration = session.registration
         self._verify_connector(envelope, registration)
-        if envelope.capability_version not in registration.capability_versions.values():
-            raise ProcessError(
-                "protocol_version_unsupported",
-                "capability version is not supported",
-            )
+        required = _required_capabilities(envelope)
+        for capability, version in required:
+            if (
+                session.capability_versions.get(capability) != version
+                or envelope.capability_version != version
+            ):
+                raise ProcessError(
+                    "protocol_version_unsupported",
+                    "operation capability is not authorized for this session",
+                    {"capability": capability},
+                )
         try:
             lease = self._credentials.resolve(
                 envelope.credential_reference,
@@ -186,12 +216,12 @@ class ConnectorProcessServer:
         target = envelope.payload.get("target_session_id")
         if not isinstance(target, str) or not target:
             raise ProcessError("protocol_invalid", "cancel requires target_session_id")
-        registration = self._sessions.get(target)
-        if registration is None:
+        session = self._sessions.get(target)
+        if session is None:
             return ProcessResult({"cancelled": False, "target_session_id": target})
         self._cancelled.add(target)
         result = ProcessResult({"cancelled": True, "target_session_id": target})
-        callback = getattr(registration.handler, "abort_session", None)
+        callback = getattr(session.registration.handler, "abort_session", None)
         if callback is not None:
             try:
                 callback(target)
@@ -199,7 +229,7 @@ class ConnectorProcessServer:
                 return result
         return result
 
-    def _session(self, session_id: str) -> ConnectorRegistration:
+    def _session(self, session_id: str) -> _ProcessSession:
         if session_id in self._cancelled:
             raise ProcessError("protocol_invalid", "session is cancelled")
         try:
@@ -255,6 +285,64 @@ def redact_text(value: str, secrets: Iterable[str] = ()) -> str:
     return result
 
 
+def _required_capabilities(
+    envelope: ConnectorProcessEnvelope,
+) -> tuple[tuple[str, str], ...]:
+    implied = {
+        ProcessOperation.DESCRIBE: ("timeseries.describe/1.0",),
+        ProcessOperation.STAGE: ("storage.stage/1.0",),
+        ProcessOperation.COMMIT: (
+            "storage.commit.idempotent/1.0",
+            "storage.visibility.atomic/1.0",
+        ),
+        ProcessOperation.READBACK: (
+            "storage.snapshot.read/1.0",
+            "storage.readback.verify/1.0",
+        ),
+        ProcessOperation.ABORT: ("storage.abort/1.0",),
+    }
+    if envelope.operation is ProcessOperation.EXECUTE:
+        plan = envelope.payload.get("portable_plan")
+        if not isinstance(plan, Mapping):
+            raise ProcessError("protocol_invalid", "execute portable_plan must be an object")
+        identities = plan.get("required_capabilities")
+        if not isinstance(identities, list):
+            raise ProcessError(
+                "protocol_invalid",
+                "execute plan required_capabilities must be a list",
+            )
+        operation = plan.get("operation")
+        if not isinstance(operation, Mapping):
+            raise ProcessError("protocol_invalid", "execute plan operation must be an object")
+        capability_by_kind = {
+            "scan_range": "timeseries.scan.range/1.0",
+            "latest": "timeseries.lookup.latest/1.0",
+            "as_of": "timeseries.lookup.asof/1.0",
+            "bucket_aggregate": "timeseries.aggregate.window/1.0",
+            "gap_fill": "timeseries.fill/1.0",
+        }
+        try:
+            implied_identity = capability_by_kind[operation.get("kind")]
+        except (KeyError, TypeError) as exc:
+            raise ProcessError(
+                "protocol_invalid", "execute plan operation capability is unknown"
+            ) from exc
+        identities = [implied_identity, *identities]
+    else:
+        identities = list(implied.get(envelope.operation, ()))
+    result: list[tuple[str, str]] = []
+    for identity in identities:
+        if not isinstance(identity, str) or "/" not in identity:
+            raise ProcessError("protocol_invalid", "capability identity is invalid")
+        capability, version = identity.rsplit("/", 1)
+        if not capability or not version:
+            raise ProcessError("protocol_invalid", "capability identity is invalid")
+        item = (capability, version)
+        if item not in result:
+            result.append(item)
+    return tuple(result)
+
+
 class BoundedDiagnostics:
     def __init__(
         self,
@@ -302,24 +390,34 @@ def run_server(
         ArtifactStore(artifact_root),
         credential_resolver or CredentialResolver(),
     )
-    while True:
-        try:
-            wire = read_frame(stdin, max_frame_bytes)
-        except FrameError as exc:
-            diagnostics.write(f"fatal framing error: {exc}")
-            return 2
-        if wire is None:
-            return 0
-        try:
-            envelope = ConnectorProcessEnvelope.from_wire(wire)
-        except (TypeError, ValueError) as exc:
-            diagnostics.write(f"fatal envelope error: {exc}")
-            return 2
+    output_lock = threading.Lock()
+
+    def handle_and_write(envelope: ConnectorProcessEnvelope) -> None:
         try:
             response = server.handle(envelope)
         except ProcessError as exc:
             response = server.error_response(envelope, exc)
-        write_frame(stdout, response)
+        with output_lock:
+            write_frame(stdout, response)
+
+    with ThreadPoolExecutor(max_workers=4, thread_name_prefix="otc-process") as workers:
+        while True:
+            try:
+                wire = read_frame(stdin, max_frame_bytes)
+            except FrameError as exc:
+                diagnostics.write(f"fatal framing error: {exc}")
+                return 2
+            if wire is None:
+                return 0
+            try:
+                envelope = ConnectorProcessEnvelope.from_wire(wire)
+            except (TypeError, ValueError) as exc:
+                diagnostics.write(f"rejected envelope error: {exc}")
+                continue
+            if envelope.operation in {ProcessOperation.HELLO, ProcessOperation.CANCEL}:
+                handle_and_write(envelope)
+            else:
+                workers.submit(handle_and_write, envelope)
 
 
 __all__ = [

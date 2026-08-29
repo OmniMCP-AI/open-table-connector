@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import time
 from typing import Iterator, Mapping
 
 import pyarrow as pa
@@ -53,12 +54,10 @@ from open_table_connector.timeseries import (
 )
 from open_table_connector.timeseries.capabilities import (
     AGGREGATE_WINDOW,
-    AGGREGATE_WINDOW_PUSHDOWN,
     FILL,
     LOOKUP_ASOF,
     LOOKUP_LATEST,
     SCAN_RANGE,
-    SCAN_RANGE_PUSHDOWN,
     STORAGE_ABORT,
     STORAGE_COMMIT_IDEMPOTENT,
     STORAGE_READBACK_VERIFY,
@@ -79,6 +78,32 @@ _SUPPORTED_AGGREGATES = {
     AggregateFunction.SUM,
     AggregateFunction.AVG,
 }
+
+
+def _check_deadline(started: float, bounds: ResourceBounds, operation: str) -> None:
+    elapsed_ms = (time.monotonic() - started) * 1_000
+    if elapsed_ms > bounds.max_duration_ms:
+        raise TemporalExtensionError(
+            TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
+            f"{operation} exceeds max_duration_ms",
+            {"elapsed_ms": int(elapsed_ms)},
+        )
+
+
+def _check_operation_bounds(
+    data: bytes,
+    table: pa.Table,
+    bounds: ResourceBounds,
+    started: float,
+    operation: str,
+) -> None:
+    if len(data) > bounds.max_bytes or table.num_rows > bounds.max_rows:
+        raise TemporalExtensionError(
+            TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
+            f"{operation} exceeds resource bounds",
+            {"bytes": len(data), "rows": table.num_rows},
+        )
+    _check_deadline(started, bounds, operation)
 
 
 def lower_postgres(
@@ -295,25 +320,24 @@ class PostgresManagedTemporalStore:
         self.descriptor = descriptor
         self.metadata_schema = metadata_schema
         self._connector = PostgresConnector(connection_factory)
-        self._resolved = self._connector.resolve(
-            database_uri,
-            ResolveContext(credentials=dict(credentials or {})),
-        )
+        self._credentials = dict(credentials or {})
         self._clock = clock or (lambda: datetime.now(UTC))
         self._fault_injector = fault_injector
         self._stage_id_factory = stage_id_factory
 
     def stage(self, request: ManagedStageRequest) -> ManagedStageReceipt:
+        started = time.monotonic()
         self._bind_target(request.logical_target)
         self._bind_target(request.physical_target)
-        data, table = self._read_artifact(request.artifact)
+        data, table = self._read_artifact(request.artifact, request.resource_bounds)
+        _check_operation_bounds(data, table, request.resource_bounds, started, "PostgreSQL stage")
         if temporal_descriptor_hash(self.descriptor, table.schema) != request.descriptor_hash:
             raise TemporalExtensionError(
                 TemporalErrorCode.PROTOCOL_INVALID,
                 "staged Arrow schema does not match descriptor_hash",
                 {},
             )
-        with self._connection() as (_, cursor):
+        with self._connection(request.credential_values) as (_, cursor):
             self._lock(cursor, request.logical_target)
             cursor.execute(
                 f"SELECT operation_id, physical_target, stage_id, artifact_hash, "
@@ -335,7 +359,9 @@ class PostgresManagedTemporalStore:
                     _time_text(row[5]),
                     False,
                 )
-                return validate_stage_retry(existing, request)
+                receipt = validate_stage_retry(existing, request)
+                _check_deadline(started, request.resource_bounds, "PostgreSQL stage")
+                return receipt
             stage_id = (
                 self._stage_id_factory(request)
                 if self._stage_id_factory is not None
@@ -385,12 +411,16 @@ class PostgresManagedTemporalStore:
                 ),
             )
             self._record_receipt(cursor, request.operation_id, "stage", receipt.to_wire())
+            _check_deadline(started, request.resource_bounds, "PostgreSQL stage")
             return receipt
 
     def commit(self, request: ManagedCommitRequest) -> ManagedCommitReceipt:
+        started = time.monotonic()
         self._bind_target(request.logical_target)
         try:
-            return self._commit_once(request)
+            receipt = self._commit_once(request, started)
+            _check_deadline(started, request.resource_bounds, "PostgreSQL commit")
+            return receipt
         except TemporalExtensionError:
             raise
         except Exception as exc:
@@ -403,8 +433,12 @@ class PostgresManagedTemporalStore:
                 {"exception_type": type(exc).__name__},
             ) from None
 
-    def _commit_once(self, request: ManagedCommitRequest) -> ManagedCommitReceipt:
-        with self._connection() as (_, cursor):
+    def _commit_once(
+        self,
+        request: ManagedCommitRequest,
+        started: float,
+    ) -> ManagedCommitReceipt:
+        with self._connection(request.credential_values) as (_, cursor):
             self._lock(cursor, request.logical_target)
             existing = self._select_commit(cursor, request)
             if existing is not None:
@@ -434,6 +468,14 @@ class PostgresManagedTemporalStore:
                     "PostgreSQL staged Arrow hash verification failed",
                     {},
                 )
+            table = pa.ipc.open_stream(pa.BufferReader(data)).read_all()
+            _check_operation_bounds(
+                data,
+                table,
+                request.resource_bounds,
+                started,
+                "PostgreSQL commit",
+            )
             snapshot_id = _sha256(data)
             snapshot_reference = "postgres-snapshot:" + snapshot_id[7:]
             committed_at = self._now()
@@ -484,7 +526,7 @@ class PostgresManagedTemporalStore:
 
     def _reconcile_commit(self, request: ManagedCommitRequest) -> ManagedCommitReceipt | None:
         try:
-            with self._connection() as (_, cursor):
+            with self._connection(request.credential_values) as (_, cursor):
                 return self._select_commit(cursor, request)
         except Exception:
             return None
@@ -519,7 +561,7 @@ class PostgresManagedTemporalStore:
 
     def readback(self, request: ManagedReadbackRequest) -> ManagedReadbackResult:
         self._bind_target(request.logical_target)
-        with self._connection() as (_, cursor):
+        with self._connection(request.credential_values) as (_, cursor):
             cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             cursor.execute("SET LOCAL statement_timeout = %s", (request.resource_bounds.max_duration_ms,))
             table = self._read_snapshot(cursor, request.snapshot_reference, request.resource_bounds, request.snapshot_id)
@@ -545,9 +587,10 @@ class PostgresManagedTemporalStore:
         bounds: ResourceBounds,
         *,
         snapshot_id: str | None = None,
+        credential_values: Mapping[str, object] | None = None,
     ) -> pa.Table:
         self._bind_target(target)
-        with self._connection() as (_, cursor):
+        with self._connection(credential_values) as (_, cursor):
             cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             cursor.execute("SET LOCAL statement_timeout = %s", (bounds.max_duration_ms,))
             return self._read_snapshot(cursor, snapshot_reference, bounds, snapshot_id)
@@ -589,7 +632,7 @@ class PostgresManagedTemporalStore:
 
     def abort(self, request: ManagedAbortRequest) -> ManagedAbortReceipt:
         self._bind_target(request.logical_target)
-        with self._connection() as (_, cursor):
+        with self._connection(request.credential_values) as (_, cursor):
             self._lock(cursor, request.logical_target)
             cursor.execute(
                 f"SELECT committed FROM {self._table('stages')} "
@@ -619,8 +662,15 @@ class PostgresManagedTemporalStore:
             return receipt
 
     @contextmanager
-    def _connection(self) -> Iterator[tuple[object, object]]:
-        connection = self._connector._connect(self._resolved.resource)
+    def _connection(
+        self,
+        credential_values: Mapping[str, object] | None = None,
+    ) -> Iterator[tuple[object, object]]:
+        resolved = self._connector.resolve(
+            self.database_uri,
+            ResolveContext(credentials=dict(credential_values or self._credentials)),
+        )
+        connection = self._connector._connect(resolved.resource)
         cursor = None
         try:
             cursor = connection.cursor()
@@ -684,7 +734,11 @@ class PostgresManagedTemporalStore:
     def _table(self, name: str) -> str:
         return f"{_quote(self.metadata_schema)}.{_quote(name)}"
 
-    def _read_artifact(self, reference: ArrowArtifactReference):
+    def _read_artifact(
+        self,
+        reference: ArrowArtifactReference,
+        bounds: ResourceBounds,
+    ):
         expected = f"sha256/{reference.sha256[7:]}.arrow"
         if reference.relative_path != expected:
             raise TemporalExtensionError(
@@ -707,6 +761,12 @@ class PostgresManagedTemporalStore:
             raise PermissionError("Arrow artifact ownership is not trusted")
         if stat.S_IMODE(metadata.st_mode) & 0o077:
             raise PermissionError("Arrow artifact permissions are too broad")
+        if metadata.st_size > bounds.max_bytes or reference.size_bytes > bounds.max_bytes:
+            raise TemporalExtensionError(
+                TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
+                "PostgreSQL Arrow artifact exceeds max_bytes",
+                {"bytes": max(metadata.st_size, reference.size_bytes)},
+            )
         descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         with os.fdopen(descriptor, "rb", closefd=True) as stream:
             current = os.fstat(stream.fileno())
@@ -756,11 +816,9 @@ class PostgresTemporalExecutor:
 
     CAPABILITIES = (
         SCAN_RANGE,
-        SCAN_RANGE_PUSHDOWN,
         LOOKUP_LATEST,
         LOOKUP_ASOF,
         AGGREGATE_WINDOW,
-        AGGREGATE_WINDOW_PUSHDOWN,
         FILL,
         STORAGE_STAGE,
         STORAGE_COMMIT_IDEMPOTENT,
@@ -799,6 +857,7 @@ class PostgresTemporalExecutor:
                 request.target,
                 request.snapshot_reference,
                 request.plan.resource_bounds,
+                credential_values=request.credential_values,
             )
         else:
             table = self._read_bounded(request)
@@ -807,14 +866,14 @@ class PostgresTemporalExecutor:
     def _read_bounded(self, request: TemporalExecutionRequest) -> pa.Table:
         resolved = self._connector.resolve(
             request.target,
-            ResolveContext(credentials=self._credentials),
+            ResolveContext(credentials=request.credential_values or self._credentials),
         )
         connection = self._connector._connect(resolved.resource)
         cursor = None
         try:
             cursor = connection.cursor()
             cursor.execute("SET LOCAL statement_timeout = %s", (request.plan.resource_bounds.max_duration_ms,))
-            fields = _required_fields(request.plan, self.descriptor)
+            fields = self.descriptor.declared_fields
             clauses, parameters = _storage_where(request.plan, self.descriptor)
             table = ".".join(_quote(part) for part in self.physical_table.split("."))
             cursor.execute(
@@ -850,23 +909,6 @@ class PostgresTemporalExecutor:
             connection.close()
 
 
-def _required_fields(plan: PortableTemporalPlan, descriptor: TemporalTableDescriptor):
-    operation = plan.operation
-    if isinstance(operation, (ScanRange, Latest, AsOf)):
-        fields = list(operation.projection)
-    else:
-        fields = [*operation.group_by]
-        fields.extend(
-            measure.value_field for measure in operation.measures if measure.value_field is not None
-        )
-    fields.extend(predicate.field for predicate in operation.tag_predicates)
-    fields.extend(descriptor.series_key_fields)
-    fields.append(descriptor.time_field)
-    if descriptor.ingestion_time_field is not None:
-        fields.append(descriptor.ingestion_time_field)
-    return tuple(dict.fromkeys(fields))
-
-
 def _storage_where(plan: PortableTemporalPlan, descriptor: TemporalTableDescriptor):
     return _where(plan.operation, descriptor)
 
@@ -887,8 +929,6 @@ def _rows_to_table(fields, rows, descriptor: TemporalTableDescriptor) -> pa.Tabl
             arrays.append(pa.array(values).cast(timestamp_type))
         else:
             array = pa.array(values)
-            if pa.types.is_string(array.type):
-                array = pa.array(values, type=pa.large_string())
             arrays.append(array)
     return pa.Table.from_arrays(arrays, names=fields)
 

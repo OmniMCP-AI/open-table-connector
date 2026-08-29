@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import MappingProxyType
+import threading
 from typing import Mapping
 
 from open_table_connector.contract import TableURI
@@ -14,6 +15,7 @@ from open_table_connector.timeseries import (
     ManagedTemporalStore,
     PortableTemporalExecutor,
     TemporalExecutionRequest,
+    TemporalExtensionError,
     plan_from_wire,
 )
 
@@ -38,12 +40,6 @@ _LIFECYCLE = {
     "storage.visibility.atomic": "1.0",
     "storage.abort": "1.0",
 }
-_PUSHDOWN = {
-    "timeseries.scan.range.pushdown": "1.0",
-    "timeseries.aggregate.window.pushdown": "1.0",
-}
-
-
 def _capabilities(*parts: Mapping[str, str]) -> Mapping[str, str]:
     result: dict[str, str] = {}
     for part in parts:
@@ -56,8 +52,8 @@ PORTABLE_PROVIDER_CAPABILITIES = MappingProxyType(
         "csv": _capabilities(_PORTABLE, _LIFECYCLE),
         "json": _capabilities(_PORTABLE, _LIFECYCLE),
         "jsonl": _capabilities(_PORTABLE, _LIFECYCLE),
-        "sqlite": _capabilities(_PORTABLE, _LIFECYCLE, _PUSHDOWN),
-        "postgres": _capabilities(_PORTABLE, _LIFECYCLE, _PUSHDOWN),
+        "sqlite": _capabilities(_PORTABLE, _LIFECYCLE),
+        "postgres": _capabilities(_PORTABLE, _LIFECYCLE),
         "excel": _capabilities(_PORTABLE, _LIFECYCLE),
         "maybe_sheet": _capabilities(_PORTABLE),
     }
@@ -81,8 +77,39 @@ class TemporalProcessHandler:
             raise ValueError("a temporal process handler requires an executor or store")
         self._executor = executor
         self._store = store
+        self._cancelled_sessions: set[str] = set()
+        self._cancel_lock = threading.Lock()
+
+    @property
+    def has_executor(self) -> bool:
+        return self._executor is not None
+
+    @property
+    def has_store(self) -> bool:
+        return self._store is not None
 
     def handle(self, context: ProcessRequestContext) -> ProcessResult:
+        with self._cancel_lock:
+            if context.envelope.session_id in self._cancelled_sessions:
+                raise ProcessError("execution_failed", "temporal session was cancelled")
+        try:
+            result = self._handle(context)
+        except TemporalExtensionError as exc:
+            raise ProcessError(exc.code.value, exc.message, exc.safe_details) from exc
+        with self._cancel_lock:
+            if context.envelope.session_id in self._cancelled_sessions:
+                raise ProcessError("execution_failed", "temporal session was cancelled")
+        return result
+
+    def abort_session(self, session_id: str) -> None:
+        with self._cancel_lock:
+            self._cancelled_sessions.add(session_id)
+        for provider in (self._executor, self._store):
+            callback = getattr(provider, "abort_session", None)
+            if callback is not None:
+                callback(session_id)
+
+    def _handle(self, context: ProcessRequestContext) -> ProcessResult:
         operation = context.envelope.operation
         if operation is ProcessOperation.DESCRIBE:
             return ProcessResult({"portable_temporal": True})
@@ -113,6 +140,7 @@ class TemporalProcessHandler:
                 context.envelope.credential_reference,
                 context.envelope.message_id,
                 payload.get("snapshot_reference"),
+                context.credentials.values,
             )
             result = self._executor.execute(request)
             if result.table is None or result.receipt is None:
@@ -120,6 +148,8 @@ class TemporalProcessHandler:
             artifact = context.artifacts.put_arrow(result.table)
         except ProcessError:
             raise
+        except TemporalExtensionError as exc:
+            raise ProcessError(exc.code.value, exc.message, exc.safe_details) from exc
         except Exception as exc:
             raise ProcessError("execution_failed", "temporal execute failed") from exc
         return ProcessResult(
@@ -146,9 +176,11 @@ class TemporalProcessHandler:
                 str(payload["operation_id"]),
                 context.envelope.artifact_references[0],
                 str(payload["descriptor_hash"]),
-                TableURI(str(payload["logical_target"])),
-                TableURI(str(payload["physical_target"])),
+                _table_uri(payload["logical_target"]),
+                _table_uri(payload["physical_target"]),
                 str(payload["idempotency_key"]),
+                context.envelope.resource_limits,
+                context.credentials.values,
             )
         )
         return ProcessResult(receipt.to_wire())
@@ -162,9 +194,11 @@ class TemporalProcessHandler:
         receipt = store.commit(
             ManagedCommitRequest(
                 str(payload["operation_id"]),
-                TableURI(str(payload["logical_target"])),
+                _table_uri(payload["logical_target"]),
                 str(payload["stage_id"]),
                 str(payload["idempotency_key"]),
+                context.envelope.resource_limits,
+                context.credentials.values,
             )
         )
         return ProcessResult(receipt.to_wire())
@@ -178,10 +212,11 @@ class TemporalProcessHandler:
         result = store.readback(
             ManagedReadbackRequest(
                 str(payload["operation_id"]),
-                TableURI(str(payload["logical_target"])),
+                _table_uri(payload["logical_target"]),
                 str(payload["snapshot_id"]),
                 str(payload["snapshot_reference"]),
                 context.envelope.resource_limits,
+                context.credentials.values,
             )
         )
         if result.table is None:
@@ -198,8 +233,9 @@ class TemporalProcessHandler:
         receipt = store.abort(
             ManagedAbortRequest(
                 str(payload["operation_id"]),
-                TableURI(str(payload["logical_target"])),
+                _table_uri(payload["logical_target"]),
                 str(payload["stage_id"]),
+                context.credentials.values,
             )
         )
         return ProcessResult(receipt.to_wire())
@@ -215,9 +251,22 @@ def temporal_registration(
     handler: TemporalProcessHandler,
 ) -> ConnectorRegistration:
     try:
-        capabilities = PORTABLE_PROVIDER_CAPABILITIES[provider]
+        available = PORTABLE_PROVIDER_CAPABILITIES[provider]
     except KeyError as exc:
         raise ValueError(f"unsupported temporal provider: {provider}") from exc
+    capabilities: dict[str, str] = {}
+    if handler.has_executor:
+        capabilities.update(
+            (name, version)
+            for name, version in available.items()
+            if name in _PORTABLE
+        )
+    if handler.has_store:
+        capabilities.update(
+            (name, version)
+            for name, version in available.items()
+            if name in _LIFECYCLE
+        )
     return ConnectorRegistration(
         connector_id=provider,
         connector_version="0.1.0",
@@ -244,6 +293,12 @@ def _closed(
             {"unknown": sorted(unknown), "missing": sorted(missing)},
         )
     return dict(payload)
+
+
+def _table_uri(value: object) -> TableURI:
+    if isinstance(value, Mapping):
+        return TableURI.from_wire(value)
+    return TableURI(str(value))
 
 
 __all__ = [

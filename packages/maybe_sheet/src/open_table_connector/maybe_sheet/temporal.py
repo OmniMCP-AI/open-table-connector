@@ -197,8 +197,8 @@ class MaybeSheetTemporalExecutor:
                 "MaybeSheet did not prove the requested temporal capability",
                 {"capability": required},
             )
-        credentials = None
-        if request.credential_reference is not None:
+        credentials = dict(request.credential_values)
+        if request.credential_reference is not None and not credentials:
             if self._credential_resolver is None:
                 raise TemporalExtensionError(
                     TemporalErrorCode.PROTOCOL_INVALID,
@@ -289,7 +289,9 @@ class MaybeSheetManagedTemporalStore:
                 "logical_target": request.logical_target.to_wire(),
                 "physical_target": request.physical_target.to_wire(),
                 "idempotency_key": request.idempotency_key,
+                "resource_bounds": request.resource_bounds.to_wire(),
             },
+            timeout=request.resource_bounds.max_duration_ms / 1000,
         )
         receipt = _receipt(response, ManagedStageReceipt)
         return validate_stage_retry(receipt, request)
@@ -303,7 +305,9 @@ class MaybeSheetManagedTemporalStore:
                 "logical_target": request.logical_target.to_wire(),
                 "stage_id": request.stage_id,
                 "idempotency_key": request.idempotency_key,
+                "resource_bounds": request.resource_bounds.to_wire(),
             },
+            timeout=request.resource_bounds.max_duration_ms / 1000,
         )
         receipt = _receipt(response, ManagedCommitReceipt)
         if (
@@ -455,6 +459,15 @@ class MaybeSheetManagedTemporalStore:
             raise PermissionError("Arrow artifact ownership is not trusted")
         if stat.S_IMODE(metadata.st_mode) & 0o077:
             raise PermissionError("Arrow artifact permissions are too broad")
+        if (
+            metadata.st_size > request.resource_bounds.max_bytes
+            or request.artifact.size_bytes > request.resource_bounds.max_bytes
+        ):
+            raise TemporalExtensionError(
+                TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
+                "MaybeSheet Arrow artifact exceeds max_bytes",
+                {"bytes": max(metadata.st_size, request.artifact.size_bytes)},
+            )
         descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         with os.fdopen(descriptor, "rb", closefd=True) as stream:
             current = os.fstat(stream.fileno())
@@ -475,6 +488,12 @@ class MaybeSheetManagedTemporalStore:
                 "Arrow artifact is not an IPC stream",
                 {},
             ) from exc
+        if table.num_rows > request.resource_bounds.max_rows:
+            raise TemporalExtensionError(
+                TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
+                "MaybeSheet Arrow artifact exceeds max_rows",
+                {"rows": table.num_rows},
+            )
         return data, table, path
 
 

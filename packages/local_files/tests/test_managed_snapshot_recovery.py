@@ -110,10 +110,11 @@ def test_managed_targets_reject_traversal_and_symlink_namespaces(tmp_path: Path)
                 request.operation_id,
                 request.artifact,
                 request.descriptor_hash,
-                traversal,
-                traversal,
-                request.idempotency_key,
-            )
+                    traversal,
+                    traversal,
+                    request.idempotency_key,
+                    request.resource_bounds,
+                )
         )
     assert raised.value.code is TemporalErrorCode.PROTOCOL_INVALID
 

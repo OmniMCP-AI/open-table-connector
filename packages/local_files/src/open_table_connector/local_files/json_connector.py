@@ -153,7 +153,15 @@ def _json_path(uri: TableURI) -> tuple[Path, LocalFormat]:
 
 def _read_json_path(path: Path, format_name: LocalFormat, max_bytes: int | None):
     try:
-        data = path.read_bytes()
+        size = path.stat().st_size
+        if max_bytes is not None and size > max_bytes:
+            raise ConnectorError(
+                ConnectorErrorCode.INVALID_URI,
+                "JSON input exceeds the configured byte limit",
+                {"size": size, "max_bytes": max_bytes},
+            )
+        with path.open("rb") as stream:
+            data = stream.read() if max_bytes is None else stream.read(max_bytes + 1)
     except OSError as exc:
         raise ConnectorError(
             ConnectorErrorCode.EXECUTION_FAILED,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ from open_table_connector.timeseries import (
     TemporalExecutionRequest,
     calendar_bucket_start,
     fixed_bucket_start,
+    temporal_descriptor_hash,
 )
 
 from packages.timeseries.tests.fixtures import (
@@ -29,7 +31,10 @@ from packages.timeseries.tests.fixtures import (
 
 
 def execute(source, operation):
-    plan = portable(operation)
+    plan = replace(
+        portable(operation),
+        descriptor_hash=temporal_descriptor_hash(source.descriptor, source.table.schema),
+    )
     return PolarsTemporalExecutor(source).execute(
         TemporalExecutionRequest(TARGET, plan, None, "bucket-test", None)
     ).table

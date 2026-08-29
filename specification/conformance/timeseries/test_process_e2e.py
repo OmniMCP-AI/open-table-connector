@@ -37,7 +37,8 @@ def test_ots_shaped_hello_and_execute_return_verified_arrow(tmp_path, semantic_c
     handler = TemporalProcessHandler(
         executor=PolarsTemporalExecutor(MemoryTemporalSource()), store=None
     )
-    registry = ConnectorProcessRegistry((temporal_registration("json", handler),))
+    registration = temporal_registration("json", handler)
+    registry = ConnectorProcessRegistry((registration,))
     artifacts = ArtifactStore(tmp_path / "artifacts")
     server = ConnectorProcessServer(registry, artifacts, CredentialResolver())
     hello = envelope(
@@ -45,7 +46,7 @@ def test_ots_shaped_hello_and_execute_return_verified_arrow(tmp_path, semantic_c
         message_id="hello",
         payload={
             "portable_plan_version": "otc.portable-temporal-plan/v1",
-            "capability_versions": {"timeseries.scan.range": "1.0"},
+            "capability_versions": dict(registration.capability_versions),
         },
     )
     hello_response = server.handle(hello)
@@ -80,7 +81,8 @@ def test_ots_shaped_stage_commit_readback_and_abort(tmp_path) -> None:
     handler = TemporalProcessHandler(
         executor=CsvTemporalExecutor(descriptor(), store), store=store
     )
-    registry = ConnectorProcessRegistry((temporal_registration("csv", handler),))
+    registration = temporal_registration("csv", handler)
+    registry = ConnectorProcessRegistry((registration,))
     server = ConnectorProcessServer(registry, artifacts, CredentialResolver())
 
     def request(operation, message_id, payload, refs=()):
@@ -99,7 +101,7 @@ def test_ots_shaped_stage_commit_readback_and_abort(tmp_path) -> None:
             "lifecycle-hello",
             {
                 "portable_plan_version": "otc.portable-temporal-plan/v1",
-                "capability_versions": {"storage.stage": "1.0"},
+                    "capability_versions": dict(registration.capability_versions),
             },
         )
     )

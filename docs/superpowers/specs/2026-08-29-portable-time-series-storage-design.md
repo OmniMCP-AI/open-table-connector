@@ -342,16 +342,40 @@ Supported operations are `hello`, `describe`, `execute`, `stage`, `commit`,
 `PortableTemporalPlan`. The process never accepts a Timescale SQL string as a
 portable operation.
 
-The `hello` exchange pins process protocol, connector, contract, capability,
-and portable plan versions before any physical target is opened. Each
-operation has a unique session, mandatory maximum rows, bytes, and duration,
-and a cancellation token. Standard output contains frames only. Standard
+The `hello` exchange pins process protocol, connector, contract, portable plan,
+and the exact requested subset of capability versions before any physical
+target is opened. Later operations are authorized only against that negotiated
+subset. The operation kind itself implies a required exact capability;
+`execute` additionally validates every capability named by the portable plan,
+so omitting a claim from the plan cannot broaden authority. Each operation has
+a unique session, mandatory maximum rows, bytes, and duration, and a
+cancellation token. `hello` and `cancel` are handled synchronously while work
+may execute concurrently; a result completed after cancellation is discarded
+and never emitted as success. Standard output contains frames only. Standard
 error is bounded, redacted diagnostic text and is never parsed as a receipt.
 
-Credential values never appear in frames. The supervisor resolves a
-deployment-owned credential reference into a scoped environment or file
-descriptor for the child process. The child cannot request an arbitrary secret
-by name.
+Credential values never appear in frames or bootstrap configuration. A
+deployment-owned resolver converts the authorized opaque reference into a
+scoped lease supplied only to the selected execute or lifecycle request. The
+lease is cleared after dispatch, and the child cannot request an arbitrary
+secret by name.
+
+The distributed `otc-process` executable requires an absolute
+`OTC_PROCESS_CONFIG` path. That owned, non-symlink, non-group-writable, and
+non-world-writable file is a closed `otc.process-bootstrap/v1` document binding
+exactly one built-in provider, target, temporal descriptor, managed mode, and
+provider-specific options. Unknown keys, providers, target schemes, duplicate
+JSON keys, and an empty registry fail closed. Arbitrary Python module imports
+are not a provider-registration mechanism. Deployments needing credentials
+pin a small wrapper that constructs `run_server` with their own resolver; the
+bootstrap document remains non-secret.
+
+An OTS deployment admitting this process also pins the executable and the
+exact bytes of its deployment-owned offline-evidence file. The evidence file
+must be an owned regular file that is not group/world writable. The process
+advertisement, OTS binding implementation, pinned offline record, required
+configured-live record, and workload requirements are all intersected; no
+single evidence source can widen another.
 
 The operation model is transport-neutral. A later Arrow Flight carrier may
 map execution to Flight streams and managed operations to versioned actions,

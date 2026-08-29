@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import threading
 
 import pytest
 
@@ -76,10 +77,9 @@ def test_hello_pins_versions_before_dispatch_or_credentials(tmp_path: Path) -> N
         "connector_version": "1.2.3",
         "contract_version": "1.0",
         "portable_plan_version": "otc.portable-temporal-plan/v1",
-        "capability_versions": {
-            "storage.abort": "1.0",
-            "timeseries.scan.range": "1.0",
-        },
+            "capability_versions": {
+                "timeseries.scan.range": "1.0",
+            },
     }
     assert handler.calls == []
     assert resolver.resolve_count == 0
@@ -91,7 +91,13 @@ def test_operation_requires_hello_capability_and_disposes_credentials(tmp_path: 
         message_id="message-2",
         operation="execute",
         credential_reference="credential://fixture/main",
-        payload={"target": "json:///ticks.json", "portable_plan": {}},
+        payload={
+            "target": "json:///ticks.json",
+            "portable_plan": {
+                "required_capabilities": ["timeseries.scan.range/1.0"],
+                "operation": {"kind": "scan_range"},
+            },
+        },
     )
     with pytest.raises(ProcessError, match="hello"):
         instance.handle(execute)
@@ -107,7 +113,13 @@ def test_operation_requires_hello_capability_and_disposes_credentials(tmp_path: 
         message_id="message-3",
         operation="execute",
         capability_version="9.0",
-        payload={"target": "json:///ticks.json", "portable_plan": {}},
+        payload={
+            "target": "json:///ticks.json",
+            "portable_plan": {
+                "required_capabilities": ["timeseries.scan.range/9.0"],
+                "operation": {"kind": "scan_range"},
+            },
+        },
     )
     with pytest.raises(ProcessError, match="capability"):
         instance.handle(bad_capability)
@@ -139,3 +151,70 @@ def test_message_ids_are_unique_and_cancel_is_a_session_transition(tmp_path: Pat
                 payload={},
             )
         )
+
+
+def test_cancel_interrupts_an_in_flight_dispatch_and_suppresses_success(tmp_path: Path) -> None:
+    started = threading.Event()
+    released = threading.Event()
+    errors = []
+
+    class BlockingHandler:
+        def handle(self, context):
+            del context
+            started.set()
+            assert released.wait(1)
+            return ProcessResult({"late": "success"})
+
+        def abort_session(self, session_id):
+            assert session_id == "session-1"
+            released.set()
+
+    registration = ConnectorRegistration(
+        connector_id="fixture",
+        connector_version="1.2.3",
+        contract_version="1.0",
+        portable_plan_version="otc.portable-temporal-plan/v1",
+        capability_versions={"timeseries.scan.range": "1.0"},
+        handler=BlockingHandler(),
+    )
+    instance = ConnectorProcessServer(
+        ConnectorProcessRegistry((registration,)),
+        ArtifactStore(tmp_path),
+        CredentialResolver(),
+    )
+    hello(instance)
+    execute = envelope(
+        message_id="message-running",
+        operation="execute",
+        payload={
+            "target": "json:///ticks.json",
+            "portable_plan": {
+                "required_capabilities": [],
+                "operation": {"kind": "scan_range"},
+            },
+        },
+    )
+
+    def run_operation():
+        try:
+            instance.handle(execute)
+        except ProcessError as error:
+            errors.append(error)
+
+    worker = threading.Thread(target=run_operation)
+    worker.start()
+    assert started.wait(1)
+    cancellation = instance.handle(
+        envelope(
+            message_id="message-cancel-running",
+            session_id="cancel-control",
+            operation="cancel",
+            payload={"target_session_id": "session-1"},
+        )
+    )
+    worker.join(1)
+
+    assert cancellation.payload["result"]["cancelled"] is True
+    assert not worker.is_alive()
+    assert len(errors) == 1
+    assert errors[0].code == "execution_failed"

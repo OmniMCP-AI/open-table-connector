@@ -1,6 +1,7 @@
 """Versioned local process transport for connector isolation."""
 
 from .artifacts import ArtifactStore
+from .bootstrap import build_process_runtime
 from .credentials import CredentialLease, CredentialResolver
 from .envelope import (
     ConnectorProcessEnvelope,
@@ -27,6 +28,7 @@ from .timeseries import (
 
 __all__ = [
     "ArtifactStore",
+    "build_process_runtime",
     "BoundedDiagnostics",
     "ConnectorProcessEnvelope",
     "ConnectorProcessRegistry",

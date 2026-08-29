@@ -10,10 +10,13 @@ from open_table_connector.timeseries import (
     ArrowArtifactReference,
     ManagedCommitRequest,
     ManagedStageRequest,
+    ResourceBounds,
     temporal_descriptor_hash,
 )
 
 from packages.timeseries.tests.fixtures import descriptor, ticks_table
+
+BOUNDS = ResourceBounds(10_000, 64 * 1024 * 1024, 30_000)
 
 
 def managed_uri(path: Path) -> TableURI:
@@ -52,6 +55,7 @@ def stage_request(
         logical_target=target,
         physical_target=target,
         idempotency_key=idempotency_key,
+        resource_bounds=BOUNDS,
     )
 
 
@@ -61,4 +65,5 @@ def commit_request(stage, *, operation_id: str = "commit-1") -> ManagedCommitReq
         logical_target=stage.logical_target,
         stage_id=stage.stage_id,
         idempotency_key=stage.idempotency_key,
+        resource_bounds=BOUNDS,
     )

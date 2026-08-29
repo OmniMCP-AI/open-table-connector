@@ -127,10 +127,17 @@ def test_recording_lifecycle_uses_advisory_lock_upsert_timeout_and_fresh_connect
             target,
             target,
             "idem-1",
+            ResourceBounds(100, 10_000_000, 500),
         )
     )
     committed = store.commit(
-        ManagedCommitRequest("commit-1", target, staged.stage_id, "idem-1")
+        ManagedCommitRequest(
+            "commit-1",
+            target,
+            staged.stage_id,
+            "idem-1",
+            ResourceBounds(100, 10_000_000, 500),
+        )
     )
     readback = store.readback(
         ManagedReadbackRequest(
@@ -187,7 +194,15 @@ def test_ambiguous_commit_is_reconciled_without_replaying_the_write(tmp_path) ->
         descriptor(),
         connection_factory=factory,
     )
-    result = store.commit(ManagedCommitRequest("commit-2", target, stage_id, "idem-2"))
+    result = store.commit(
+        ManagedCommitRequest(
+            "commit-2",
+            target,
+            stage_id,
+            "idem-2",
+            ResourceBounds(100, 10_000_000, 500),
+        )
+    )
 
     assert result.snapshot_id == snapshot_id
     assert len(factory.connections) == 2

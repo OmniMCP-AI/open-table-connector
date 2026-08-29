@@ -95,12 +95,14 @@ def test_managed_requests_bind_target_stage_snapshot_and_idempotency() -> None:
         logical_target=target,
         physical_target=target,
         idempotency_key="idem-1",
+        resource_bounds=ResourceBounds(10, 1024, 1000),
     )
     commit = ManagedCommitRequest(
         operation_id="commit-1",
         logical_target=target,
         stage_id="stage:" + "a" * 64,
         idempotency_key=stage.idempotency_key,
+        resource_bounds=ResourceBounds(10, 1024, 1000),
     )
     readback = ManagedReadbackRequest(
         operation_id="readback-1",
@@ -132,6 +134,7 @@ def test_stage_retry_rejects_same_key_with_different_content() -> None:
         logical_target=target,
         physical_target=target,
         idempotency_key="idem-1",
+        resource_bounds=ResourceBounds(10, 1024, 1000),
     )
     existing = ManagedStageReceipt(
         schema_version="otc.managed-stage-receipt/v1",

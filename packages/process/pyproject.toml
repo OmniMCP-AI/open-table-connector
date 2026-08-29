@@ -10,6 +10,10 @@ requires-python = ">=3.11"
 dependencies = [
   "open-table-connector-contract==0.1.0",
   "open-table-connector-timeseries==0.1.0",
+  "open-table-connector-local-files==0.1.0",
+  "open-table-connector-maybe-sheet==0.1.0",
+  "open-table-connector-postgres==0.1.0",
+  "open-table-connector-sqlite==0.1.0",
   "pyarrow>=14,<20",
 ]
 
@@ -19,6 +23,10 @@ otc-process = "open_table_connector.process.__main__:main"
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
 open-table-connector-timeseries = { workspace = true }
+open-table-connector-local-files = { workspace = true }
+open-table-connector-maybe-sheet = { workspace = true }
+open-table-connector-postgres = { workspace = true }
+open-table-connector-sqlite = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]

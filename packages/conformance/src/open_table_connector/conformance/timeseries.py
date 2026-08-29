@@ -93,6 +93,7 @@ def assert_managed_lifecycle(
         case.stage_request.logical_target,
         stage.stage_id,
         stage.idempotency_key,
+        case.resource_bounds,
     )
     commit = store.commit(commit_request)
     assert commit.visibility is VisibilityGuarantee.ATOMIC

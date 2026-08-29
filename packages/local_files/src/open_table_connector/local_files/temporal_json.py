@@ -197,8 +197,16 @@ def _read_direct(
             exc.message,
             exc.safe_details,
         ) from exc
-    data = path.read_bytes()
-    if len(data) > request.plan.resource_bounds.max_bytes:
+    max_bytes = request.plan.resource_bounds.max_bytes
+    if path.stat().st_size > max_bytes:
+        raise TemporalExtensionError(
+            TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
+            "JSON source exceeds max_bytes",
+            {"bytes": path.stat().st_size},
+        )
+    with path.open("rb") as stream:
+        data = stream.read(max_bytes + 1)
+    if len(data) > max_bytes:
         raise TemporalExtensionError(
             TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
             "JSON source exceeds max_bytes",

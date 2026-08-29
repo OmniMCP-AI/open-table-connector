@@ -52,6 +52,7 @@ def stage(store, artifact_root: Path, target: TableURI, *, operation_id="stage-1
             logical_target=target,
             physical_target=target,
             idempotency_key=idem,
+            resource_bounds=operations()[0].resource_bounds,
         )
     )
 
@@ -63,6 +64,7 @@ def commit(store, staged, *, operation_id="commit-1"):
             staged.logical_target,
             staged.stage_id,
             staged.idempotency_key,
+            operations()[0].resource_bounds,
         )
     )
 

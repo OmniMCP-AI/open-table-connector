@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import PurePosixPath
+from types import MappingProxyType
 from typing import Mapping, Protocol, runtime_checkable
 
 import pyarrow as pa
@@ -111,6 +112,7 @@ class TemporalExecutionRequest:
     credential_reference: str | None
     operation_id: str
     snapshot_reference: str | None
+    credential_values: Mapping[str, str] = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.target, TableURI):
@@ -122,6 +124,13 @@ class TemporalExecutionRequest:
             value = getattr(self, field)
             if value is not None:
                 object.__setattr__(self, field, _text(value, field))
+        if not isinstance(self.credential_values, Mapping):
+            raise TypeError("credential_values must be a mapping")
+        object.__setattr__(
+            self,
+            "credential_values",
+            MappingProxyType({str(key): str(value) for key, value in self.credential_values.items()}),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +160,8 @@ class ManagedStageRequest:
     logical_target: TableURI
     physical_target: TableURI
     idempotency_key: str
+    resource_bounds: ResourceBounds
+    credential_values: Mapping[str, str] = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "operation_id", _text(self.operation_id, "operation_id"))
@@ -161,6 +172,9 @@ class ManagedStageRequest:
             if not isinstance(getattr(self, field), TableURI):
                 raise TypeError(f"{field} must be a TableURI")
         object.__setattr__(self, "idempotency_key", _text(self.idempotency_key, "idempotency_key"))
+        if not isinstance(self.resource_bounds, ResourceBounds):
+            raise TypeError("resource_bounds must be ResourceBounds")
+        _bind_credentials(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,6 +183,8 @@ class ManagedCommitRequest:
     logical_target: TableURI
     stage_id: str
     idempotency_key: str
+    resource_bounds: ResourceBounds
+    credential_values: Mapping[str, str] = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "operation_id", _text(self.operation_id, "operation_id"))
@@ -176,6 +192,9 @@ class ManagedCommitRequest:
             raise TypeError("logical_target must be a TableURI")
         object.__setattr__(self, "stage_id", _stage(self.stage_id))
         object.__setattr__(self, "idempotency_key", _text(self.idempotency_key, "idempotency_key"))
+        if not isinstance(self.resource_bounds, ResourceBounds):
+            raise TypeError("resource_bounds must be ResourceBounds")
+        _bind_credentials(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,6 +204,7 @@ class ManagedReadbackRequest:
     snapshot_id: str
     snapshot_reference: str
     resource_bounds: ResourceBounds
+    credential_values: Mapping[str, str] = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "operation_id", _text(self.operation_id, "operation_id"))
@@ -198,6 +218,7 @@ class ManagedReadbackRequest:
         )
         if not isinstance(self.resource_bounds, ResourceBounds):
             raise TypeError("resource_bounds must be ResourceBounds")
+        _bind_credentials(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,12 +243,25 @@ class ManagedAbortRequest:
     operation_id: str
     logical_target: TableURI
     stage_id: str
+    credential_values: Mapping[str, str] = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "operation_id", _text(self.operation_id, "operation_id"))
         if not isinstance(self.logical_target, TableURI):
             raise TypeError("logical_target must be a TableURI")
         object.__setattr__(self, "stage_id", _stage(self.stage_id))
+        _bind_credentials(self)
+
+
+def _bind_credentials(request: object) -> None:
+    values = getattr(request, "credential_values")
+    if not isinstance(values, Mapping):
+        raise TypeError("credential_values must be a mapping")
+    object.__setattr__(
+        request,
+        "credential_values",
+        MappingProxyType({str(key): str(value) for key, value in values.items()}),
+    )
 
 
 def validate_stage_retry(

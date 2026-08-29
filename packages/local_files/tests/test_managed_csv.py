@@ -15,12 +15,45 @@ from open_table_connector.timeseries import (
     ResourceBounds,
     TemporalErrorCode,
     TemporalExtensionError,
+    TimestampPrecision,
     VisibilityGuarantee,
 )
 
 from packages.timeseries.tests.fixtures import descriptor, ticks_table
 
 from .managed_fixtures import commit_request, stage_request
+
+
+@pytest.mark.parametrize(
+    ("unit", "precision", "scale"),
+    [
+        ("s", TimestampPrecision.SECOND, 1),
+        ("ms", TimestampPrecision.MILLISECOND, 1_000),
+        ("us", TimestampPrecision.MICROSECOND, 1_000_000),
+        ("ns", TimestampPrecision.NANOSECOND, 1_000_000_000),
+    ],
+)
+def test_observed_range_normalizes_every_arrow_timestamp_unit(
+    tmp_path: Path,
+    unit: str,
+    precision: TimestampPrecision,
+    scale: int,
+) -> None:
+    temporal_descriptor = replace(descriptor(), precision=precision)
+    store = CsvManagedTemporalStore(tmp_path / unit, temporal_descriptor)
+    table = pa.table(
+        {
+            "ts": pa.array(
+                [1_000_000_000 * scale, 1_000_000_001 * scale],
+                type=pa.timestamp(unit, tz="UTC"),
+            )
+        }
+    )
+
+    observed = store.snapshots._observed_range(table)
+    assert observed is not None
+    assert observed.start == "2001-09-09T01:46:40.000000000Z"
+    assert observed.end == "2001-09-09T01:46:41.000000000Z"
 
 
 def test_stage_is_invisible_and_commit_publishes_immutable_csv(tmp_path: Path) -> None:

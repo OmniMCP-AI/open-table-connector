@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import time
 from typing import Iterator, Mapping
 from urllib.parse import parse_qsl, unquote, urlsplit
 import uuid
@@ -56,6 +57,16 @@ _POINTER_FIELDS = {
 }
 
 
+def _check_deadline(started_ns: int, bounds: ResourceBounds) -> None:
+    elapsed_ms = (time.monotonic_ns() - started_ns) // 1_000_000
+    if elapsed_ms > bounds.max_duration_ms:
+        raise TemporalExtensionError(
+            TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
+            "managed operation exceeded max_duration_ms",
+            {"elapsed_ms": elapsed_ms},
+        )
+
+
 class ManagedSnapshotStore:
     """Own atomic publication while delegating only physical format encoding."""
 
@@ -96,6 +107,13 @@ class ManagedSnapshotStore:
     def stage_artifact(self, request: ManagedStageRequest) -> ManagedStageReceipt:
         if not isinstance(request, ManagedStageRequest):
             raise TypeError("request must be a ManagedStageRequest")
+        started = time.monotonic_ns()
+        if request.artifact.size_bytes > request.resource_bounds.max_bytes:
+            raise TemporalExtensionError(
+                TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
+                "stage artifact exceeds max_bytes",
+                {"bytes": request.artifact.size_bytes},
+            )
         if self._physical_target_validator is not None:
             self._physical_target_validator(request.physical_target)
         layout = self._layout(request.logical_target, create=True)
@@ -107,6 +125,13 @@ class ManagedSnapshotStore:
             if existing is not None:
                 return validate_stage_retry(existing, request)
             artifact_bytes, table = self._read_artifact(request)
+            if table.num_rows > request.resource_bounds.max_rows:
+                raise TemporalExtensionError(
+                    TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
+                    "stage artifact exceeds max_rows",
+                    {"rows": table.num_rows},
+                )
+            _check_deadline(started, request.resource_bounds)
             actual_descriptor = temporal_descriptor_hash(self.descriptor, table.schema)
             if actual_descriptor != request.descriptor_hash:
                 raise TemporalExtensionError(
@@ -146,6 +171,7 @@ class ManagedSnapshotStore:
     def publish_snapshot(self, request: ManagedCommitRequest) -> ManagedCommitReceipt:
         if not isinstance(request, ManagedCommitRequest):
             raise TypeError("request must be a ManagedCommitRequest")
+        started = time.monotonic_ns()
         layout = self._layout(request.logical_target, create=True)
         with self._locked(layout):
             self._recover_unlocked(layout)
@@ -186,6 +212,16 @@ class ManagedSnapshotStore:
             stage_path = layout / "stages" / f"{request.stage_id[6:]}.arrow"
             table = self._read_staged(stage_path, stage.artifact_hash)
             snapshot_bytes = self._encode_snapshot(table)
+            if (
+                table.num_rows > request.resource_bounds.max_rows
+                or len(snapshot_bytes) > request.resource_bounds.max_bytes
+            ):
+                raise TemporalExtensionError(
+                    TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
+                    "commit snapshot exceeds resource bounds",
+                    {"rows": table.num_rows, "bytes": len(snapshot_bytes)},
+                )
+            _check_deadline(started, request.resource_bounds)
             snapshot_id = _sha256(snapshot_bytes)
             snapshot_reference = f"snapshots/{snapshot_id[7:]}.{self.extension}"
             snapshot_path = layout / snapshot_reference
@@ -247,6 +283,7 @@ class ManagedSnapshotStore:
         snapshot_reference: str,
         bounds: ResourceBounds,
     ) -> pa.Table:
+        started = time.monotonic_ns()
         path = self.resolve_snapshot(target, snapshot_reference)
         size = path.stat().st_size
         if size > bounds.max_bytes:
@@ -276,12 +313,20 @@ class ManagedSnapshotStore:
                 "snapshot exceeds max_rows",
                 {"rows": table.num_rows, "max_rows": bounds.max_rows},
             )
+        _check_deadline(started, bounds)
         return table
 
     def readback_snapshot(self, request: ManagedReadbackRequest) -> ManagedReadbackResult:
         if not isinstance(request, ManagedReadbackRequest):
             raise TypeError("request must be a ManagedReadbackRequest")
+        started = time.monotonic_ns()
         path = self.resolve_snapshot(request.logical_target, request.snapshot_reference)
+        if path.stat().st_size > request.resource_bounds.max_bytes:
+            raise TemporalExtensionError(
+                TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
+                "readback snapshot exceeds max_bytes",
+                {"bytes": path.stat().st_size},
+            )
         physical = self._secure_read(path)
         physical_hash = _sha256(physical)
         reference_hash = "sha256:" + _REFERENCE_RE.fullmatch(
@@ -305,6 +350,7 @@ class ManagedSnapshotStore:
                 "readback Arrow result exceeds max_bytes",
                 {"bytes": len(arrow)},
             )
+        _check_deadline(started, request.resource_bounds)
         receipt = ManagedReadbackReceipt(
             schema_version="otc.managed-readback-receipt/v1",
             operation_id=request.operation_id,
@@ -430,6 +476,12 @@ class ManagedSnapshotStore:
             os.close(descriptor)
 
     def _read_artifact(self, request: ManagedStageRequest) -> tuple[bytes, pa.Table]:
+        if request.artifact.size_bytes > request.resource_bounds.max_bytes:
+            raise TemporalExtensionError(
+                TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
+                "stage artifact exceeds max_bytes",
+                {"bytes": request.artifact.size_bytes},
+            )
         expected = f"sha256/{request.artifact.sha256[7:]}.arrow"
         if request.artifact.relative_path != expected:
             raise TemporalExtensionError(
@@ -618,6 +670,7 @@ class ManagedSnapshotStore:
                 logical_target=TableURI(pointer["logical_target"]),
                 stage_id=pointer["stage_id"],
                 idempotency_key=pointer["idempotency_key"],
+                resource_bounds=ResourceBounds(1, 1, 1),
             )
             return self._commit_receipt(request, pointer)
         return None
@@ -716,7 +769,16 @@ class ManagedSnapshotStore:
                 "readback event-time field contains null values",
                 {},
             )
-        casted = values.cast(pa.int64()).to_pylist()
+        if not pa.types.is_timestamp(values.type):
+            raise TemporalExtensionError(
+                TemporalErrorCode.VISIBILITY_INCOMPLETE,
+                "readback event-time field is not a timestamp",
+                {},
+            )
+        multiplier = {"s": 1_000_000_000, "ms": 1_000_000, "us": 1_000, "ns": 1}[
+            values.type.unit
+        ]
+        casted = [value * multiplier for value in values.cast(pa.int64()).to_pylist()]
         return TimeRange(_format_ns(min(casted)), _format_ns(max(casted)))
 
     def _now(self) -> str:

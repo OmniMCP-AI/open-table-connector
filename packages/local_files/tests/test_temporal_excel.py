@@ -21,7 +21,7 @@ from .test_temporal_csv import operations
 @pytest.mark.parametrize("plan", operations())
 def test_direct_excel_matches_portable_arrow_evaluation(tmp_path: Path, plan) -> None:
     path = value_workbook(tmp_path / "ticks.xlsx")
-    target = TableURI(f"xlsx://{path.as_posix()}#sheet=Ticks")
+    target = TableURI(f"excel://{path.as_posix()}#sheet=Ticks")
     request = TemporalExecutionRequest(
         target,
         plan,
@@ -38,7 +38,7 @@ def test_direct_excel_matches_portable_arrow_evaluation(tmp_path: Path, plan) ->
 
 def test_direct_excel_rejects_formula_in_governed_worksheet(tmp_path: Path) -> None:
     path = formula_workbook(tmp_path / "formula.xlsx")
-    target = TableURI(f"xlsx://{path.as_posix()}#sheet=Ticks")
+    target = TableURI(f"excel://{path.as_posix()}#sheet=Ticks")
     request = TemporalExecutionRequest(target, operations()[0], None, "formula", None)
 
     with pytest.raises(TemporalExtensionError, match="formula"):

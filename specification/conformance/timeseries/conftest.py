@@ -71,6 +71,7 @@ def put_artifact(root: Path, table: pa.Table | None = None) -> ArrowArtifactRefe
 
 def lifecycle_case(artifact_root: Path, target: TableURI) -> ManagedLifecycleCase:
     table = ticks_table()
+    bounds = operations()[0].resource_bounds
     stage = ManagedStageRequest(
         "conformance-stage",
         put_artifact(artifact_root, table),
@@ -78,13 +79,14 @@ def lifecycle_case(artifact_root: Path, target: TableURI) -> ManagedLifecycleCas
         target,
         target,
         "conformance-idempotency",
+        bounds,
     )
     return ManagedLifecycleCase(
         stage_request=stage,
         commit_operation_id="conformance-commit",
         readback_operation_id="conformance-readback",
         abort_operation_id="conformance-abort",
-        resource_bounds=operations()[0].resource_bounds,
+        resource_bounds=bounds,
     )
 
 
@@ -113,6 +115,7 @@ def provider_semantic_case(request, semantic_case, tmp_path):
                 target,
                 staged.stage_id,
                 staged.idempotency_key,
+                lifecycle.resource_bounds,
             )
         )
         snapshot_reference = committed.snapshot_reference
@@ -137,7 +140,7 @@ def provider_semantic_case(request, semantic_case, tmp_path):
         )
     elif provider == "excel":
         path = value_workbook(tmp_path / "ticks.xlsx")
-        target = TableURI(f"xlsx://{path.as_posix()}#sheet=Ticks")
+        target = TableURI(f"excel://{path.as_posix()}#sheet=Ticks")
         executor = ExcelTemporalExecutor(descriptor(), worksheet="Ticks")
     else:
         target = TableURI("maybe://document/ticks")
