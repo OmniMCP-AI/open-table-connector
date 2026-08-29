@@ -1,6 +1,7 @@
 """Neutral local-files Connector package."""
 
 from .csv_connector import CsvConnector, CsvReadOptions, CsvTableReadRequest
+from .temporal_csv import CsvManagedTemporalStore, CsvTemporalExecutor
 from .excel_connector import ExcelConnector, ExcelReadOptions, ExcelTableReadRequest
 from .excel_reader import read_excel_arrow
 from .identity import CONNECTOR_IDENTITY
@@ -16,8 +17,10 @@ __all__ = [
     "CAPABILITY_MANIFEST",
     "CONNECTOR_IDENTITY",
     "CsvConnector",
+    "CsvManagedTemporalStore",
     "CsvReadOptions",
     "CsvTableReadRequest",
+    "CsvTemporalExecutor",
     "ExcelConnector",
     "ExcelReadOptions",
     "ExcelTableReadRequest",
