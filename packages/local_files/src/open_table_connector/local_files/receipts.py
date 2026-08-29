@@ -10,6 +10,7 @@ from typing import Any, Mapping
 import pyarrow as pa
 
 from open_table_connector.contract import (
+    BaseConvention,
     CapabilityIdentity,
     NeutralReceipt,
     SheetConvention,
@@ -35,12 +36,13 @@ def make_receipt(
     path: Path,
     uri: TableURI,
     parameters: Mapping[str, Any],
-    coordinate_convention: SheetConvention | None = None,
+    coordinate_convention=None,
     capability: CapabilityIdentity,
     connector=CONNECTOR_IDENTITY,
     read_capability: CapabilityIdentity = TABLE_READ_ARROW_CAPABILITY,
     sheet: str = "data",
     header_row: int = 1,
+    mode: TableMode = TableMode.SHEET,
 ) -> NeutralReceipt:
     source = source_revision(path)
     schema = arrow_schema_fingerprint(table.schema)
@@ -56,17 +58,22 @@ def make_receipt(
         content_fingerprint=content,
         parameters=parameters,
     )
-    convention = coordinate_convention or SheetConvention(
-        sheet=sheet,
-        header_rows=header_row,
-        first_data_row=header_row + 1,
-    )
+    if coordinate_convention is not None:
+        convention = coordinate_convention
+    elif mode is TableMode.BASE:
+        convention = BaseConvention(ordinal_snapshot_id=source)
+    else:
+        convention = SheetConvention(
+            sheet=sheet,
+            header_rows=header_row,
+            first_data_row=header_row + 1,
+        )
     return NeutralReceipt(
         connector=connector,
         capability=capability,
         operation_id=operation,
         safe_uri=uri,
-        mode=TableMode.SHEET,
+        mode=mode,
         source_revision=source,
         schema_fingerprint=schema,
         content_fingerprint=content,

@@ -17,6 +17,10 @@ import pyarrow as pa
 
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode, ResourceLimits
 from open_table_connector.local_files import (
+    encode_json_table,
+    encode_jsonl_table,
+    parse_json_table,
+    parse_jsonl_table,
     read_excel_arrow,
     read_markdown_arrow,
     write_excel,
@@ -30,6 +34,8 @@ _MARKDOWN_SUFFIXES = {".table", ".md", ".markdown"}
 _LOCAL_FORMAT_SCHEMES = {
     "csv": FormatName.CSV,
     "excel": FormatName.EXCEL,
+    "json": FormatName.JSON,
+    "jsonl": FormatName.JSONL,
     "md": FormatName.TABLE,
 }
 
@@ -74,9 +80,9 @@ def read_local(source: Endpoint, format_name: FormatName, stream: TextIO | None 
     if format_name is FormatName.CSV:
         return _read_csv(text, source)
     if format_name is FormatName.JSON:
-        return _read_json(text, source)
+        return parse_json_table(text, source=_endpoint_path(source) or "stdin")
     if format_name is FormatName.JSONL:
-        return _read_jsonl(text, source)
+        return parse_jsonl_table(text, source=_endpoint_path(source) or "stdin")
     if format_name is FormatName.TABLE:
         return _read_markdown_table(text, source)
     raise ConnectorError(
@@ -109,10 +115,10 @@ def write_local(
             _write_csv(table, text_stream)
             return
         if format_name is FormatName.JSON:
-            _write_json(table, text_stream)
+            text_stream.write(encode_json_table(table))
             return
         if format_name is FormatName.JSONL:
-            _write_jsonl(table, text_stream)
+            text_stream.write(encode_jsonl_table(table))
             return
         if format_name is FormatName.TABLE:
             _write_markdown_table(table, text_stream)
@@ -231,74 +237,6 @@ def _read_csv(text: str, source: Endpoint) -> pa.Table:
         ) from None
 
 
-def _read_json(text: str, source: Endpoint) -> pa.Table:
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ConnectorError(
-            ConnectorErrorCode.EXECUTION_FAILED,
-            "JSON input is malformed",
-            {"path": _endpoint_path(source), "line": exc.lineno, "column": exc.colno},
-        ) from None
-    if not isinstance(payload, list):
-        raise ConnectorError(
-            ConnectorErrorCode.EXECUTION_FAILED,
-            "JSON input must be a list of objects",
-            {"path": _endpoint_path(source)},
-        )
-    rows = []
-    columns = []
-    seen: set[str] = set()
-    for index, item in enumerate(payload, start=1):
-        if not isinstance(item, Mapping):
-            raise ConnectorError(
-                ConnectorErrorCode.EXECUTION_FAILED,
-                "JSON array items must be objects",
-                {"path": _endpoint_path(source), "index": index},
-            )
-        row: dict[str, object | None] = {}
-        for key, value in item.items():
-            name = str(key)
-            if name not in seen:
-                seen.add(name)
-                columns.append(name)
-            row[name] = _normalize_cell(value)
-        rows.append(row)
-    return _rows_to_table(rows, columns)
-
-
-def _read_jsonl(text: str, source: Endpoint) -> pa.Table:
-    rows = []
-    columns = []
-    seen: set[str] = set()
-    for line_number, line in enumerate(text.splitlines(), start=1):
-        if not line.strip():
-            continue
-        try:
-            item = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise ConnectorError(
-                ConnectorErrorCode.EXECUTION_FAILED,
-                "JSONL line is malformed",
-                {"path": _endpoint_path(source), "line": line_number, "column": exc.colno},
-            ) from None
-        if not isinstance(item, Mapping):
-            raise ConnectorError(
-                ConnectorErrorCode.EXECUTION_FAILED,
-                "JSONL rows must be objects",
-                {"path": _endpoint_path(source), "line": line_number},
-            )
-        row: dict[str, object | None] = {}
-        for key, value in item.items():
-            name = str(key)
-            if name not in seen:
-                seen.add(name)
-                columns.append(name)
-            row[name] = _normalize_cell(value)
-        rows.append(row)
-    return _rows_to_table(rows, columns)
-
-
 def _read_markdown_table(text: str, source: Endpoint) -> pa.Table:
     return read_markdown_arrow(text, source=_endpoint_path(source))
 
@@ -320,30 +258,6 @@ def _write_csv(table: pa.Table, stream: TextIO) -> None:
         writer.writerow([_stringify_cell(row.get(name)) for name in table.column_names])
 
 
-def _write_json(table: pa.Table, stream: TextIO) -> None:
-    json.dump(
-        _json_table_rows(table),
-        stream,
-        ensure_ascii=False,
-        allow_nan=False,
-        separators=(",", ":"),
-    )
-
-
-def _write_jsonl(table: pa.Table, stream: TextIO) -> None:
-    for row in _json_table_rows(table):
-        stream.write(
-            json.dumps(
-                row,
-                ensure_ascii=False,
-                allow_nan=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            )
-        )
-        stream.write("\n")
-
-
 def _write_markdown_table(table: pa.Table, stream: TextIO) -> None:
     rows = _table_rows(table)
     names = list(table.column_names)
@@ -363,14 +277,6 @@ def _table_rows(table: pa.Table) -> list[dict[str, object | None]]:
     return [{name: _normalize_cell(row.get(name)) for name in table.column_names} for row in rows]
 
 
-def _json_table_rows(table: pa.Table) -> list[dict[str, object | None]]:
-    rows = table.to_pylist()
-    return [
-        {name: _normalize_json_cell(row.get(name)) for name in table.column_names}
-        for row in rows
-    ]
-
-
 def _stringify_cell(value: object | None) -> str:
     normalized = _normalize_cell(value)
     return "" if normalized is None else str(normalized)
@@ -380,19 +286,6 @@ def _normalize_cell(value: object | None) -> object | None:
     if isinstance(value, (list, dict)):
         return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return value
-
-
-def _normalize_json_cell(value: object | None) -> object | None:
-    normalized = json_safe_value(value)
-    if not isinstance(normalized, (list, dict)):
-        return normalized
-    return json.dumps(
-        normalized,
-        ensure_ascii=False,
-        allow_nan=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
 
 
 def json_safe_value(value: object | None) -> object | None:

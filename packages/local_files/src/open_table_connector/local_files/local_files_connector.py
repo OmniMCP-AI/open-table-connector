@@ -12,6 +12,7 @@ import polars as pl
 from open_table_connector.contract import (
     ArrowReadResult,
     ArrowTableReader,
+    BaseConvention,
     InspectRequest,
     PolarsReadResult,
     PolarsTableReader,
@@ -34,9 +35,10 @@ from .identity import (
     TABLE_READ_POLARS_CAPABILITY,
 )
 from .inspection import inspection_from_read
+from .json_connector import JsonConnector, JsonTableReadRequest
 from .manifest import CAPABILITY_MANIFEST
 from .markdown_connector import MarkdownConnector, MarkdownReadOptions, MarkdownTableReadRequest
-from .receipts import make_receipt, options_identity
+from .receipts import make_receipt, options_identity, source_revision
 from .resolver import LocalFormat, LocalURIResolver, ResolvedLocalTable
 
 
@@ -71,6 +73,7 @@ ConcreteConnectorRequest: TypeAlias = (
     tuple[CsvConnector, CsvTableReadRequest]
     | tuple[ExcelConnector, ExcelTableReadRequest]
     | tuple[MarkdownConnector, MarkdownTableReadRequest]
+    | tuple[JsonConnector, JsonTableReadRequest]
 )
 
 
@@ -83,6 +86,7 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
         self._csv_connector = CsvConnector()
         self._excel_connector = ExcelConnector()
         self._markdown_connector = MarkdownConnector()
+        self._json_connector = JsonConnector()
 
     def resolve(self, uri: TableURI, context: ResolveContext) -> ResolvedTable:
         return self._resolver.resolve(uri, context)
@@ -135,6 +139,15 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
                     ),
                 ),
             )
+        if resolved.format in {LocalFormat.JSON, LocalFormat.JSONL}:
+            scheme = "json" if resolved.format is LocalFormat.JSON else "jsonl"
+            return (
+                self._json_connector,
+                JsonTableReadRequest(
+                    self._explicit_uri(resolved.path, scheme),
+                    resource_limits=request.resource_limits,
+                ),
+            )
         return (
             self._markdown_connector,
             MarkdownTableReadRequest(
@@ -155,16 +168,21 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
 
         if resource.format is LocalFormat.CSV:
             table, path = connector._read_canonical(concrete_request)
-            return table, path, "data", ("data",)
+            return table, path, "data", ("data",), TableMode.SHEET
         if resource.format is LocalFormat.EXCEL:
             table, path, selected_sheet, worksheets = connector._read_canonical(concrete_request)
-            return table, path, selected_sheet, worksheets
+            return table, path, selected_sheet, worksheets, TableMode.SHEET
 
         table, path = connector._read_canonical(concrete_request)
-        return table, path, "data", ("data",)
+        mode = (
+            TableMode.BASE
+            if resource.format in {LocalFormat.JSON, LocalFormat.JSONL}
+            else TableMode.SHEET
+        )
+        return table, path, "data", ("data",), mode
 
     def _result(self, request: LocalTableReadRequest, capability):
-        table, path, sheet, _ = self._read_canonical(request)
+        table, path, sheet, _, mode = self._read_canonical(request)
         receipt = make_receipt(
             table,
             path=path,
@@ -173,6 +191,7 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
             header_row=request.options.header_row,
             parameters=options_identity(request.options, sheet=sheet),
             capability=capability,
+            mode=mode,
         )
         return table, receipt
 
@@ -189,14 +208,19 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
             local_request = request
         else:
             local_request = LocalTableReadRequest(request.uri, resource_limits=request.resource_limits)
-        table, _, sheet, worksheets = self._read_canonical(local_request)
+        table, path, sheet, worksheets, mode = self._read_canonical(local_request)
         return inspection_from_read(
             InspectRequest(local_request.uri, resource_limits=local_request.resource_limits),
             table=table,
             sheet=sheet,
             worksheets=worksheets,
-            mode=TableMode.SHEET,
+            mode=mode,
             header_row=local_request.options.header_row,
+            coordinate_convention=(
+                BaseConvention(ordinal_snapshot_id=source_revision(path))
+                if mode is TableMode.BASE
+                else None
+            ),
         )
 
 

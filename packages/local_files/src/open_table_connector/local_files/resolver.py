@@ -143,12 +143,17 @@ class LocalURIResolver:
                 "local file exceeds the configured byte limit",
                 {"size": path.stat().st_size, "max_bytes": limits.max_bytes},
             )
+        detected = detect_format(path)
         return ResolvedTable(
             uri=uri,
-            mode=TableMode.SHEET,
+            mode=(
+                TableMode.BASE
+                if detected in {LocalFormat.JSON, LocalFormat.JSONL}
+                else TableMode.SHEET
+            ),
             resource=ResolvedLocalTable(
                 path=path,
-                format=detect_format(path),
+                format=detected,
                 sheet=_sheet_from_uri(uri),
             ),
         )

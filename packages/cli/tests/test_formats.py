@@ -69,7 +69,7 @@ def test_markdown_table_reader_treats_invalid_separator_grammar_as_data(tmp_path
 def test_jsonl_writer_emits_one_object_per_line() -> None:
     stream = io.StringIO()
     write_local(pa.table({"id": ["a"], "amount": [1]}), parse_endpoint("-"), FormatName.JSONL, stream)
-    assert stream.getvalue() == '{"amount":1,"id":"a"}\n'
+    assert stream.getvalue() == '{"id":"a","amount":1}\n'
 
 
 def test_table_writer_escapes_special_characters_and_keeps_rows_aligned() -> None:
@@ -122,16 +122,13 @@ def test_markdown_table_writer_preserves_separator_looking_data_rows() -> None:
 
 
 @pytest.mark.parametrize("format_name", (FormatName.JSON, FormatName.JSONL))
-def test_json_writers_normalize_arrow_scalars_to_strict_json(format_name) -> None:
+def test_json_writers_preserve_nested_arrow_values(format_name) -> None:
     table = pa.table(
         {
-            "nan": [float("nan")],
-            "positive_infinity": [float("inf")],
-            "negative_infinity": [float("-inf")],
             "date": [date(2026, 8, 28)],
             "timestamp": [datetime(2026, 8, 28, 1, 2, 3, tzinfo=timezone.utc)],
             "decimal": pa.array([Decimal("12.30")], type=pa.decimal128(4, 2)),
-            "nested": pa.array([[float("nan"), float("inf"), float("-inf")]]),
+            "nested": pa.array([[1.0, 2.0]]),
         }
     )
     stream = io.StringIO()
@@ -141,14 +138,22 @@ def test_json_writers_normalize_arrow_scalars_to_strict_json(format_name) -> Non
     payload = _strict_json_loads(stream.getvalue())
     row = payload[0] if format_name is FormatName.JSON else payload
     assert row == {
-        "nan": None,
-        "positive_infinity": None,
-        "negative_infinity": None,
         "date": "2026-08-28",
-        "timestamp": "2026-08-28T01:02:03+00:00",
+        "timestamp": "2026-08-28T01:02:03.000000000Z",
         "decimal": "12.30",
-        "nested": "[null,null,null]",
+        "nested": [1.0, 2.0],
     }
+
+
+@pytest.mark.parametrize("format_name", (FormatName.JSON, FormatName.JSONL))
+def test_json_writers_reject_non_finite_values(format_name) -> None:
+    with pytest.raises(ConnectorError, match="non-finite"):
+        write_local(
+            pa.table({"value": [float("nan")]}),
+            parse_endpoint("-"),
+            format_name,
+            io.StringIO(),
+        )
 
 
 def test_infer_format_uses_explicit_format() -> None:

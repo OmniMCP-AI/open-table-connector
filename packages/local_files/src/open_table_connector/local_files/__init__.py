@@ -5,6 +5,14 @@ from .temporal_csv import CsvManagedTemporalStore, CsvTemporalExecutor
 from .excel_connector import ExcelConnector, ExcelReadOptions, ExcelTableReadRequest
 from .excel_reader import read_excel_arrow
 from .identity import CONNECTOR_IDENTITY
+from .json_codec import (
+    encode_json_table,
+    encode_jsonl_table,
+    parse_json_table,
+    parse_jsonl_table,
+)
+from .json_connector import JsonConnector, JsonTableReadRequest
+from .temporal_json import JsonManagedTemporalStore, JsonTemporalExecutor
 from .markdown_connector import MarkdownConnector, MarkdownReadOptions, MarkdownTableReadRequest
 from .manifest import CAPABILITY_MANIFEST
 from .markdown_reader import is_markdown_payload, read_markdown_arrow, write_markdown_table
@@ -24,6 +32,10 @@ __all__ = [
     "ExcelConnector",
     "ExcelReadOptions",
     "ExcelTableReadRequest",
+    "JsonConnector",
+    "JsonManagedTemporalStore",
+    "JsonTableReadRequest",
+    "JsonTemporalExecutor",
     "read_excel_arrow",
     "LocalFormat",
     "LocalURIResolver",
@@ -35,7 +47,11 @@ __all__ = [
     "MarkdownReadOptions",
     "MarkdownTableReadRequest",
     "detect_format",
+    "encode_json_table",
+    "encode_jsonl_table",
     "is_markdown_payload",
+    "parse_json_table",
+    "parse_jsonl_table",
     "read_markdown_arrow",
     "write_markdown_table",
     "write_excel",

@@ -15,6 +15,7 @@ def inspection_from_read(
     mode,
     formula_text_captured: bool = False,
     formula_calculated: bool = False,
+    coordinate_convention=None,
 ) -> TableInspection:
     from open_table_connector.contract.fingerprints import arrow_schema_fingerprint
 
@@ -28,7 +29,8 @@ def inspection_from_read(
         columns=tuple(str(name) for name in table.column_names),
         schema_fingerprint=arrow_schema_fingerprint(table.schema),
         row_count=table.num_rows,
-        coordinate_convention=SheetConvention(
+        coordinate_convention=coordinate_convention
+        or SheetConvention(
             sheet=sheet,
             header_rows=header_row,
             first_data_row=header_row + 1,
