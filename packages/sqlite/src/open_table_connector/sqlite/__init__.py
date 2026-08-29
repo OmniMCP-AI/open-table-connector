@@ -6,7 +6,8 @@ from .identity import (
     TABLE_READ_POLARS_CAPABILITY,
     TABLE_WRITE_CAPABILITY,
 )
-from .reader import SQLiteConnector, SQLiteReadOptions, SQLiteTableReadRequest
+from .reader import SQLiteConnector, SQLiteReadOptions, SQLiteTableReadRequest, SQLiteTransaction
+from .temporal import SQLiteManagedTemporalStore, SQLiteTemporalExecutor, lower_sqlite
 
 __all__ = [
     "CONNECTOR_IDENTITY",
@@ -16,6 +17,10 @@ __all__ = [
     "TABLE_READ_POLARS_CAPABILITY",
     "TABLE_WRITE_CAPABILITY",
     "SQLiteConnector",
+    "SQLiteManagedTemporalStore",
     "SQLiteReadOptions",
     "SQLiteTableReadRequest",
+    "SQLiteTemporalExecutor",
+    "SQLiteTransaction",
+    "lower_sqlite",
 ]

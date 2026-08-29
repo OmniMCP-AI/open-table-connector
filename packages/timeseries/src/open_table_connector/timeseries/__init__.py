@@ -11,6 +11,7 @@ from .descriptor import (
     temporal_descriptor_hash,
 )
 from .evaluator import PolarsTemporalExecutor, TemporalSource
+from .lowering import PreparedTemporalQuery
 from .plan import (
     AggregateFunction,
     AggregateMeasure,
@@ -93,6 +94,7 @@ __all__ = [
     "PortableTemporalPlan",
     "PortableTemporalExecutor",
     "PolarsTemporalExecutor",
+    "PreparedTemporalQuery",
     "ResourceBounds",
     "ScanRange",
     "TagOperator",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from hashlib import sha256
+from contextvars import ContextVar
 import re
 import sqlite3
 from datetime import date, datetime
@@ -84,6 +85,50 @@ class ResolvedSQLite:
     path: str
 
 
+class SQLiteTransaction:
+    """Explicit transaction handle with context-local legacy routing."""
+
+    def __init__(self, connector: "SQLiteConnector", uri: TableURI, connection: Any) -> None:
+        self._connector = connector
+        self.uri = uri
+        self._connection = connection
+        self._closed = False
+
+    def execute(self, request: ExecutionRequest) -> ExecutionResult:
+        self._ensure_open(request.uri)
+        return self._connector.execute(request)
+
+    def write(self, request: TableWriteRequest) -> TableWriteResult:
+        self._ensure_open(request.uri)
+        return self._connector.write(request)
+
+    def commit(self) -> None:
+        self._finish(commit=True)
+
+    def abort(self) -> None:
+        self._finish(commit=False)
+
+    def _finish(self, *, commit: bool) -> None:
+        if self._closed:
+            raise ConnectorError(ConnectorErrorCode.CONFLICT, "SQLite transaction is closed", {})
+        try:
+            self._connection.commit() if commit else self._connection.rollback()
+        finally:
+            self._connection.close()
+            self._closed = True
+            self._connector._clear_transaction(self)
+
+    def _ensure_open(self, uri: TableURI) -> None:
+        if self._closed:
+            raise ConnectorError(ConnectorErrorCode.CONFLICT, "SQLite transaction is closed", {})
+        if uri != self.uri:
+            raise ConnectorError(
+                ConnectorErrorCode.CONFLICT,
+                "SQLite transaction cannot cross database URIs",
+                {},
+            )
+
+
 def _rows_to_arrow(description: Any, rows: list[tuple[Any, ...]]) -> pa.Table:
     names = [str(item[0]) for item in description]
     columns = []
@@ -109,7 +154,10 @@ class SQLiteConnector(
 
     def __init__(self, connection_factory: Callable[[str], Any] | None = None) -> None:
         self._connection_factory = connection_factory or sqlite3.connect
-        self._transaction_connection: Any | None = None
+        self._transaction_context: ContextVar[SQLiteTransaction | None] = ContextVar(
+            f"sqlite_transaction_{id(self)}",
+            default=None,
+        )
 
     @staticmethod
     def _execution_id(request: ExecutionRequest) -> str:
@@ -154,8 +202,12 @@ class SQLiteConnector(
     def _read(self, request: SQLiteTableReadRequest) -> tuple[pa.Table, str, SQLiteReadOptions]:
         resolved = self.resolve(request.uri, ResolveContext(resource_limits=request.resource_limits))
         resource: ResolvedSQLite = resolved.resource
+        active = self._active_transaction(request.uri)
+        connection = active._connection if active is not None else None
+        owns_connection = connection is None
         try:
-            connection = self._transaction_connection or self._connection_factory(resource.path)
+            if connection is None:
+                connection = self._connection_factory(resource.path)
             cursor = connection.cursor()
             options = request.options
             statement = options.query or f'SELECT * FROM "{options.table}"'
@@ -175,7 +227,7 @@ class SQLiteConnector(
         except Exception as exc:
             raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "SQLite read failed", {"reason": str(exc)}) from None
         finally:
-            if connection is not self._transaction_connection:
+            if owns_connection and connection is not None:
                 try:
                     connection.close()
                 except Exception:
@@ -202,10 +254,22 @@ class SQLiteConnector(
 
     def execute(self, request: ExecutionRequest) -> ExecutionResult:
         resolved = self.resolve(request.uri, ResolveContext(resource_limits=request.resource_limits))
-        connection = self._transaction_connection or self._connection_factory(resolved.resource.path)
+        active = self._active_transaction(request.uri)
+        if active is not None:
+            return self._execute_on(request, active._connection, commit=False)
+        connection = self._connection_factory(resolved.resource.path)
+        return self._execute_on(request, connection, commit=True)
+
+    def _execute_on(
+        self,
+        request: ExecutionRequest,
+        connection: Any,
+        *,
+        commit: bool,
+    ) -> ExecutionResult:
         try:
             cursor = connection.execute(request.statement, request.parameters)
-            if connection is not self._transaction_connection:
+            if commit:
                 connection.commit()
             affected = cursor.rowcount if cursor.rowcount >= 0 else None
             return ExecutionResult(self._execution_id(request), "completed", affected)
@@ -214,7 +278,7 @@ class SQLiteConnector(
         except Exception as exc:
             raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "SQLite statement failed", {"reason": str(exc)}) from None
         finally:
-            if connection is not self._transaction_connection:
+            if commit:
                 try:
                     connection.close()
                 except Exception:
@@ -231,7 +295,20 @@ class SQLiteConnector(
         if not _IDENTIFIER.fullmatch(table_name):
             raise ConnectorError(ConnectorErrorCode.INVALID_URI, "SQLite table writes require a simple table URI path", {"table": table_name})
         resolved = self.resolve(request.uri, ResolveContext())
-        connection = self._transaction_connection or self._connection_factory(resolved.resource.path)
+        active = self._active_transaction(request.uri)
+        if active is not None:
+            return self._write_on(request, active._connection, commit=False)
+        connection = self._connection_factory(resolved.resource.path)
+        return self._write_on(request, connection, commit=True)
+
+    def _write_on(
+        self,
+        request: TableWriteRequest,
+        connection: Any,
+        *,
+        commit: bool,
+    ) -> TableWriteResult:
+        table_name = request.table
         quoted_table = self._quote(table_name)
         columns = tuple(request.frame.columns)
         quoted_columns = ", ".join(self._quote(column) for column in columns)
@@ -253,7 +330,7 @@ class SQLiteConnector(
                     f"INSERT INTO {quoted_table} ({quoted_columns}) VALUES ({placeholders})",
                     rows,
                 )
-            if connection is not self._transaction_connection:
+            if commit:
                 connection.commit()
             arrow = request.frame.to_arrow()
             schema = arrow_schema_fingerprint(arrow.schema)
@@ -287,39 +364,47 @@ class SQLiteConnector(
         except Exception as exc:
             raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "SQLite table write failed", {"reason": str(exc)}) from None
         finally:
-            if connection is not self._transaction_connection:
+            if commit:
                 try:
                     connection.close()
                 except Exception:
                     pass
 
-    def begin(self, uri: TableURI | None = None) -> None:
+    def begin(self, uri: TableURI | None = None) -> SQLiteTransaction:
         if uri is None:
             raise ConnectorError(ConnectorErrorCode.INVALID_URI, "SQLite begin requires a database URI", {})
-        self.begin_for(uri)
+        return self.begin_for(uri)
 
-    def begin_for(self, uri: TableURI) -> None:
-        if self._transaction_connection is not None:
+    def begin_for(self, uri: TableURI) -> SQLiteTransaction:
+        if self._transaction_context.get() is not None:
             raise ConnectorError(ConnectorErrorCode.CONFLICT, "SQLite transaction is already active", {})
         resolved = self.resolve(uri, ResolveContext())
-        self._transaction_connection = self._connection_factory(resolved.resource.path)
+        transaction = SQLiteTransaction(
+            self,
+            uri,
+            self._connection_factory(resolved.resource.path),
+        )
+        self._transaction_context.set(transaction)
+        return transaction
 
     def commit(self) -> None:
-        if self._transaction_connection is None:
+        transaction = self._transaction_context.get()
+        if transaction is None:
             raise ConnectorError(ConnectorErrorCode.CONFLICT, "SQLite transaction is not active", {})
-        connection = self._transaction_connection
-        try:
-            connection.commit()
-        finally:
-            connection.close()
-            self._transaction_connection = None
+        transaction.commit()
 
     def abort(self) -> None:
-        if self._transaction_connection is None:
+        transaction = self._transaction_context.get()
+        if transaction is None:
             raise ConnectorError(ConnectorErrorCode.CONFLICT, "SQLite transaction is not active", {})
-        connection = self._transaction_connection
-        try:
-            connection.rollback()
-        finally:
-            connection.close()
-            self._transaction_connection = None
+        transaction.abort()
+
+    def _active_transaction(self, uri: TableURI) -> SQLiteTransaction | None:
+        transaction = self._transaction_context.get()
+        if transaction is not None:
+            transaction._ensure_open(uri)
+        return transaction
+
+    def _clear_transaction(self, transaction: SQLiteTransaction) -> None:
+        if self._transaction_context.get() is transaction:
+            self._transaction_context.set(None)

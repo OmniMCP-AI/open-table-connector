@@ -234,6 +234,7 @@ version = "0.1.0"
 source = { editable = "packages/sqlite" }
 dependencies = [
     { name = "open-table-connector-contract" },
+    { name = "open-table-connector-timeseries" },
     { name = "polars" },
     { name = "pyarrow" },
 ]
@@ -241,6 +242,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "open-table-connector-contract", editable = "packages/contract" },
+    { name = "open-table-connector-timeseries", editable = "packages/timeseries" },
     { name = "polars", specifier = ">=1.0,<2" },
     { name = "pyarrow", specifier = ">=14,<20" },
 ]
