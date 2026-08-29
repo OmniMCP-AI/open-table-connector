@@ -9,6 +9,7 @@ from .descriptor import (
     descriptor_from_wire,
     temporal_descriptor_hash,
 )
+from .evaluator import PolarsTemporalExecutor, TemporalSource
 from .plan import (
     AggregateFunction,
     AggregateMeasure,
@@ -90,6 +91,7 @@ __all__ = [
     "OrderKey",
     "PortableTemporalPlan",
     "PortableTemporalExecutor",
+    "PolarsTemporalExecutor",
     "ResourceBounds",
     "ScanRange",
     "TagOperator",
@@ -100,6 +102,7 @@ __all__ = [
     "TemporalExecutionRequest",
     "TemporalExecutionResult",
     "TemporalReceipt",
+    "TemporalSource",
     "TemporalTableDescriptor",
     "TimeRange",
     "TimestampPrecision",
