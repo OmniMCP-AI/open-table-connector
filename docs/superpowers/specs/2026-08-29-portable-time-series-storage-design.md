@@ -17,6 +17,10 @@ Architecture identifier: `ots-otc-timeseries-storage/v1`.
 Companion OTS specification:
 [Native and OTC Storage Backends Design](https://github.com/OmniMCP-AI/open-time-series/blob/main/docs/superpowers/specs/2026-08-29-native-and-otc-storage-backends-design.md).
 
+Implementation plans:
+[OTC portable storage](https://github.com/OmniMCP-AI/open-table-connector/blob/main/docs/superpowers/plans/2026-08-29-portable-time-series-storage.md) and
+[OTS native and OTC backends](https://github.com/OmniMCP-AI/open-time-series/blob/main/docs/superpowers/plans/2026-08-29-native-and-otc-storage-backends.md).
+
 This specification is authoritative for the portable temporal plan, OTC
 capability identities, neutral execution and managed-storage receipts, the
 local connector-process transport, and per-connector OTC support claims. The
@@ -356,6 +360,20 @@ documents.
 
 ## Provider support tiers
 
+The process registry names every provider explicitly. The inventory below is
+the maximum offline claim; configured-live evidence may narrow it and never
+widens it implicitly.
+
+| Provider | Certified role | Execution | Managed lifecycle |
+| --- | --- | --- | --- |
+| CSV | portable storage | Polars/Arrow | offline verified |
+| JSON | portable storage | Polars/Arrow | offline verified on `json://` |
+| JSONL | portable storage | Polars/Arrow | offline verified on `jsonl://` |
+| SQLite | portable storage; conditionally OTS-eligible | prepared SQL plus Polars | offline verified |
+| PostgreSQL | portable storage | prepared SQL plus Polars | offline; live required for OTS eligibility |
+| Excel | portable storage | formula-safe values plus Polars | offline verified |
+| MaybeSheet | import/export by default | probed connector plus Polars | unsupported until live proof |
+
 ### CSV
 
 CSV supports descriptor binding, bounded scan, latest/as-of, bucket
@@ -470,6 +488,11 @@ cover DST transitions, fixed and calendar buckets, origins and offsets,
 nanosecond timestamps, empty buckets, null aggregates, out-of-order input,
 duplicate keys, LOCF and interpolation edges, latest/as-of ties, and limit
 failures.
+
+The executable suite is checked in under
+[`specification/conformance/timeseries/`](../../../specification/conformance/timeseries/).
+Its process cases use the same hello, execute, stage, commit, readback, abort,
+and Arrow-artifact shapes consumed by the Rust OTS binding.
 
 ## Delivery phases
 

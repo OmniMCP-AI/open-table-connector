@@ -113,10 +113,16 @@ version = "0.1.0"
 source = { editable = "packages/conformance" }
 dependencies = [
     { name = "open-table-connector-contract" },
+    { name = "open-table-connector-timeseries" },
+    { name = "pyarrow" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "open-table-connector-contract", editable = "packages/contract" }]
+requires-dist = [
+    { name = "open-table-connector-contract", editable = "packages/contract" },
+    { name = "open-table-connector-timeseries", editable = "packages/timeseries" },
+    { name = "pyarrow", specifier = ">=14,<20" },
+]
 
 [[package]]
 name = "open-table-connector-contract"

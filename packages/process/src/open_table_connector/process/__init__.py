@@ -19,6 +19,11 @@ from .server import (
     redact_text,
     run_server,
 )
+from .timeseries import (
+    PORTABLE_PROVIDER_CAPABILITIES,
+    TemporalProcessHandler,
+    temporal_registration,
+)
 
 __all__ = [
     "ArtifactStore",
@@ -31,14 +36,17 @@ __all__ = [
     "CredentialResolver",
     "FrameError",
     "PORTABLE_PLAN_VERSION",
+    "PORTABLE_PROVIDER_CAPABILITIES",
     "PROCESS_PROTOCOL",
     "ProcessError",
     "ProcessHandler",
     "ProcessOperation",
     "ProcessRequestContext",
     "ProcessResult",
+    "TemporalProcessHandler",
     "read_frame",
     "redact_text",
     "run_server",
+    "temporal_registration",
     "write_frame",
 ]

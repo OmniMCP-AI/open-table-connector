@@ -27,6 +27,10 @@ The first workspace packages are:
   receipt, error, and Arrow/Polars read contracts;
 - `open-table-connector-conformance`: reusable parity and dependency-direction
   checks; and
+- `open-table-connector-timeseries`: the closed portable temporal plan,
+  Polars/Arrow evaluator, managed-storage protocols, and neutral receipts;
+- `open-table-connector-process`: the pinned local framed transport used by
+  sister-product bindings; and
 - `open-table-connector-local-files`: concrete `csv`, `excel`, and `md`
   read/inspect connectors plus the `local_files` compatibility facade.
 
@@ -50,3 +54,21 @@ Use explicit local schemes when the format should be selected directly:
 `csv://`, `excel://`, and `md://`. Existing bare paths and `file://` URIs
 continue to route through `local_files`, which probes CSV, XLSX, and Markdown
 payloads for compatibility.
+
+## Portable time-series storage
+
+OTC can act as an explicit reduced-capability storage backend for
+[Open Time Series](https://github.com/OmniMCP-AI/open-time-series). The portable
+lane accepts a closed typed plan—not SQL—and supports bounded range scans,
+latest/as-of lookup, bucket aggregation, and gap fill. Native TimescaleDB talks
+directly to OTS through its thin native adapter and does not pass through OTC.
+
+The provider inventory is explicit: CSV, JSON, JSONL, SQLite, PostgreSQL, and
+Excel expose only their certified portable capabilities; MaybeSheet remains
+import/export-only unless a live command probe and receipts prove more. JSON
+and JSONL always use `json://` and `jsonl://`; managed snapshot selection is
+request metadata, never a `managed+` URI.
+
+See the [OTC architecture specification](docs/superpowers/specs/2026-08-29-portable-time-series-storage-design.md),
+the [implementation plan](docs/superpowers/plans/2026-08-29-portable-time-series-storage.md),
+and the [conformance suite](specification/conformance/timeseries/README.md).

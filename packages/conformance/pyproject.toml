@@ -9,10 +9,13 @@ description = "Reusable conformance tests for neutral Connectors"
 requires-python = ">=3.11"
 dependencies = [
   "open-table-connector-contract==0.1.0",
+  "open-table-connector-timeseries==0.1.0",
+  "pyarrow>=14,<20",
 ]
 
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
+open-table-connector-timeseries = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]
