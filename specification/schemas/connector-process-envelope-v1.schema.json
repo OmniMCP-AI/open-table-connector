@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-connectors.dev/schemas/connector-process-envelope-v1.schema.json",
+  "title": "Connector process envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol",
+    "message_id",
+    "session_id",
+    "operation",
+    "connector",
+    "capability_version",
+    "resource_limits",
+    "credential_reference",
+    "payload",
+    "artifact_references"
+  ],
+  "properties": {
+    "protocol": {"const": "otc.connector-process/v1"},
+    "message_id": {"type": "string", "minLength": 1},
+    "session_id": {"type": "string", "minLength": 1},
+    "operation": {
+      "enum": ["hello", "describe", "execute", "stage", "commit", "readback", "abort", "cancel"]
+    },
+    "connector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "contract_version"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "contract_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "capability_version": {"type": "string", "minLength": 1},
+    "resource_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_rows", "max_bytes", "max_duration_ms"],
+      "properties": {
+        "max_rows": {"type": "integer", "minimum": 1},
+        "max_bytes": {"type": "integer", "minimum": 1},
+        "max_duration_ms": {"type": "integer", "minimum": 1}
+      }
+    },
+    "credential_reference": {"type": ["string", "null"], "minLength": 1},
+    "payload": {"type": "object"},
+    "artifact_references": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/artifact"}
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "sha256", "size_bytes", "media_type"],
+      "properties": {
+        "relative_path": {"type": "string", "pattern": "^sha256/[0-9a-f]{64}\\.arrow$"},
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "size_bytes": {"type": "integer", "minimum": 1},
+        "media_type": {"const": "application/vnd.apache.arrow.stream"}
+      }
+    }
+  }
+}

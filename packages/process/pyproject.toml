@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "open-table-connector-process"
+version = "0.1.0"
+description = "Local framed connector supervisor for Open Table Connector"
+requires-python = ">=3.11"
+dependencies = [
+  "open-table-connector-contract==0.1.0",
+  "open-table-connector-timeseries==0.1.0",
+  "pyarrow>=14,<20",
+]
+
+[project.scripts]
+otc-process = "open_table_connector.process.__main__:main"
+
+[tool.uv.sources]
+open-table-connector-contract = { workspace = true }
+open-table-connector-timeseries = { workspace = true }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["open_table_connector.process*"]
+namespaces = true

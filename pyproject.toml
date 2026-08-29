@@ -9,7 +9,7 @@ description = "Framework-neutral physical data Connectors"
 requires-python = ">=3.11"
 
 [tool.uv.workspace]
-members = ["packages/contract", "packages/conformance", "packages/timeseries", "packages/local_files", "packages/postgres", "packages/sqlite", "packages/dbt", "packages/maybe_sheet", "packages/google_sheets", "packages/feishu_bitable", "packages/cli"]
+members = ["packages/contract", "packages/conformance", "packages/timeseries", "packages/process", "packages/local_files", "packages/postgres", "packages/sqlite", "packages/dbt", "packages/maybe_sheet", "packages/google_sheets", "packages/feishu_bitable", "packages/cli"]
 
 [dependency-groups]
 dev = ["pytest>=9,<10"]

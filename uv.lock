@@ -13,6 +13,7 @@ members = [
     "open-table-connector-local-files",
     "open-table-connector-maybe-sheet",
     "open-table-connector-postgres",
+    "open-table-connector-process",
     "open-table-connector-sqlite",
     "open-table-connector-timeseries",
     "open-table-connector-workspace",
@@ -205,6 +206,23 @@ dependencies = [
 requires-dist = [
     { name = "open-table-connector-contract", editable = "packages/contract" },
     { name = "polars", specifier = ">=1.0,<2" },
+    { name = "pyarrow", specifier = ">=14,<20" },
+]
+
+[[package]]
+name = "open-table-connector-process"
+version = "0.1.0"
+source = { editable = "packages/process" }
+dependencies = [
+    { name = "open-table-connector-contract" },
+    { name = "open-table-connector-timeseries" },
+    { name = "pyarrow" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "open-table-connector-contract", editable = "packages/contract" },
+    { name = "open-table-connector-timeseries", editable = "packages/timeseries" },
     { name = "pyarrow", specifier = ">=14,<20" },
 ]
 
