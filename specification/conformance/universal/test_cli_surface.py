@@ -189,10 +189,12 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
             "schemes": ["maybe", "https"],
             "capabilities": [
                 {"capability_id": "base.read", "capability_version": "1.0"},
+                {"capability_id": "sheet.read", "capability_version": "1.0"},
                 {"capability_id": "base.inspect", "capability_version": "1.0"},
+                {"capability_id": "sheet.inspect", "capability_version": "1.0"},
                 {"capability_id": "table.write", "capability_version": "1.0"},
             ],
-            "modes": ["base"],
+            "modes": ["base", "sheet"],
         },
     )
     connector_ids = [record["connector_id"] for record in records]

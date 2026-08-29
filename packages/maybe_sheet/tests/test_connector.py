@@ -39,6 +39,17 @@ class OverReturningProcess:
         }
 
 
+class RoundTripProcess:
+    def __init__(self):
+        self.rows = []
+
+    def run(self, argv, *, credentials=None, stdin=None):
+        if "write" in argv:
+            self.rows = [json.loads(line) for line in (stdin or "").splitlines()]
+            return {"rows_written": len(self.rows), "receipt_id": "roundtrip-write"}
+        return {"rows": self.rows, "source_revision": "roundtrip-read", "receipt_id": "roundtrip-read"}
+
+
 def test_maybe_sheet_has_explicit_base_and_sheet_argv_and_receipts() -> None:
     process = Process()
     connector = MaybeSheetConnector(process)
@@ -127,6 +138,22 @@ def test_maybe_sheet_write_sends_jsonl_to_process() -> None:
     assert process.calls[0][2] == '{"id":"1"}\n'
     assert result.affected_rows == 1
     assert result.receipt.vendor_receipt_ref == "safe-ref"
+
+
+def test_maybe_sheet_managed_readback_round_trips_values_and_receipts() -> None:
+    process = RoundTripProcess()
+    connector = MaybeSheetConnector(process)
+    uri = TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc")
+    frame = pl.DataFrame({"id": ["1"], "amount": ["2.50"]})
+
+    written = connector.write(
+        TableWriteRequest(uri, frame, table="R_orders", if_exists="append")
+    )
+    read = connector.read_polars(MaybeSheetReadRequest(uri, TableMode.BASE, "R_orders"))
+
+    assert read.frame.to_dicts() == frame.to_dicts()
+    assert written.receipt.vendor_receipt_ref == "roundtrip-write"
+    assert read.receipt.vendor_receipt_ref == "roundtrip-read"
 
 
 def test_maybe_sheet_write_normalizes_non_finite_floats_to_strict_json() -> None:

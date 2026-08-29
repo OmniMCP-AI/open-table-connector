@@ -29,7 +29,7 @@ _CASE_NAMES = (
     "postgres",
     "dbt",
 )
-_MANIFESTLESS_CASE_NAMES = ("maybe_sheet", "sqlite", "postgres", "dbt")
+_MANIFESTLESS_CASE_NAMES = ("sqlite", "postgres", "dbt")
 
 
 @dataclass(frozen=True)
@@ -84,7 +84,7 @@ _EXPECTED_METADATA = {
     ),
     "local_files": _ExpectedConnectorMetadata(
         connector_id="local_files",
-        connector_version="0.1.0",
+        connector_version="0.2.0",
         contract_version="1.0",
         capabilities=(
             ("uri.resolve", "1.0"),
@@ -125,17 +125,17 @@ _EXPECTED_METADATA = {
     ),
     "maybe_sheet": _ExpectedConnectorMetadata(
         connector_id="maybe_sheet",
-        connector_version="0.1.0",
+        connector_version="0.2.0",
         contract_version="1.0",
         capabilities=(
             ("base.read", "1.0"),
-            ("base.inspect", "1.0"),
             ("sheet.read", "1.0"),
+            ("base.inspect", "1.0"),
             ("sheet.inspect", "1.0"),
             ("table.write", "1.0"),
         ),
         modes=("base", "sheet"),
-        schemes=("https", "maybe"),
+        schemes=("maybe", "https"),
     ),
     "sqlite": _ExpectedConnectorMetadata(
         connector_id="sqlite",

@@ -28,6 +28,8 @@ from open_table_connector.contract.errors import ConnectorError, ConnectorErrorC
 
 from .csv_connector import CsvConnector, CsvReadOptions, CsvTableReadRequest
 from .excel_connector import ExcelConnector, ExcelReadOptions, ExcelTableReadRequest
+from .json_reader import read_json_arrow
+from .xls_reader import read_xls_arrow
 from .identity import (
     CONNECTOR_IDENTITY,
     TABLE_READ_ARROW_CAPABILITY,
@@ -88,7 +90,7 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
         return self._resolver.resolve(uri, context)
 
     def _resolve_sheet(self, request: LocalTableReadRequest, resolved: ResolvedLocalTable) -> str | None:
-        if resolved.format is not LocalFormat.EXCEL:
+        if resolved.format not in {LocalFormat.EXCEL, LocalFormat.XLS}:
             if resolved.sheet or request.options.sheet:
                 raise ConnectorError(
                     ConnectorErrorCode.INVALID_URI,
@@ -135,6 +137,15 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
                     ),
                 ),
             )
+        if resolved.format is LocalFormat.JSON:
+            return (
+                self._csv_connector,
+                CsvTableReadRequest(
+                    self._explicit_uri(resolved.path, "csv"),
+                    resource_limits=request.resource_limits,
+                    options=CsvReadOptions(separator=request.options.separator, encoding=request.options.encoding),
+                ),
+            )
         return (
             self._markdown_connector,
             MarkdownTableReadRequest(
@@ -148,6 +159,18 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
         resolved = self.resolve(request.uri, request.resolve_context)
         resource = resolved.resource
         sheet = self._resolve_sheet(request, resource)
+        if resource.format is LocalFormat.JSON:
+            table = read_json_arrow(resource.path, limits=request.resource_limits)
+            return table, resource.path, "data", ("data",)
+        if resource.format is LocalFormat.XLS:
+            table, selected_sheet, worksheets = read_xls_arrow(
+                resource.path,
+                sheet=sheet,
+                header_row=request.options.header_row,
+                limits=request.resource_limits,
+            )
+            return table, resource.path, selected_sheet, worksheets
+
         connector, concrete_request = self._build_concrete_request(
             request,
             ResolvedLocalTable(path=resource.path, format=resource.format, sheet=sheet),

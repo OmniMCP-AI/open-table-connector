@@ -36,6 +36,25 @@ def test_capability_manifest_wire_validates_against_schema() -> None:
     validate(manifest.to_wire(), _schema("capability-manifest-v1.schema.json"))
 
 
+def test_managed_io_manifest_wire_validates_against_schema_v2() -> None:
+    manifest = CapabilityManifest(
+        connector=ConnectorIdentity("local_files", "0.2.0", "1.0"),
+        capabilities=(CapabilityIdentity("table.read.polars", "1.0"),),
+        modes=(TableMode.SHEET,),
+        uri_schemes=("file",),
+        managed_io={
+            "read": {
+                "capability_id": "table.read.polars",
+                "config_schema": {"type": "object", "additionalProperties": False},
+                "boundedness": "bounded",
+                "features": ["readback"],
+            }
+        },
+    )
+
+    validate(manifest.to_wire(), _schema("capability-manifest-v2.schema.json"))
+
+
 def test_receipt_wire_validates_against_schema() -> None:
     receipt = NeutralReceipt(
         connector=ConnectorIdentity("local_files", "0.1.0", "1.0"),

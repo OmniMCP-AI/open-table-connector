@@ -3,6 +3,8 @@
 from .csv_connector import CsvConnector, CsvReadOptions, CsvTableReadRequest
 from .excel_connector import ExcelConnector, ExcelReadOptions, ExcelTableReadRequest
 from .excel_reader import read_excel_arrow
+from .json_reader import read_json_arrow
+from .xls_reader import read_xls_arrow
 from .identity import CONNECTOR_IDENTITY
 from .markdown_connector import MarkdownConnector, MarkdownReadOptions, MarkdownTableReadRequest
 from .manifest import CAPABILITY_MANIFEST
@@ -22,6 +24,8 @@ __all__ = [
     "ExcelReadOptions",
     "ExcelTableReadRequest",
     "read_excel_arrow",
+    "read_json_arrow",
+    "read_xls_arrow",
     "LocalFormat",
     "LocalURIResolver",
     "ResolvedLocalTable",
