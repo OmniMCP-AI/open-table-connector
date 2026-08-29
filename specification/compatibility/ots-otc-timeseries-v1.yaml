@@ -1,8 +1,8 @@
 schema_version: ots-otc-timeseries-compatibility/v1
 architecture_id: ots-otc-timeseries-storage/v1
 architecture: ots-otc-timeseries-storage/v1
-ots_surface_commit: efbbb8f64bfe8588b8b685d14e247ce79e41eebf
-otc_surface_commit: e7171bbd3fa4ad2a96657a4d16ae7ade0c58a708
+ots_surface_commit: 5348ef1cfe98c3cb4bd43d16c3e6f6abd2e78430
+otc_surface_commit: 755de59f1f27b769ebe6a332b5148df05fe7304c
 protocols:
   timescale_core_sql: timescale-core-sql/v1
   process: otc.connector-process/v1
