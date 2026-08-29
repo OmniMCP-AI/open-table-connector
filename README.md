@@ -37,6 +37,27 @@ The first workspace packages are:
 The `open_table_connector` Python namespace is PEP 420 based; framework packages
 are never dependencies of the neutral packages.
 
+## Get started
+
+Install the workspace and verify the CLI:
+
+```console
+uv sync --dev
+uv run --package open-table-connector otc --help
+```
+
+Read, inspect, and convert a local table:
+
+```console
+uv run --package open-table-connector otc inspect --from orders.csv --output-format json
+uv run --package open-table-connector otc read --from csv:///absolute/path/orders.csv --output-format table
+uv run --package open-table-connector otc convert --from orders.csv --to orders.jsonl --to-format jsonl
+```
+
+The CLI is the quickest path for ordinary table movement. The typed Python
+time-series API is the path for bounded `ScanRange`, `Latest`, `AsOf`, bucket,
+and gap-fill operations.
+
 ## Command-line interface
 
 Install the CLI package to use `otc` (or the equivalent
@@ -72,3 +93,15 @@ request metadata, never a `managed+` URI.
 See the [OTC architecture specification](docs/superpowers/specs/2026-08-29-portable-time-series-storage-design.md),
 the [implementation plan](docs/superpowers/plans/2026-08-29-portable-time-series-storage.md),
 and the [conformance suite](specification/conformance/timeseries/README.md).
+
+## Documentation
+
+- [Getting started](docs/getting-started.md) — install, first reads, and a
+  minimal portable temporal query.
+- [User manual](docs/user-manual.md) — CLI reference, URI rules, connector
+  support matrix, temporal API, managed lifecycle, process adapter, and
+  troubleshooting.
+- [Demos and use cases](docs/demos.md) — CSV/JSONL/Excel workflows, portable
+  temporal queries, SQLite/PostgreSQL, and `otc-process`.
+- [Portable time-series design](docs/superpowers/specs/2026-08-29-portable-time-series-storage-design.md)
+  — normative OTC contract and cross-link to OTS.
