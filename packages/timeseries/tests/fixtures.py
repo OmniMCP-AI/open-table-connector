@@ -7,7 +7,9 @@ import pyarrow as pa
 from open_table_connector.contract import TableURI
 from open_table_connector.timeseries import (
     AsOf,
+    BucketAggregate,
     DuplicatePolicy,
+    GapFill,
     Latest,
     OrderDirection,
     OrderKey,
@@ -101,6 +103,16 @@ def bounds(**changes: int) -> ResourceBounds:
 
 
 def portable(operation, *, resource_bounds: ResourceBounds | None = None, limit: int | None = None):
+    if isinstance(operation, (BucketAggregate, GapFill)):
+        output_order = (
+            OrderKey("symbol", OrderDirection.ASC),
+            OrderKey("bucket", OrderDirection.ASC),
+        )
+    else:
+        output_order = (
+            OrderKey("symbol", OrderDirection.ASC),
+            OrderKey("ts", OrderDirection.ASC),
+        )
     return PortableTemporalPlan(
         schema_version="otc.portable-temporal-plan/v1",
         descriptor_hash=DESCRIPTOR_HASH,
@@ -108,10 +120,7 @@ def portable(operation, *, resource_bounds: ResourceBounds | None = None, limit:
         required_capabilities=(),
         resource_bounds=resource_bounds or bounds(),
         operation=operation,
-        output_order=(
-            OrderKey("symbol", OrderDirection.ASC),
-            OrderKey("ts", OrderDirection.ASC),
-        ),
+        output_order=output_order,
         result_row_limit=limit,
     )
 

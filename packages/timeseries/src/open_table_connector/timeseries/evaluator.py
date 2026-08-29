@@ -20,8 +20,16 @@ from open_table_connector.contract import (
 )
 
 from .descriptor import DuplicatePolicy, TemporalTableDescriptor, TimestampPrecision
+from .buckets import calendar_bucket_next, calendar_bucket_start, fixed_bucket_start
 from .plan import (
+    AggregateFunction,
+    AggregateMeasure,
     AsOf,
+    BucketAggregate,
+    CalendarBucket,
+    FillMode,
+    FixedBucket,
+    GapFill,
     Latest,
     PortableTemporalPlan,
     ResourceBounds,
@@ -68,7 +76,7 @@ class PolarsTemporalExecutor:
         if not isinstance(request, TemporalExecutionRequest):
             raise TypeError("request must be a TemporalExecutionRequest")
         operation = request.plan.operation
-        if not isinstance(operation, (ScanRange, Latest, AsOf)):
+        if not isinstance(operation, (ScanRange, Latest, AsOf, BucketAggregate, GapFill)):
             raise TemporalExtensionError(
                 TemporalErrorCode.PROTOCOL_INVALID,
                 "portable operation is not implemented by the lookup evaluator",
@@ -116,7 +124,7 @@ class PolarsTemporalExecutor:
         lazy = _apply_predicates(lazy, operation.tag_predicates)
         time_field = descriptor.time_field
         time_ns = pl.col(time_field).dt.timestamp("ns")
-        if isinstance(operation, ScanRange):
+        if isinstance(operation, (ScanRange, BucketAggregate, GapFill)):
             start = _timestamp_ns(operation.start)
             end = _timestamp_ns(operation.end)
             lazy = lazy.filter((time_ns >= start) & (time_ns < end))
@@ -127,14 +135,25 @@ class PolarsTemporalExecutor:
 
         filtered = lazy.collect()
         _check_deadline(started, request.plan.resource_bounds)
+        observed_range = _observed_range(filtered, descriptor.time_field)
         if isinstance(operation, (Latest, AsOf)):
             filtered = _latest_rows(filtered, descriptor)
-        filtered = _resolve_duplicates(filtered, descriptor)
+            filtered = _resolve_duplicates(filtered, descriptor)
+        elif isinstance(operation, (BucketAggregate, GapFill)):
+            filtered = _resolve_duplicates(filtered, descriptor)
+            filtered = _aggregate_rows(filtered, operation, descriptor)
+            if isinstance(operation, GapFill):
+                filtered = _gap_fill(
+                    filtered,
+                    operation,
+                    request.plan.resource_bounds,
+                )
+        else:
+            filtered = _resolve_duplicates(filtered, descriptor)
         filtered = _sort_result(filtered, request.plan, descriptor)
         if request.plan.result_row_limit is not None:
             filtered = filtered.head(request.plan.result_row_limit)
-        observed_range = _observed_range(filtered, descriptor.time_field)
-        result = filtered.select(operation.projection).to_arrow()
+        result = filtered.select(_result_fields(operation)).to_arrow()
         if not isinstance(result, pa.Table):
             result = pa.Table.from_batches(result)
         returned_rows = result.num_rows
@@ -147,6 +166,7 @@ class PolarsTemporalExecutor:
         )
         _check_deadline(started, request.plan.resource_bounds)
         elapsed_ms = (time.monotonic_ns() - started) // 1_000_000
+        examined_rows = max(examined_rows, returned_rows)
         examined_bytes = max(examined_bytes, returned_bytes)
         receipt = _receipt(
             request,
@@ -168,9 +188,18 @@ def _required_fields(
     descriptor: TemporalTableDescriptor,
 ) -> tuple[str, ...]:
     operation = plan.operation
-    fields = list(operation.projection)
+    if isinstance(operation, (ScanRange, Latest, AsOf)):
+        fields = list(operation.projection)
+    else:
+        fields = list(operation.group_by)
+        fields.extend(
+            measure.value_field
+            for measure in operation.measures
+            if measure.value_field is not None
+        )
     fields.extend(predicate.field for predicate in operation.tag_predicates)
-    fields.extend(key.field for key in plan.output_order)
+    declared = set(descriptor.declared_fields)
+    fields.extend(key.field for key in plan.output_order if key.field in declared)
     fields.extend(descriptor.series_key_fields)
     fields.append(descriptor.time_field)
     if descriptor.ingestion_time_field is not None:
@@ -247,6 +276,137 @@ def _resolve_duplicates(
     return frame
 
 
+def _aggregate_rows(
+    frame: pl.DataFrame,
+    operation: BucketAggregate | GapFill,
+    descriptor: TemporalTableDescriptor,
+) -> pl.DataFrame:
+    timestamps = frame[descriptor.time_field].dt.timestamp("ns").to_list()
+    if isinstance(operation.bucket, FixedBucket):
+        origin = _timestamp_ns(operation.bucket.origin)
+        labels = [
+            fixed_bucket_start(
+                value,
+                operation.bucket.width_ns,
+                origin,
+                operation.bucket.offset_ns,
+            )
+            for value in timestamps
+        ]
+    else:
+        labels = [
+            _timestamp_ns(calendar_bucket_start(_format_ns(value), operation.bucket))
+            for value in timestamps
+        ]
+    frame = frame.with_columns(
+        pl.Series("bucket", labels, dtype=pl.Datetime("ns", "UTC"))
+    )
+    sort_fields = [*operation.group_by, "bucket", descriptor.time_field]
+    if descriptor.ingestion_time_field is not None:
+        sort_fields.append(descriptor.ingestion_time_field)
+    frame = frame.sort(sort_fields, maintain_order=True)
+    expressions = [_aggregate_expression(measure) for measure in operation.measures]
+    return frame.group_by(
+        [*operation.group_by, "bucket"],
+        maintain_order=True,
+    ).agg(expressions)
+
+
+def _aggregate_expression(measure: AggregateMeasure) -> pl.Expr:
+    if measure.function is AggregateFunction.COUNT:
+        return pl.len().cast(pl.Int64).alias(measure.output_field)
+    column = pl.col(measure.value_field)
+    if measure.function is AggregateFunction.MIN:
+        expression = column.min()
+    elif measure.function is AggregateFunction.MAX:
+        expression = column.max()
+    elif measure.function is AggregateFunction.SUM:
+        expression = pl.when(column.count() > 0).then(column.sum()).otherwise(None)
+    elif measure.function is AggregateFunction.AVG:
+        expression = column.mean()
+    elif measure.function is AggregateFunction.FIRST:
+        expression = column.first()
+    elif measure.function is AggregateFunction.LAST:
+        expression = column.last()
+    else:  # pragma: no cover - closed enum guard
+        raise AssertionError("unsupported aggregate function")
+    return expression.alias(measure.output_field)
+
+
+def _gap_fill(
+    aggregate: pl.DataFrame,
+    operation: GapFill,
+    bounds: ResourceBounds,
+) -> pl.DataFrame:
+    domain = _bucket_domain(operation.start, operation.end, operation.bucket)
+    if operation.group_by:
+        groups = aggregate.select(operation.group_by).unique(maintain_order=True)
+        group_count = groups.height
+    else:
+        groups = pl.DataFrame({"__single_group": [0]})
+        group_count = 1
+    rows = group_count * len(domain)
+    if rows > bounds.max_rows:
+        raise TemporalExtensionError(
+            TemporalErrorCode.RESOURCE_LIMIT_EXCEEDED,
+            "gap-fill series and bucket domain exceeds max_rows",
+            {"groups": group_count, "buckets": len(domain), "rows": rows},
+        )
+    buckets = pl.DataFrame(
+        {"bucket": pl.Series(domain, dtype=pl.Datetime("ns", "UTC"))}
+    )
+    expanded = groups.join(buckets, how="cross")
+    if not operation.group_by:
+        expanded = expanded.drop("__single_group")
+    keys = [*operation.group_by, "bucket"]
+    expanded = expanded.join(aggregate, on=keys, how="left").sort(keys)
+    for fill in operation.fills:
+        column = pl.col(fill.field)
+        if fill.mode is FillMode.NULL:
+            continue
+        if fill.mode is FillMode.CONSTANT:
+            expression = column.fill_null(fill.value)
+        elif fill.mode is FillMode.LOCF:
+            expression = column.forward_fill()
+            if operation.group_by:
+                expression = expression.over(operation.group_by)
+        else:
+            expression = column.interpolate()
+            if operation.group_by:
+                expression = expression.over(operation.group_by)
+        expanded = expanded.with_columns(expression.alias(fill.field))
+    return expanded
+
+
+def _bucket_domain(
+    start: str,
+    end: str,
+    bucket: FixedBucket | CalendarBucket,
+) -> list[int]:
+    end_ns = _timestamp_ns(end)
+    if isinstance(bucket, FixedBucket):
+        current = fixed_bucket_start(
+            _timestamp_ns(start),
+            bucket.width_ns,
+            _timestamp_ns(bucket.origin),
+            bucket.offset_ns,
+        )
+        values: list[int] = []
+        while current < end_ns:
+            values.append(current)
+            current += bucket.width_ns
+        return values
+    current_wire = calendar_bucket_start(start, bucket)
+    values = []
+    while _timestamp_ns(current_wire) < end_ns:
+        values.append(_timestamp_ns(current_wire))
+        next_wire = calendar_bucket_next(current_wire, bucket)
+        if _timestamp_ns(next_wire) <= _timestamp_ns(current_wire):
+            raise ValueError("calendar bucket domain did not advance")
+        current_wire = next_wire
+    return values
+
+
 def _sort_result(
     frame: pl.DataFrame,
     plan: PortableTemporalPlan,
@@ -257,11 +417,24 @@ def _sort_result(
     if (
         descriptor.duplicate_policy is DuplicatePolicy.PRESERVE
         and descriptor.ingestion_time_field is not None
+        and descriptor.ingestion_time_field in frame.columns
         and descriptor.ingestion_time_field not in fields
     ):
         fields.append(descriptor.ingestion_time_field)
         descending.append(False)
     return frame.sort(fields, descending=descending, maintain_order=True)
+
+
+def _result_fields(
+    operation: ScanRange | Latest | AsOf | BucketAggregate | GapFill,
+) -> tuple[str, ...]:
+    if isinstance(operation, (ScanRange, Latest, AsOf)):
+        return operation.projection
+    return (
+        *operation.group_by,
+        "bucket",
+        *(measure.output_field for measure in operation.measures),
+    )
 
 
 def _timestamp_ns(value: str) -> int:
@@ -334,6 +507,8 @@ def _receipt(
         ScanRange: "timeseries.scan.range",
         Latest: "timeseries.lookup.latest",
         AsOf: "timeseries.lookup.asof",
+        BucketAggregate: "timeseries.aggregate.window",
+        GapFill: "timeseries.fill",
     }[type(operation)]
     examined_ipc = _arrow_ipc_bytes(examined)
     result_ipc = _arrow_ipc_bytes(result)
@@ -357,7 +532,7 @@ def _receipt(
         batch_count=len(result.to_batches()),
     )
     requested_range = None
-    if isinstance(operation, ScanRange):
+    if isinstance(operation, (ScanRange, BucketAggregate, GapFill)):
         requested_range = TimeRange(operation.start, operation.end)
     return TemporalReceipt(
         schema_version="otc.temporal-receipt/v1",

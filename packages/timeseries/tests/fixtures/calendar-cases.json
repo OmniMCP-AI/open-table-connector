@@ -1,0 +1,104 @@
+{
+  "schema_version": "otc.calendar-bucket-cases/v1",
+  "cases": [
+    {
+      "case_id": "spring-forward-before",
+      "timestamp": "2026-03-08T06:59:00.000000000Z",
+      "count": 1,
+      "unit": "day",
+      "timezone": "America/New_York",
+      "week_start": 1,
+      "origin": "2026-01-01T05:00:00.000000000Z",
+      "offset_ns": 0,
+      "expected": "2026-03-08T05:00:00.000000000Z"
+    },
+    {
+      "case_id": "spring-forward-after",
+      "timestamp": "2026-03-08T07:01:00.000000000Z",
+      "count": 1,
+      "unit": "day",
+      "timezone": "America/New_York",
+      "week_start": 1,
+      "origin": "2026-01-01T05:00:00.000000000Z",
+      "offset_ns": 0,
+      "expected": "2026-03-08T05:00:00.000000000Z"
+    },
+    {
+      "case_id": "spring-forward-next-day",
+      "timestamp": "2026-03-09T06:00:00.000000000Z",
+      "count": 1,
+      "unit": "day",
+      "timezone": "America/New_York",
+      "week_start": 1,
+      "origin": "2026-01-01T05:00:00.000000000Z",
+      "offset_ns": 0,
+      "expected": "2026-03-09T04:00:00.000000000Z"
+    },
+    {
+      "case_id": "fall-back-first-fold",
+      "timestamp": "2026-11-01T05:30:00.000000000Z",
+      "count": 1,
+      "unit": "day",
+      "timezone": "America/New_York",
+      "week_start": 1,
+      "origin": "2026-01-01T05:00:00.000000000Z",
+      "offset_ns": 0,
+      "expected": "2026-11-01T04:00:00.000000000Z"
+    },
+    {
+      "case_id": "fall-back-second-fold",
+      "timestamp": "2026-11-01T06:30:00.000000000Z",
+      "count": 1,
+      "unit": "day",
+      "timezone": "America/New_York",
+      "week_start": 1,
+      "origin": "2026-01-01T05:00:00.000000000Z",
+      "offset_ns": 0,
+      "expected": "2026-11-01T04:00:00.000000000Z"
+    },
+    {
+      "case_id": "fall-back-next-day",
+      "timestamp": "2026-11-02T06:00:00.000000000Z",
+      "count": 1,
+      "unit": "day",
+      "timezone": "America/New_York",
+      "week_start": 1,
+      "origin": "2026-01-01T05:00:00.000000000Z",
+      "offset_ns": 0,
+      "expected": "2026-11-02T05:00:00.000000000Z"
+    },
+    {
+      "case_id": "monday-week-start",
+      "timestamp": "2026-08-26T16:00:00.000000000Z",
+      "count": 1,
+      "unit": "week",
+      "timezone": "America/New_York",
+      "week_start": 1,
+      "origin": "2026-01-01T05:00:00.000000000Z",
+      "offset_ns": 0,
+      "expected": "2026-08-24T04:00:00.000000000Z"
+    },
+    {
+      "case_id": "quarter-boundary",
+      "timestamp": "2026-05-12T16:00:00.000000000Z",
+      "count": 1,
+      "unit": "quarter",
+      "timezone": "America/New_York",
+      "week_start": 1,
+      "origin": "2026-01-01T05:00:00.000000000Z",
+      "offset_ns": 0,
+      "expected": "2026-04-01T04:00:00.000000000Z"
+    },
+    {
+      "case_id": "year-boundary",
+      "timestamp": "2026-12-31T16:00:00.000000000Z",
+      "count": 1,
+      "unit": "year",
+      "timezone": "America/New_York",
+      "week_start": 1,
+      "origin": "2026-01-01T05:00:00.000000000Z",
+      "offset_ns": 0,
+      "expected": "2026-01-01T05:00:00.000000000Z"
+    }
+  ]
+}

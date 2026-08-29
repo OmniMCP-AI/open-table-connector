@@ -1,6 +1,7 @@
 """Portable temporal contracts for Open Table Connector."""
 
 from .capabilities import ALL_CAPABILITIES
+from .buckets import calendar_bucket_start, fixed_bucket_start
 from .descriptor import (
     DuplicatePolicy,
     TemporalOrdering,
@@ -106,7 +107,9 @@ __all__ = [
     "TemporalTableDescriptor",
     "TimeRange",
     "TimestampPrecision",
+    "calendar_bucket_start",
     "descriptor_from_wire",
+    "fixed_bucket_start",
     "plan_from_wire",
     "portable_plan_hash",
     "temporal_descriptor_hash",
