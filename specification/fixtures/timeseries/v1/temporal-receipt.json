@@ -1,0 +1,50 @@
+{
+  "schema_version": "otc.temporal-receipt/v1",
+  "neutral_receipt": {
+    "contract_version": "1.0",
+    "connector": {
+      "connector_id": "local_files",
+      "connector_version": "0.1.0",
+      "contract_version": "1.0"
+    },
+    "capability": {
+      "capability_id": "timeseries.scan.range",
+      "capability_version": "1.0"
+    },
+    "operation_id": "execute-1",
+    "safe_uri": {"value": "json:///data/ticks.json"},
+    "mode": "base",
+    "source_revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "schema_fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "content_fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "coordinate_convention": {
+      "mode": "base",
+      "record_id_field": null,
+      "key_fields": ["symbol"],
+      "ordinal_snapshot_id": null
+    },
+    "row_count": 2,
+    "batch_count": 1,
+    "vendor_receipt_ref": null
+  },
+  "descriptor_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "requested_range": {
+    "start": "2026-08-29T00:00:00.000000000Z",
+    "end": "2026-08-30T00:00:00.000000000Z"
+  },
+  "observed_range": {
+    "start": "2026-08-29T00:00:00.000000000Z",
+    "end": "2026-08-30T00:00:00.000000000Z"
+  },
+  "output_order": [{"field": "symbol", "direction": "asc"}],
+  "execution_location": "connector",
+  "resource_bounds": {"max_rows": 10, "max_bytes": 4096, "max_duration_ms": 1000},
+  "examined_rows": 3,
+  "examined_bytes": 512,
+  "returned_rows": 2,
+  "returned_bytes": 256,
+  "elapsed_ms": 25,
+  "snapshot_reference": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "plan_schema_version": "otc.portable-temporal-plan/v1",
+  "portable_plan_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+}

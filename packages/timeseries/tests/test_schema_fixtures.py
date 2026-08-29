@@ -26,6 +26,15 @@ PLAN_FIXTURES = (
     "latest.json",
     "scan-range.json",
 )
+ALL_FIXTURES = (
+    "as-of.json",
+    "bucket-aggregate.json",
+    "gap-fill.json",
+    "latest.json",
+    "managed-lifecycle.json",
+    "scan-range.json",
+    "temporal-receipt.json",
+)
 
 
 def load_json(path: Path) -> dict[str, object]:
@@ -88,7 +97,7 @@ def test_plan_schema_rejects_unknown_fields_recursively() -> None:
 def test_manifest_covers_fixture_bytes_in_lexical_order() -> None:
     manifest_path = FIXTURE_ROOT / "manifest.sha256"
     lines = manifest_path.read_text(encoding="utf-8").splitlines()
-    assert [line.split("  ", 1)[1] for line in lines] == list(PLAN_FIXTURES)
+    assert [line.split("  ", 1)[1] for line in lines] == list(ALL_FIXTURES)
 
     for line in lines:
         expected, name = line.split("  ", 1)

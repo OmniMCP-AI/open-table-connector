@@ -1,0 +1,47 @@
+{
+  "stage": {
+    "schema_version": "otc.managed-stage-receipt/v1",
+    "operation_id": "stage-1",
+    "logical_target": {"value": "json:///data/ticks.json"},
+    "physical_target": {"value": "json:///data/ticks.json"},
+    "stage_id": "stage:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "idempotency_key": "idem-1",
+    "artifact_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "descriptor_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "staged_at": "2026-08-29T00:00:00.000000000Z",
+    "visible": false
+  },
+  "commit": {
+    "schema_version": "otc.managed-commit-receipt/v1",
+    "operation_id": "commit-1",
+    "logical_target": {"value": "json:///data/ticks.json"},
+    "stage_id": "stage:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "idempotency_key": "idem-1",
+    "snapshot_id": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "snapshot_reference": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "committed_at": "2026-08-30T00:00:00.000000000Z",
+    "visibility": "atomic"
+  },
+  "readback": {
+    "schema_version": "otc.managed-readback-receipt/v1",
+    "operation_id": "readback-1",
+    "snapshot_id": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "observed_at": "2026-08-30T00:00:01.000000000Z",
+    "observed_schema_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "observed_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "observed_rows": 2,
+    "observed_bytes": 128,
+    "observed_range": {
+      "start": "2026-08-29T00:00:00.000000000Z",
+      "end": "2026-08-30T00:00:00.000000000Z"
+    }
+  },
+  "abort": {
+    "schema_version": "otc.managed-abort-receipt/v1",
+    "operation_id": "abort-1",
+    "logical_target": {"value": "json:///data/ticks.json"},
+    "stage_id": "stage:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "disposition": "already_committed",
+    "aborted_at": "2026-08-30T00:00:02.000000000Z"
+  }
+}
