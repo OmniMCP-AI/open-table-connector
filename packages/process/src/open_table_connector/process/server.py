@@ -190,13 +190,14 @@ class ConnectorProcessServer:
         if registration is None:
             return ProcessResult({"cancelled": False, "target_session_id": target})
         self._cancelled.add(target)
+        result = ProcessResult({"cancelled": True, "target_session_id": target})
         callback = getattr(registration.handler, "abort_session", None)
         if callback is not None:
             try:
                 callback(target)
             except Exception:
-                pass
-        return ProcessResult({"cancelled": True, "target_session_id": target})
+                return result
+        return result
 
     def _session(self, session_id: str) -> ConnectorRegistration:
         if session_id in self._cancelled:
