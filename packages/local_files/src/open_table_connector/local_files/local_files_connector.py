@@ -114,13 +114,16 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
         self, request: LocalTableReadRequest, resolved: ResolvedLocalTable
     ) -> ConcreteConnectorRequest:
         if resolved.format is LocalFormat.CSV:
+            separator = request.options.separator
+            if resolved.path.suffix.casefold() == ".tsv" and separator == ",":
+                separator = "\t"
             return (
                 self._csv_connector,
                 CsvTableReadRequest(
                     self._explicit_uri(resolved.path, "csv"),
                     resource_limits=request.resource_limits,
                     options=CsvReadOptions(
-                        separator=request.options.separator,
+                        separator=separator,
                         encoding=request.options.encoding,
                     ),
                 ),
