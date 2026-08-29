@@ -4,6 +4,7 @@ from .csv_connector import CsvConnector, CsvReadOptions, CsvTableReadRequest
 from .temporal_csv import CsvManagedTemporalStore, CsvTemporalExecutor
 from .excel_connector import ExcelConnector, ExcelReadOptions, ExcelTableReadRequest
 from .excel_reader import read_excel_arrow
+from .temporal_excel import ExcelManagedTemporalStore, ExcelTemporalExecutor
 from .identity import CONNECTOR_IDENTITY
 from .json_codec import (
     encode_json_table,
@@ -30,8 +31,10 @@ __all__ = [
     "CsvTableReadRequest",
     "CsvTemporalExecutor",
     "ExcelConnector",
+    "ExcelManagedTemporalStore",
     "ExcelReadOptions",
     "ExcelTableReadRequest",
+    "ExcelTemporalExecutor",
     "JsonConnector",
     "JsonManagedTemporalStore",
     "JsonTableReadRequest",

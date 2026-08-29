@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 import stat
 from typing import Iterator, Mapping
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qsl, unquote, urlsplit
 import uuid
 
 import pyarrow as pa
@@ -68,6 +68,8 @@ class ManagedSnapshotStore:
         extension: str,
         encode_snapshot: Callable[[pa.Table], bytes],
         decode_snapshot: Callable[[bytes], pa.Table],
+        target_fragment: tuple[str, str] | None = None,
+        physical_target_validator: Callable[[TableURI], None] | None = None,
         clock: Callable[[], datetime | float] | None = None,
         fault_injector: Callable[[str], None] | None = None,
     ) -> None:
@@ -86,14 +88,19 @@ class ManagedSnapshotStore:
         self.extension = extension
         self._encode_snapshot = encode_snapshot
         self._decode_snapshot = decode_snapshot
+        self._target_fragment = target_fragment
+        self._physical_target_validator = physical_target_validator
         self._clock = clock or (lambda: datetime.now(UTC))
         self._fault_injector = fault_injector
 
     def stage_artifact(self, request: ManagedStageRequest) -> ManagedStageReceipt:
         if not isinstance(request, ManagedStageRequest):
             raise TypeError("request must be a ManagedStageRequest")
+        if self._physical_target_validator is not None:
+            self._physical_target_validator(request.physical_target)
         layout = self._layout(request.logical_target, create=True)
-        self._layout(request.physical_target, create=False)
+        if self._physical_target_validator is None:
+            self._layout(request.physical_target, create=False)
         with self._locked(layout):
             self._recover_unlocked(layout)
             existing = self._stage_by_idempotency(layout, request.idempotency_key)
@@ -354,11 +361,18 @@ class ManagedSnapshotStore:
         parsed = urlsplit(target.value)
         decoded = unquote(parsed.path)
         path = Path(decoded)
+        expected_fragment = self._target_fragment
+        fragment_valid = (
+            not parsed.fragment
+            if expected_fragment is None
+            else parse_qsl(parsed.fragment, keep_blank_values=True, strict_parsing=True)
+            == [expected_fragment]
+        )
         if (
             target.scheme != self.target_scheme
             or parsed.netloc not in {"", "localhost"}
             or parsed.query
-            or parsed.fragment
+            or not fragment_valid
             or not path.is_absolute()
             or ".." in path.parts
             or not path.name
