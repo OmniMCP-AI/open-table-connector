@@ -1,0 +1,21 @@
+{
+  "schema_version": "mbs.temporal-describe/v1",
+  "provider_identity": "mbs.recording/1.0.0",
+  "capabilities": [
+    "timeseries.describe/1.0",
+    "timeseries.scan.range/1.0",
+    "timeseries.lookup.latest/1.0",
+    "timeseries.lookup.asof/1.0",
+    "timeseries.aggregate.window/1.0",
+    "timeseries.fill/1.0"
+  ],
+  "commands": {
+    "read": {"version": "1.0", "result_schema": "mbs.temporal-read-result/v1", "receipt_schema": "mbs.temporal-read-receipt/v1"},
+    "stage": {"version": "1.0", "receipt_schema": "otc.managed-stage-receipt/v1"},
+    "commit": {"version": "1.0", "receipt_schema": "otc.managed-commit-receipt/v1"},
+    "snapshot-read": {"version": "1.0", "result_schema": "mbs.temporal-snapshot-result/v1", "media_type": "application/vnd.apache.arrow.stream"},
+    "readback": {"version": "1.0", "receipt_schema": "otc.managed-readback-receipt/v1"},
+    "abort": {"version": "1.0", "receipt_schema": "otc.managed-abort-receipt/v1"}
+  },
+  "visibility": {"guarantee": "atomic", "evidence_schema": "mbs.atomic-pointer-evidence/v1"}
+}
