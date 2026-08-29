@@ -16,6 +16,7 @@ from open_table_connector.contract import BaseConvention, ConnectorError, Connec
 from open_table_connector.contract.fingerprints import arrow_content_fingerprint, arrow_schema_fingerprint, operation_identity
 
 from .identity import BASE_READ_CAPABILITY, CONNECTOR_IDENTITY, SHEET_READ_CAPABILITY, TABLE_WRITE_CAPABILITY
+from .manifest import CAPABILITY_MANIFEST
 from .process import SubprocessProcessClient
 
 
@@ -79,6 +80,7 @@ def _payload_table(payload: Mapping[str, Any]) -> pa.Table:
 
 class MaybeSheetConnector:
     identity = CONNECTOR_IDENTITY
+    manifest = CAPABILITY_MANIFEST
 
     def __init__(self, process_client: ProcessClient) -> None:
         self._process = process_client

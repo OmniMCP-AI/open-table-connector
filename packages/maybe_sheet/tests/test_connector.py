@@ -56,6 +56,19 @@ def test_maybe_sheet_has_explicit_base_and_sheet_argv_and_receipts() -> None:
     assert result.receipt.vendor_receipt_ref == "safe-ref"
 
 
+def test_maybe_sheet_exposes_a_complete_capability_manifest() -> None:
+    connector = MaybeSheetConnector(Process())
+
+    assert connector.manifest.connector.connector_id == "maybe_sheet"
+    assert {item.capability_id for item in connector.manifest.capabilities} == {
+        "base.read",
+        "sheet.read",
+        "base.inspect",
+        "sheet.inspect",
+        "table.write",
+    }
+
+
 def test_maybe_sheet_read_enforces_max_rows_when_process_over_returns() -> None:
     process = OverReturningProcess()
     request = MaybeSheetReadRequest(

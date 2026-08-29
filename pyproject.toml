@@ -12,7 +12,7 @@ requires-python = ">=3.11"
 members = ["packages/contract", "packages/conformance", "packages/local_files", "packages/postgres", "packages/sqlite", "packages/dbt", "packages/maybe_sheet", "packages/google_sheets", "packages/feishu_bitable", "packages/cli"]
 
 [dependency-groups]
-dev = ["pytest>=9,<10"]
+dev = ["pytest>=9,<10", "xlwt>=1.3,<2"]
 
 [tool.setuptools]
 packages = []

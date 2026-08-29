@@ -5,13 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "open-table-connector-local-files"
 version = "0.1.0"
-description = "Neutral CSV, Excel, and Markdown Connectors with a local-files compatibility facade"
+description = "Neutral CSV, JSON, Excel, and Markdown Connectors with a local-files compatibility facade"
 requires-python = ">=3.11"
 dependencies = [
   "open-table-connector-contract==0.1.0",
   "openpyxl>=3.1,<4",
   "polars>=1.0,<2",
   "pyarrow>=14,<20",
+  "xlrd>=2,<3",
 ]
 
 [tool.uv.sources]

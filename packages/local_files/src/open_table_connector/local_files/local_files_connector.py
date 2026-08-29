@@ -34,6 +34,8 @@ from .identity import (
     TABLE_READ_POLARS_CAPABILITY,
 )
 from .inspection import inspection_from_read
+from .json_reader import read_json_arrow
+from .legacy_excel_reader import read_legacy_excel_arrow
 from .manifest import CAPABILITY_MANIFEST
 from .markdown_connector import MarkdownConnector, MarkdownReadOptions, MarkdownTableReadRequest
 from .receipts import make_receipt, options_identity
@@ -42,14 +44,16 @@ from .resolver import LocalFormat, LocalURIResolver, ResolvedLocalTable
 
 @dataclass(frozen=True)
 class LocalReadOptions:
-    separator: str = ","
+    separator: str | None = None
     encoding: str = "utf8"
     sheet: str | None = None
     header_row: int = 1
 
     def __post_init__(self) -> None:
-        if not isinstance(self.separator, str) or len(self.separator) != 1:
-            raise ValueError("separator must be exactly one character")
+        if self.separator is not None and (
+            not isinstance(self.separator, str) or len(self.separator) != 1
+        ):
+            raise ValueError("separator must be exactly one character when supplied")
         if not isinstance(self.encoding, str) or not self.encoding.strip():
             raise ValueError("encoding must be a non-empty string")
         if self.sheet is not None and (not isinstance(self.sheet, str) or not self.sheet.strip()):
@@ -88,7 +92,7 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
         return self._resolver.resolve(uri, context)
 
     def _resolve_sheet(self, request: LocalTableReadRequest, resolved: ResolvedLocalTable) -> str | None:
-        if resolved.format is not LocalFormat.EXCEL:
+        if resolved.format not in {LocalFormat.EXCEL, LocalFormat.LEGACY_EXCEL}:
             if resolved.sheet or request.options.sheet:
                 raise ConnectorError(
                     ConnectorErrorCode.INVALID_URI,
@@ -118,7 +122,7 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
                     self._explicit_uri(resolved.path, "csv"),
                     resource_limits=request.resource_limits,
                     options=CsvReadOptions(
-                        separator=request.options.separator,
+                        separator=request.options.separator or resolved.separator or ",",
                         encoding=request.options.encoding,
                     ),
                 ),
@@ -148,9 +152,32 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
         resolved = self.resolve(request.uri, request.resolve_context)
         resource = resolved.resource
         sheet = self._resolve_sheet(request, resource)
+        resolved_resource = ResolvedLocalTable(
+            path=resource.path,
+            format=resource.format,
+            sheet=sheet,
+            separator=resource.separator,
+        )
+
+        if resource.format is LocalFormat.JSON:
+            table = read_json_arrow(
+                resource.path,
+                encoding=request.options.encoding,
+                limits=request.resource_limits,
+            )
+            return table, resource.path, "data", ("data",)
+        if resource.format is LocalFormat.LEGACY_EXCEL:
+            table, selected_sheet, worksheets = read_legacy_excel_arrow(
+                resource.path,
+                sheet=sheet,
+                header_row=request.options.header_row,
+                limits=request.resource_limits,
+            )
+            return table, resource.path, selected_sheet, worksheets
+
         connector, concrete_request = self._build_concrete_request(
             request,
-            ResolvedLocalTable(path=resource.path, format=resource.format, sheet=sheet),
+            resolved_resource,
         )
 
         if resource.format is LocalFormat.CSV:
@@ -165,13 +192,20 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
 
     def _result(self, request: LocalTableReadRequest, capability):
         table, path, sheet, _ = self._read_canonical(request)
+        resolved = self.resolve(request.uri, request.resolve_context).resource
+        effective_options = LocalReadOptions(
+            separator=request.options.separator or resolved.separator or ",",
+            encoding=request.options.encoding,
+            sheet=request.options.sheet,
+            header_row=request.options.header_row,
+        )
         receipt = make_receipt(
             table,
             path=path,
             uri=request.uri,
             sheet=sheet,
             header_row=request.options.header_row,
-            parameters=options_identity(request.options, sheet=sheet),
+            parameters=options_identity(effective_options, sheet=sheet),
             capability=capability,
         )
         return table, receipt

@@ -10,7 +10,7 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 from open_table_connector.contract import ResolveContext, ResolvedTable, TableMode, TableURI
 from open_table_connector.contract.errors import ConnectorError, ConnectorErrorCode
 
-from .probe import LocalFormat, detect_format
+from .probe import LocalFormat, detect_format, detect_separator
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,7 @@ class ResolvedLocalTable:
     path: Path
     format: LocalFormat
     sheet: str | None = None
+    separator: str | None = None
 
 
 def _resolve_explicit_local_path(
@@ -148,7 +149,8 @@ class LocalURIResolver:
             mode=TableMode.SHEET,
             resource=ResolvedLocalTable(
                 path=path,
-                format=detect_format(path),
+                format=(detected := detect_format(path)),
                 sheet=_sheet_from_uri(uri),
+                separator=detect_separator(path) if detected is LocalFormat.CSV else None,
             ),
         )

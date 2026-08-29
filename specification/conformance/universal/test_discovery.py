@@ -29,7 +29,7 @@ _CASE_NAMES = (
     "postgres",
     "dbt",
 )
-_MANIFESTLESS_CASE_NAMES = ("maybe_sheet", "sqlite", "postgres", "dbt")
+_MANIFESTLESS_CASE_NAMES = ("sqlite", "postgres", "dbt")
 
 
 @dataclass(frozen=True)

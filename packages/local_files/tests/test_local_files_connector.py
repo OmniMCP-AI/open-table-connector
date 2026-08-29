@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from openpyxl import Workbook
+import xlwt
 
 from open_table_connector.contract import ResolveContext, TableURI
 from open_table_connector.contract.errors import ConnectorError, ConnectorErrorCode
@@ -19,6 +20,8 @@ from open_table_connector.local_files.resolver import LocalFormat
     ("filename", "payload", "expected_format"),
     (
         ("orders.csv", "id\n1\n", LocalFormat.CSV),
+        ("orders.tsv", "id\tamount\n1\t2\n", LocalFormat.CSV),
+        ("orders.json", '[{"id": 1, "amount": 2.5}]', LocalFormat.JSON),
         ("orders.md", "| id |\n| --- |\n| 1 |\n", LocalFormat.MARKDOWN),
     ),
 )
@@ -35,6 +38,53 @@ def test_local_files_facade_autodetects_supported_text_formats(
     assert resolved.resource.format is expected_format
     assert result.table.num_rows == 1
     assert result.receipt.connector.connector_id == "local_files"
+
+
+def test_local_files_facade_autodetects_tsv_separator(tmp_path: Path) -> None:
+    source = tmp_path / "orders.tsv"
+    source.write_text("id\tamount\n1\t2\n", encoding="utf-8")
+
+    result = LocalFilesConnector().read_polars(
+        LocalTableReadRequest(TableURI(source.as_uri()))
+    )
+
+    assert result.frame.to_dicts() == [{"id": "1", "amount": "2"}]
+
+
+def test_local_files_facade_reads_json_array(tmp_path: Path) -> None:
+    source = tmp_path / "orders.data"
+    source.write_text('[{"id": 1, "amount": 2.5}]', encoding="utf-8")
+
+    result = LocalFilesConnector().read_polars(
+        LocalTableReadRequest(TableURI(source.as_uri()))
+    )
+
+    assert result.frame.to_dicts() == [{"id": 1, "amount": 2.5}]
+
+
+def test_local_files_facade_reads_legacy_xls(tmp_path: Path) -> None:
+    source = tmp_path / "orders.xls"
+    workbook = xlwt.Workbook()
+    worksheet = workbook.add_sheet("orders")
+    worksheet.write(0, 0, "id")
+    worksheet.write(0, 1, "amount")
+    worksheet.write(0, 2, "source_date")
+    worksheet.write(1, 0, "o-1")
+    worksheet.write(1, 1, 2.5)
+    worksheet.write(1, 2, "2026-06-01")
+    worksheet.write(2, 0, "o-2")
+    worksheet.write(2, 1, 3.5)
+    worksheet.write(2, 2, 46175.0)
+    workbook.save(str(source))
+
+    result = LocalFilesConnector().read_polars(
+        LocalTableReadRequest(TableURI(source.as_uri()))
+    )
+
+    assert result.frame.to_dicts() == [
+        {"id": "o-1", "amount": 2.5, "source_date": "2026-06-01"},
+        {"id": "o-2", "amount": 3.5, "source_date": "46175.0"},
+    ]
 
 
 def test_local_files_facade_reads_excel_and_preserves_compatibility_receipts(

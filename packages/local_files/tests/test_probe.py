@@ -22,6 +22,20 @@ def test_xlsx_zip_signature_wins_over_misleading_csv_suffix(tmp_path: Path) -> N
     assert detect_format(source) is LocalFormat.EXCEL
 
 
+def test_json_content_wins_over_suffix(tmp_path: Path) -> None:
+    source = tmp_path / "orders.csv"
+    source.write_text('[{"id": 1}]', encoding="utf-8")
+
+    assert detect_format(source) is LocalFormat.JSON
+
+
+def test_legacy_excel_signature_wins_over_suffix(tmp_path: Path) -> None:
+    source = tmp_path / "orders.csv"
+    source.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1rest")
+
+    assert detect_format(source) is LocalFormat.LEGACY_EXCEL
+
+
 def test_unsupported_content_fails_with_structured_error(tmp_path: Path) -> None:
     source = tmp_path / "image.bin"
     source.write_bytes(b"\x89PNG\r\n\x1a\n")
