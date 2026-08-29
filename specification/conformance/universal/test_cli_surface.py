@@ -472,7 +472,7 @@ def test_cli_local_conversion_round_trip_preserves_rows_and_columns(
             "convert",
             from_value=str(source),
             to_value=str(destination),
-            output_format="json",
+            output_format=format_name,
         ),
         bridge.registry,
     )
@@ -517,7 +517,6 @@ def test_cli_convert_infers_local_source_and_destination_formats(tmp_path) -> No
             "convert",
             from_value=str(source),
             to_value=str(destination),
-            output_format="json",
         ),
         bridge.registry,
     )
@@ -542,7 +541,6 @@ def test_cli_convert_csv_scheme_to_markdown_scheme_preserves_rows(tmp_path) -> N
             "convert",
             from_value=f"csv://{source}",
             to_value=f"md://{destination}",
-            output_format="json",
         ),
         bridge.registry,
     )
@@ -572,8 +570,7 @@ def test_cli_convert_explicit_format_overrides_allow_extensionless_paths(tmp_pat
             from_value=str(source),
             to_value=str(destination),
             from_format="jsonl",
-            to_format="csv",
-            output_format="json",
+            output_format="csv",
         ),
         bridge.registry,
     )
@@ -903,7 +900,7 @@ def test_cli_provider_source_format_override_is_rejected_before_io() -> None:
     assert source.write_calls == []
 
 
-def test_cli_provider_destination_format_override_is_rejected_before_any_io() -> None:
+def test_cli_import_output_format_controls_summary_only() -> None:
     source = _fixture_adapter(connector_id="source", schemes=("source",))
     destination = _fixture_adapter(connector_id="provider", schemes=("provider",))
 
@@ -912,22 +909,16 @@ def test_cli_provider_destination_format_override_is_rejected_before_any_io() ->
             "import",
             from_value="source://fixture/orders",
             to_value="provider://fixture/orders",
-            to_format="json",
+            output_format="json",
         ),
         ConnectorRegistry([source, destination]),
     )
 
-    payload = strict_json_loads(result.stderr)
-    assert result.exit_code == 3
-    assert result.stdout == ""
-    assert payload["safe_details"] == {
-        "scheme": "provider",
-        "option": "to-format",
-        "format": "json",
-    }
-    assert source.read_calls == []
-    assert destination.preflight_calls == []
-    assert destination.write_calls == []
+    payload = strict_json_loads(result.stdout)
+    assert result.exit_code == 0
+    assert payload["rows_read"] == 2
+    assert source.read_calls
+    assert destination.write_calls
 
 
 def test_cli_unknown_scheme_uses_stable_unsupported_exit_code() -> None:
@@ -1150,8 +1141,7 @@ def test_cli_convert_stdout_is_owned_only_by_selected_codec(format_name: str) ->
             "convert",
             from_value="fixture://source/orders",
             to_value="-",
-            to_format=format_name,
-            output_format="jsonl",
+            output_format=format_name,
         ),
         ConnectorRegistry([adapter]),
     )
@@ -1254,7 +1244,7 @@ def test_otc_entry_point_parses_from_to_and_emits_only_requested_codec(
             str(source),
             "--to",
             "-",
-            "--to-format",
+            "--output-format",
             "jsonl",
         ],
         capture_output=True,

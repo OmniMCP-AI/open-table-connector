@@ -397,7 +397,7 @@ class LocalAdapter:
     capabilities: tuple[CapabilityIdentity, ...] = tuple(LocalFilesConnector.manifest.capabilities)
 
     def _format(self, endpoint: Endpoint, options: CliOptions, *, output: bool = False) -> FormatName:
-        return infer_format(endpoint, options.to_format if output else options.from_format)
+        return infer_format(endpoint, options.output_format if output else options.from_format)
 
     def _read_request(self, endpoint: Endpoint, options: CliOptions) -> LocalTableReadRequest:
         return LocalTableReadRequest(

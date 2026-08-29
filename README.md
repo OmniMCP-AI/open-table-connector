@@ -39,19 +39,28 @@ are never dependencies of the neutral packages.
 
 ## Get started
 
-Install the workspace and verify the CLI:
+Install a released CLI with `uv`:
+
+```console
+uv tool install open-table-connector
+otc --help
+```
+
+When working from a checkout, install the workspace and activate its virtual
+environment:
 
 ```console
 uv sync --dev
-uv run --package open-table-connector otc --help
+source .venv/bin/activate
+otc --help
 ```
 
 Read, inspect, and convert a local table:
 
 ```console
-uv run --package open-table-connector otc inspect --from orders.csv --output-format json
-uv run --package open-table-connector otc read --from csv:///absolute/path/orders.csv --output-format table
-uv run --package open-table-connector otc convert --from orders.csv --to orders.jsonl --to-format jsonl
+otc inspect --from orders.csv --output-format json
+otc read --from csv:///absolute/path/orders.csv --output-format table
+otc convert --from orders.csv --to orders.jsonl --output-format jsonl
 ```
 
 The CLI is the quickest path for ordinary table movement. The typed Python
@@ -64,7 +73,7 @@ Install the CLI package to use `otc` (or the equivalent
 `open-table-connector` command):
 
 ```console
-otc convert --from orders.csv --to - --to-format jsonl
+otc convert --from orders.csv --to - --output-format jsonl
 otc read --from csv:///absolute/path/orders.csv --output-format table
 otc read --from excel:///absolute/path/orders.xlsx --sheet Orders
 otc read --from md:///absolute/path/orders.md --output-format json

@@ -24,11 +24,19 @@ OTC is a connector layer. It owns URI parsing, physical I/O, provider
 git clone https://github.com/OmniMCP-AI/open-table-connector.git
 cd open-table-connector
 uv sync --dev
-uv run --package open-table-connector otc --help
+source .venv/bin/activate
+otc --help
 ```
 
-`uv sync` installs the workspace packages into one environment. The
-`--package` selector makes it explicit that the CLI package is being run.
+For a released build, install the CLI as a `uv` tool:
+
+```console
+uv tool install open-table-connector
+otc --help
+```
+
+`uv sync` installs the workspace packages into one environment. Activating
+`.venv` puts the `otc` entry point on `PATH` for the current shell.
 
 ## First table read
 
@@ -46,24 +54,24 @@ CSV
 Inspect its schema and row count:
 
 ```console
-uv run --package open-table-connector otc inspect \
+otc inspect \
   --from orders.csv --output-format json
 ```
 
 Read it as a Markdown table:
 
 ```console
-uv run --package open-table-connector otc read \
+otc read \
   --from csv://$(pwd)/orders.csv --output-format table
 ```
 
 Convert it to JSONL, then read the converted file:
 
 ```console
-uv run --package open-table-connector otc convert \
-  --from orders.csv --to orders.jsonl --to-format jsonl
+otc convert \
+  --from orders.csv --to orders.jsonl --output-format jsonl
 
-uv run --package open-table-connector otc read \
+otc read \
   --from orders.jsonl --output-format json
 ```
 
@@ -77,7 +85,7 @@ access token in the environment (or pass `--token`):
 
 ```console
 GOOGLE_SHEETS_ACCESS_TOKEN="$TOKEN" \
-  uv run --package open-table-connector otc read \
+  otc read \
     --from gsheets://SPREADSHEET_ID/Orders \
     --range 'A1:C100' --output-format jsonl
 ```
@@ -86,7 +94,7 @@ For a write-capable destination, use `import` and choose an explicit conflict
 policy:
 
 ```console
-uv run --package open-table-connector otc import \
+otc import \
   --from orders.csv \
   --to gsheets://SPREADSHEET_ID/Orders \
   --if-exists append

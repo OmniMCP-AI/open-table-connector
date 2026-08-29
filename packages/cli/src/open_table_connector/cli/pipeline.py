@@ -44,11 +44,13 @@ def convert_endpoint(
     if not _is_local(destination):
         raise _unsupported(destination, "convert destinations must be local files or stdout")
 
-    destination_format = infer_format(destination, options.to_format)
+    destination_format = infer_format(destination, options.output_format)
+    if destination.is_stdio and destination_format is FormatName.AUTO:
+        destination_format = FormatName.JSONL
     if destination_format.value == "auto":
         raise ConnectorError(
             ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
-            "local destination format could not be inferred; provide --to-format",
+            "local destination format could not be inferred; provide --output-format",
             {"scheme": "file", "format": destination_format.value},
         )
 
@@ -75,7 +77,6 @@ def import_endpoint(
         raise _unsupported(destination, "import destinations must be writable connectors")
 
     _validate_source_format(source, options)
-    _validate_destination_format(destination, options)
 
     # Validate before reading so unsupported imports cannot cause provider I/O.
     destination_adapter = registry.require_capability(destination, "table.write")
@@ -112,20 +113,6 @@ def _validate_source_format(endpoint: Endpoint, options: CliOptions) -> None:
             "scheme": endpoint.uri.scheme if endpoint.uri is not None else "file",
             "option": "from-format",
             "format": options.from_format.value,
-        },
-    )
-
-
-def _validate_destination_format(endpoint: Endpoint, options: CliOptions) -> None:
-    if _is_local(endpoint) or options.to_format is FormatName.AUTO:
-        return
-    raise ConnectorError(
-        ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
-        "connector destinations do not support --to-format; omit the override",
-        {
-            "scheme": endpoint.uri.scheme if endpoint.uri is not None else "file",
-            "option": "to-format",
-            "format": options.to_format.value,
         },
     )
 

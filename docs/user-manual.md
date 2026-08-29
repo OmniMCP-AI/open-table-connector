@@ -19,11 +19,19 @@ contract.
 
 ## 2. Install and run the CLI
 
-From a checkout:
+For a released build, install the CLI as a `uv` tool:
+
+```console
+uv tool install open-table-connector
+otc --help
+```
+
+From a source checkout:
 
 ```console
 uv sync --dev
-uv run --package open-table-connector otc --help
+source .venv/bin/activate
+otc --help
 ```
 
 The canonical entry points are `otc` and `open-table-connector`.
@@ -42,11 +50,11 @@ The CLI has five commands:
 Examples:
 
 ```console
-uv run --package open-table-connector otc list
-uv run --package open-table-connector otc inspect --from orders.csv --output-format json
-uv run --package open-table-connector otc read --from orders.csv --output-format jsonl
-uv run --package open-table-connector otc convert --from orders.csv --to orders.xlsx --to-format excel
-uv run --package open-table-connector otc import --from orders.csv --to gsheets://ID/Orders --if-exists append
+otc list
+otc inspect --from orders.csv --output-format json
+otc read --from orders.csv --output-format jsonl
+otc convert --from orders.csv --to orders.xlsx --output-format excel
+otc import --from orders.csv --to gsheets://ID/Orders --if-exists append
 ```
 
 ### CLI options
@@ -58,8 +66,7 @@ The shared options are:
 | `--from` | endpoint | Required for every command except `list` |
 | `--to` | endpoint | Required for `convert` and `import` |
 | `--from-format` | `auto`, `csv`, `excel`, `json`, `jsonl`, `table` | Local input override |
-| `--to-format` | same values | Local output override |
-| `--output-format` | `csv`, `json`, `jsonl`, `table` | Defaults to `jsonl` |
+| `--output-format` | `csv`, `json`, `jsonl`, `table` for reads/imports; add `auto` and `excel` for `convert` | For `convert`, destination codec; otherwise emitted summary/rows. Defaults to suffix inference for `convert` and `jsonl` elsewhere |
 | `--if-exists` | `error`, `append`, `replace` | Destination conflict policy |
 | `--limit` | positive integer | Maximum rows returned from a read |
 | `--timeout` | positive seconds | Connector request timeout |
@@ -69,14 +76,21 @@ The shared options are:
 | `--token` | secret value | Prefer an environment variable in automation |
 | `--target` | provider target | MaybeSheet document/table target |
 
-`convert` destinations must be local files or `-` (stdout). `import`
-destinations must advertise `table.write`.
+`convert` destinations must be local files or `-` (stdout). Its
+`--output-format` selects the destination codec; when omitted, a recognized
+suffix is inferred, and stdout defaults to JSONL. File conversions emit a
+JSONL completion summary. `import` destinations must advertise `table.write`;
+there `--output-format` selects the summary representation only.
+
+The former `--to-format` option has been removed. Replace it with
+`--output-format`; using the old flag returns a usage error.
 
 ### Output and errors
 
-Successful `inspect`, `read`, and pipeline summaries are emitted as the
-requested format. A conversion to `-` owns stdout for the selected codec, so
-the CLI does not append a JSON summary to that stream.
+Successful `inspect`, `read`, and `import` results use the requested output
+format. A file conversion writes the destination in its selected codec and
+emits a JSONL completion summary. A conversion to `-` owns stdout for the
+selected codec, so the CLI does not append a summary to that stream.
 
 Errors are emitted as one safe JSON object on stderr. Provider secrets are not
 included in the object. Automation should use the process exit code and the
@@ -339,7 +353,7 @@ for the temporal contract, not a second query language.
 | Symptom | Check |
 | --- | --- |
 | `no connector advertises this endpoint scheme` | Use a supported URI scheme or a bare local path |
-| `local destination format could not be inferred` | Add `--to-format` or use a recognized suffix |
+| `local destination format could not be inferred` | Add `--output-format` or use a recognized suffix |
 | `connector sources do not support --from-format` | Remove the override for remote connectors |
 | `snapshot_unavailable` | Use the snapshot reference returned by the same managed target |
 | `protocol_invalid` | Recompute the descriptor hash from the exact Arrow schema |

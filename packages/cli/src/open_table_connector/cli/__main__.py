@@ -75,12 +75,18 @@ def _emit_parser_error(message: str) -> None:
     sys.stderr.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
 
 
-def _add_options(parser: argparse.ArgumentParser, *, require_from: bool, require_to: bool) -> None:
+def _add_options(
+    parser: argparse.ArgumentParser,
+    *,
+    require_from: bool,
+    require_to: bool,
+    output_choices: Sequence[str] = _OUTPUT_FORMATS,
+    output_default: str | None = "jsonl",
+) -> None:
     parser.add_argument("--from", dest="from_value", required=require_from, metavar="SOURCE")
     parser.add_argument("--to", dest="to_value", required=require_to, metavar="DESTINATION")
     parser.add_argument("--from-format", choices=_FORMATS, default=None)
-    parser.add_argument("--to-format", choices=_FORMATS, default=None)
-    parser.add_argument("--output-format", choices=_OUTPUT_FORMATS, default="jsonl")
+    parser.add_argument("--output-format", choices=output_choices, default=output_default)
     parser.add_argument("--if-exists", choices=("append", "replace", "error"), default="error")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--timeout", type=float)
@@ -102,7 +108,13 @@ def build_parser() -> argparse.ArgumentParser:
     read_parser = subparsers.add_parser("read", help="read a table")
     _add_options(read_parser, require_from=True, require_to=False)
     convert_parser = subparsers.add_parser("convert", help="convert a table to a local destination")
-    _add_options(convert_parser, require_from=True, require_to=True)
+    _add_options(
+        convert_parser,
+        require_from=True,
+        require_to=True,
+        output_choices=_FORMATS,
+        output_default=None,
+    )
     import_parser = subparsers.add_parser("import", help="import a table into a connector")
     _add_options(import_parser, require_from=True, require_to=True)
     return parser

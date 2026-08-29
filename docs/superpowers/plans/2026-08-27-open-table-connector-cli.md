@@ -15,7 +15,7 @@
 - The short executable name is `otc`; the long executable name is `open-table-connector`.
 - `open-connectors` is a deprecated command alias, not the repository or package name.
 - `--from` and `--to` are the canonical endpoint flags for all commands that move or inspect table data.
-- `--from-format` and `--to-format` accept `auto`, `csv`, `json`, `jsonl`, and `table`; `auto` is the default.
+- `--from-format` accepts `auto`, `csv`, `excel`, `json`, `jsonl`, and `table`; `--output-format` is the sole output/destination format flag.
 - JSONL is the default agent output; `--output-format table` is the human-readable mode.
 - Supported connector pipelines must use injected transports/process clients in tests and must not require network credentials.
 - Credentials must not appear in URIs, JSONL, tables, receipts, errors, or persistent configuration files.
@@ -401,7 +401,7 @@ Expected: collection fails because `pipeline.py` is missing.
 
 For local sources, call `read_local`; for connector sources, call the adapter’s `read` method. Apply `ResourceLimits(max_rows=options.limit, timeout_seconds=options.timeout)` in adapter request construction. `read_endpoint` must return the provider’s receipt unchanged. `inspect_endpoint` must call the adapter’s inspect method and never materialize a second independent read in the CLI layer.
 
-For `convert_endpoint`, reject connector destinations with `UNSUPPORTED_CAPABILITY`; infer the destination codec from `--to-format` or extension, write with `write_local`, and return a summary with `rows_written=table.num_rows` and the source receipt. For `import_endpoint`, reject local destinations with `UNSUPPORTED_CAPABILITY` because `convert` owns local writes; call `require_capability(destination, "table.write")` before reading, then invoke the destination adapter exactly once. Drop `_record_id` only when writing from Feishu to a local/other destination if the destination adapter explicitly marks it provider-owned; otherwise preserve all columns. Return source and destination receipts in `PipelineSummary`.
+For `convert_endpoint`, reject connector destinations with `UNSUPPORTED_CAPABILITY`; infer the destination codec from `--output-format` or extension, default stdout to JSONL, write with `write_local`, and return a summary with `rows_written=table.num_rows` and the source receipt. For `import_endpoint`, reject local destinations with `UNSUPPORTED_CAPABILITY` because `convert` owns local writes; call `require_capability(destination, "table.write")` before reading, then invoke the destination adapter exactly once. Drop `_record_id` only when writing from Feishu to a local/other destination if the destination adapter explicitly marks it provider-owned; otherwise preserve all columns. Return source and destination receipts in `PipelineSummary`.
 
 - [ ] **Step 4: Run pipeline tests to verify they pass**
 
@@ -493,7 +493,7 @@ git commit -m "feat: add otc structured command output"
 
 **Interfaces:**
 - Produces `build_parser() -> argparse.ArgumentParser` and `main(argv: Sequence[str] | None = None) -> int`.
-- The parser requires `--from` for `inspect`/`read`, requires both `--from` and `--to` for `convert`/`import`, and accepts `--from-format`, `--to-format`, `--output-format`, `--if-exists`, `--limit`, `--timeout`, `--sheet`, `--range`, repeated `--field-name`, `--token`, and `--target`.
+- The parser requires `--from` for `inspect`/`read`, requires both `--from` and `--to` for `convert`/`import`, and accepts `--from-format`, `--output-format`, `--if-exists`, `--limit`, `--timeout`, `--sheet`, `--range`, repeated `--field-name`, `--token`, and `--target`.
 
 - [ ] **Step 1: Write failing parser and subprocess tests**
 
@@ -512,7 +512,7 @@ def test_parser_requires_explicit_from_and_to_for_import() -> None:
 def test_otc_convert_csv_to_jsonl(tmp_path) -> None:
     source = tmp_path / "rows.csv"
     source.write_text("id\na\n")
-    result = subprocess.run(["otc", "convert", "--from", str(source), "--to", "-", "--to-format", "jsonl"], capture_output=True, text=True)
+    result = subprocess.run(["otc", "convert", "--from", str(source), "--to", "-", "--output-format", "jsonl"], capture_output=True, text=True)
     assert result.returncode == 0
     assert json.loads(result.stdout.splitlines()[0]) == {"id": "a"}
 ```

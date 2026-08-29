@@ -33,13 +33,53 @@ def test_otc_convert_csv_to_jsonl(tmp_path) -> None:
     source.write_text("id\na\n")
 
     result = subprocess.run(
-        ["otc", "convert", "--from", str(source), "--to", "-", "--to-format", "jsonl"],
+        ["otc", "convert", "--from", str(source), "--to", "-", "--output-format", "jsonl"],
         capture_output=True,
         text=True,
     )
 
     assert result.returncode == 0
     assert json.loads(result.stdout.splitlines()[0]) == {"id": "a"}
+
+
+def test_parser_rejects_removed_to_format_flag(tmp_path) -> None:
+    source = tmp_path / "rows.csv"
+    destination = tmp_path / "rows.jsonl"
+    source.write_text("id\na\n")
+
+    result = _run_module(
+        "convert",
+        "--from",
+        str(source),
+        "--to",
+        str(destination),
+        "--to-format",
+        "jsonl",
+    )
+
+    assert result.returncode == 2
+    error = json.loads(result.stderr)
+    assert error["code"] == "usage"
+    assert "--to-format" in result.stderr
+
+
+def test_output_format_selects_extensionless_convert_destination(tmp_path) -> None:
+    source = tmp_path / "rows.csv"
+    destination = tmp_path / "rows.out"
+    source.write_text("id\na\n")
+
+    result = _run_module(
+        "convert",
+        "--from",
+        str(source),
+        "--to",
+        str(destination),
+        "--output-format",
+        "json",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(destination.read_text()) == [{"id": "a"}]
 
 
 def test_read_defaults_to_jsonl_for_module_and_otc(tmp_path) -> None:

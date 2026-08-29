@@ -168,24 +168,18 @@ def test_read_rejects_connector_format_override_before_adapter_read() -> None:
     assert adapter.read_calls == 0
 
 
-def test_import_rejects_connector_destination_format_before_adapter_io() -> None:
+def test_import_output_format_controls_only_the_summary() -> None:
     adapter = RecordingAdapter()
-    with pytest.raises(ConnectorError) as error:
-        import_endpoint(
-            parse_endpoint("fake://book/Orders"),
-            parse_endpoint("fake://book/Orders"),
-            ConnectorRegistry([adapter]),
-            CliOptions(to_format=FormatName.JSON),
-        )
+    summary = import_endpoint(
+        parse_endpoint("fake://book/Orders"),
+        parse_endpoint("fake://book/Orders"),
+        ConnectorRegistry([adapter]),
+        CliOptions(output_format=FormatName.JSON),
+    )
 
-    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
-    assert error.value.safe_details == {
-        "scheme": "fake",
-        "option": "to-format",
-        "format": "json",
-    }
-    assert adapter.read_calls == 0
-    assert adapter.write_calls == 0
+    assert summary.status == "completed"
+    assert adapter.read_calls == 1
+    assert adapter.write_calls == 1
 
 
 def test_convert_rejects_connector_destination() -> None:
@@ -225,7 +219,7 @@ def test_convert_explicit_format_allows_extensionless_local_destination(tmp_path
         parse_endpoint("fake://book/Orders"),
         parse_endpoint(str(destination)),
         ConnectorRegistry([adapter]),
-        CliOptions(to_format=FormatName.JSON),
+        CliOptions(output_format=FormatName.JSON),
     )
 
     assert summary.rows_read == 1

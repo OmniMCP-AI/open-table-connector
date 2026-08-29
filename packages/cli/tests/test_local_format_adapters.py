@@ -192,7 +192,7 @@ def test_cli_converts_csv_to_explicit_excel_destination(tmp_path: Path) -> None:
         workbook.close()
 
 
-def test_explicit_local_destination_scheme_takes_precedence_over_to_format(tmp_path: Path) -> None:
+def test_explicit_local_destination_scheme_takes_precedence_over_output_format(tmp_path: Path) -> None:
     source = tmp_path / "orders.csv"
     destination = tmp_path / "orders.md"
     source.write_text("id\n1\n", encoding="utf8")
@@ -201,7 +201,7 @@ def test_explicit_local_destination_scheme_takes_precedence_over_to_format(tmp_p
         parse_endpoint(str(source)),
         parse_endpoint(f"md://{destination}"),
         build_default_registry(),
-        CliOptions(to_format=FormatName.JSON),
+        CliOptions(output_format=FormatName.JSON),
     )
 
     assert destination.read_text(encoding="utf8").splitlines()[0].startswith("| id")

@@ -9,13 +9,13 @@ backend.
 Use a bare path when compatibility probing is helpful:
 
 ```console
-uv run --package open-table-connector otc inspect --from daily-orders.csv --output-format json
-uv run --package open-table-connector otc convert \
+otc inspect --from daily-orders.csv --output-format json
+otc convert \
   --from daily-orders.csv \
-  --to daily-orders.jsonl --to-format jsonl
-uv run --package open-table-connector otc convert \
+  --to daily-orders.jsonl --output-format jsonl
+otc convert \
   --from daily-orders.jsonl \
-  --to daily-orders.xlsx --to-format excel --sheet Orders
+  --to daily-orders.xlsx --output-format excel --sheet Orders
 ```
 
 This path is appropriate for ad-hoc, non-trading work: the output is portable,
@@ -29,13 +29,13 @@ Google Sheets credentials stay out of the endpoint:
 ```console
 export GOOGLE_SHEETS_ACCESS_TOKEN='…'
 
-uv run --package open-table-connector otc inspect \
+otc inspect \
   --from gsheets://SPREADSHEET_ID/Orders \
   --range 'Orders!A1:F100' --output-format json
 
-uv run --package open-table-connector otc convert \
+otc convert \
   --from gsheets://SPREADSHEET_ID/Orders \
-  --to orders.csv --to-format csv
+  --to orders.csv --output-format csv
 ```
 
 Use `import` (instead of `convert`) when the destination is a remote writable

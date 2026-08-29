@@ -239,8 +239,7 @@ def test_convert_to_stdout_contains_only_selected_codec(format_name, fake_regist
             "command": "convert",
             "from_value": str(source),
             "to_value": "-",
-            "to_format": format_name,
-            "output_format": "jsonl",
+            "output_format": format_name,
         },
     )()
 
@@ -393,7 +392,7 @@ def test_inspect_structured_output_format_is_truthful(format_name, fake_registry
         assert row["schema_fingerprint"] == "schema"
 
 
-def test_convert_summary_table_is_not_json(fake_registry, tmp_path) -> None:
+def test_convert_writes_selected_destination_codec_and_jsonl_summary(fake_registry, tmp_path) -> None:
     source = tmp_path / "source.csv"
     destination = tmp_path / "destination.json"
     source.write_text("id\na\n")
@@ -411,8 +410,8 @@ def test_convert_summary_table_is_not_json(fake_registry, tmp_path) -> None:
 
     assert run_command(args, fake_registry, out, err) == 0
     assert err.getvalue() == ""
-    assert "| field" in out.getvalue()
-    assert "| rows_read" in out.getvalue()
+    assert json.loads(out.getvalue())["rows_read"] == 1
+    assert "| id" in destination.read_text()
 
 
 @pytest.mark.parametrize("format_name", ("json", "csv"))

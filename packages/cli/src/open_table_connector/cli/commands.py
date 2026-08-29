@@ -20,10 +20,12 @@ def _options(args: Namespace) -> CliOptions:
         field_names = (field_name,)
     else:
         field_names = tuple(field_name)
+    output_default = (
+        FormatName.AUTO if getattr(args, "command", None) == "convert" else FormatName.JSONL
+    )
     return CliOptions(
         from_format=_format(args, "from_format", FormatName.AUTO),
-        to_format=_format(args, "to_format", FormatName.AUTO),
-        output_format=_format(args, "output_format", FormatName.JSONL),
+        output_format=_format(args, "output_format", output_default),
         if_exists=getattr(args, "if_exists", "error"),
         limit=getattr(args, "limit", None),
         timeout=getattr(args, "timeout", None),
@@ -116,7 +118,8 @@ def run_command(args: Namespace, registry: ConnectorRegistry, out: TextIO, err: 
             # A conversion to stdio owns stdout for its selected codec. A JSON
             # summary there would corrupt JSON, JSONL, CSV, and table streams.
             if not (command == "convert" and destination.is_stdio):
-                emit_summary(summary, out, options.output_format)
+                summary_format = FormatName.JSONL if command == "convert" else options.output_format
+                emit_summary(summary, out, summary_format)
         else:
             raise ValueError("unsupported command")
         return 0

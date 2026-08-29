@@ -35,7 +35,7 @@ command, but is not the new repository or package name.
 otc list
 otc inspect --from SOURCE
 otc read --from SOURCE [--output-format jsonl|json|csv|table]
-otc convert --from SOURCE --to DESTINATION [--from-format ...] [--to-format ...]
+otc convert --from SOURCE --to DESTINATION [--from-format ...] [--output-format ...]
 otc import --from SOURCE --to DESTINATION [--if-exists append|replace|error]
 ```
 
@@ -43,13 +43,15 @@ otc import --from SOURCE --to DESTINATION [--if-exists append|replace|error]
 move or inspect table data. Their values can be connector URIs or local paths.
 Connector selection is inferred from the URI scheme. Local format selection is
 inferred from file extensions and can be overridden with `--from-format` and
-`--to-format`. The CLI may accept positional source/destination arguments as
+`--output-format` for conversion destinations. The CLI may accept positional source/destination arguments as
 a human convenience, but agent-facing documentation and examples use the
 explicit flags.
 
-`--from-format` and `--to-format` accept `auto`, `csv`, `json`, `jsonl`, and
-`table`. `auto` is the default. For a connector endpoint, the format is the
-connector’s table interface and the corresponding format override is invalid.
+`--from-format` accepts `auto`, `csv`, `excel`, `json`, `jsonl`, and `table`.
+`--output-format` accepts `csv`, `json`, `jsonl`, and `table` for reads and
+imports; `convert` additionally accepts `auto` and `excel`. For a connector
+endpoint, the format is the connector’s table interface and `--from-format`
+is invalid. Conversion defaults to suffix inference, with JSONL for stdout.
 
 The default output is JSONL. A read emits row events followed by one summary
 event:
@@ -63,7 +65,7 @@ Canonical conversion and import examples:
 
 ```text
 otc convert --from orders.csv --to orders.json
-otc convert --from orders.csv --to - --to-format jsonl
+otc convert --from orders.csv --to - --output-format jsonl
 otc import --from orders.csv --to gsheets://SPREADSHEET/Orders --if-exists replace
 otc import --from gsheets://SPREADSHEET/Orders --to maybe://DOCUMENT/TARGET --if-exists append
 ```
