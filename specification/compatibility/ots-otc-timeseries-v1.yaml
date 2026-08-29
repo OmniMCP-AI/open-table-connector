@@ -1,0 +1,78 @@
+schema_version: ots-otc-timeseries-compatibility/v1
+architecture_id: ots-otc-timeseries-storage/v1
+architecture: ots-otc-timeseries-storage/v1
+ots_surface_commit: efbbb8f64bfe8588b8b685d14e247ce79e41eebf
+otc_surface_commit: e7171bbd3fa4ad2a96657a4d16ae7ade0c58a708
+protocols:
+  timescale_core_sql: timescale-core-sql/v1
+  process: otc.connector-process/v1
+  portable_plan: otc.portable-temporal-plan/v1
+  receipts:
+    temporal: otc.temporal-receipt/v1
+    stage: otc.managed-stage-receipt/v1
+    commit: otc.managed-commit-receipt/v1
+    readback: otc.managed-readback-receipt/v1
+    abort: otc.managed-abort-receipt/v1
+fixture_manifest_hash: 622ba317fba852fbc77694113aa3fe1cbc3ef9b4f15d0a91335e015111e520d6
+fixture_manifest_sha256: 622ba317fba852fbc77694113aa3fe1cbc3ef9b4f15d0a91335e015111e520d6
+corpus_hash: 7dc11cd5553084a8decc7f28ad792e107c239573ccaa8ba7c0356c92f334c9fe
+runtime_ranges:
+  python: ">=3.11,<3.15"
+  rust: ">=1.98"
+  arrow_rs: "59.2.0"
+  pyarrow: ">=14,<20"
+  polars: ">=1.43.2,<2"
+timescaledb_version: "2.29.0"
+postgresql_major: 17
+providers:
+  - id: timescaledb
+    backend_class: native
+    support: native-default
+    status: offline_verified
+    evidence_hash: 91aaf5e41f7c769a9a1be5c601142bf43b5134b104174872cfadcaddc4576250
+    configured_live_evidence_hash: null
+  - id: csv
+    backend_class: portable
+    support: portable-storage
+    status: offline_verified
+    evidence_hash: 4052102b5a986d2572ff2a139c9d17324511f1c5b9b1e84c2faa078f8d3da76a
+  - id: json
+    backend_class: portable
+    support: portable-storage
+    status: offline_verified
+    evidence_hash: e7a1ac24c3fb15df02abecf2073e50b296a88ad03934a480da17359e5789204d
+  - id: jsonl
+    backend_class: portable
+    support: portable-storage
+    status: offline_verified
+    evidence_hash: e7a1ac24c3fb15df02abecf2073e50b296a88ad03934a480da17359e5789204d
+  - id: sqlite
+    backend_class: portable
+    support: ots-eligible-offline
+    status: offline_verified
+    evidence_hash: 311bec335a81bd4d88fbdbb970b99fce8fc3873c630dc85d161607a32efccc07
+  - id: postgres
+    backend_class: portable
+    support: portable-storage
+    status: offline_verified
+    evidence_hash: b55b2502fcee64ef0dbcf46e8a44b688b333bd232f69c6ea14dbcbb9864c90ec
+    configured_live_evidence_hash: null
+  - id: excel
+    backend_class: portable
+    support: portable-storage
+    status: offline_verified
+    evidence_hash: 48d5aa3b70e3a4639a7ae733a83d06f9333b0817bdd683c81d8e9b68643da3c1
+  - id: maybe_sheet
+    backend_class: portable
+    support: import-export
+    status: offline_verified
+    evidence_hash: 2d12843dfa5bebe2b06b8065d7d5240f3556c1e6109fc069fbc523038eb63411
+    configured_live_evidence_hash: null
+  - id: clickhouse
+    backend_class: native
+    support: future-track
+    status: unsupported
+  - id: tdengine
+    backend_class: native
+    support: future-track
+    status: unsupported
