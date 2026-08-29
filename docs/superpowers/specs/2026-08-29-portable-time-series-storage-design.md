@@ -4,9 +4,13 @@
 
 Approved in chat on 2026-08-29. Immediate delivery scope covers phases 1–5:
 the shared portable plan, direct TimescaleDB integration in the sister OTS
-repository, OTC Polars/Arrow execution and local transport, and the CSV,
-SQLite, PostgreSQL, Excel, and MaybeSheet capability work. Native ClickHouse,
-native TDengine, and Arrow Flight transport are later tracks.
+repository, OTC Polars/Arrow execution and local transport, and the CSV, JSON,
+JSONL, SQLite, PostgreSQL, Excel, and MaybeSheet capability work. Native
+ClickHouse, native TDengine, and Arrow Flight transport are later tracks.
+
+Amended in chat on 2026-08-29 to add JSON and JSONL using their normal URI
+schemes, with managed lifecycle and snapshot selection carried outside the
+URI and portable plan.
 
 Architecture identifier: `ots-otc-timeseries-storage/v1`.
 
@@ -60,8 +64,8 @@ native query, lifecycle, retention, compression, and streaming leverage.
   and bounded execution without breaking the existing table contract.
 - Add a neutral managed-storage lifecycle strong enough for an OTS binding to
   stage, commit, address a snapshot, verify readback, and abort.
-- Give CSV, Excel, MaybeSheet, SQLite, and PostgreSQL explicit, honest support
-  tiers.
+- Give CSV, JSON, JSONL, Excel, MaybeSheet, SQLite, and PostgreSQL explicit,
+  honest support tiers.
 - Execute the portable core with Polars and Arrow when the selected physical
   target lacks native temporal operators.
 - Define a cross-language local transport from Rust OTS to Python OTC without
@@ -241,8 +245,10 @@ class ManagedTemporalStore(Protocol):
 ```
 
 `TemporalExecutionRequest` contains the physical target, portable plan,
-credential reference, and operation identity. `TemporalExecutionResult`
-contains an Arrow table or bounded Arrow artifact plus a temporal receipt.
+credential reference, operation identity, and an optional committed snapshot
+reference. The snapshot reference is transport metadata outside the portable
+plan. `TemporalExecutionResult` contains an Arrow table or bounded Arrow
+artifact plus a temporal receipt.
 
 Managed staging accepts an Arrow artifact, descriptor hash, logical target,
 and idempotency key. It returns a provider-invisible stage identity bound to
@@ -360,6 +366,37 @@ managed URI explicitly selects the sidecar layout. Atomic visibility applies
 to connector snapshot reads, not to unsupervised readers of a convenience
 copy.
 
+### JSON and JSONL
+
+JSON and JSONL support descriptor binding, bounded scan, latest/as-of, bucket
+aggregation, and gap filling through the Polars/Arrow evaluator. JSON accepts
+one top-level array whose elements are objects. JSONL, including files with an
+`.ndjson` suffix, accepts one object per non-empty line. Top-level scalars,
+top-level object maps, non-object rows, duplicate object keys, non-finite
+numbers, and trailing malformed records are rejected.
+
+Both formats preserve nested JSON values in Arrow where representable, but
+the temporal time field, series-key fields, and tag fields must be scalar.
+Aggregate value fields must have a supported numeric or otherwise
+function-compatible Arrow type. Input bytes, decoded rows, elapsed time, and
+materialized output remain independently bounded.
+
+The physical schemes are `json://` and `jsonl://`. Lifecycle mode is not
+encoded in the URI. A normal temporal execution without a snapshot reference
+reads the addressed file. Managed `stage`, `commit`, `readback`, and `abort`
+operations select the sidecar lifecycle by operation type. Execution against
+committed storage supplies the physical snapshot reference separately and
+reads the immutable snapshot selected by that reference.
+
+Managed JSON and JSONL storage use immutable content-addressed snapshots plus
+a same-directory atomic pointer manifest. JSON snapshots serialize a
+top-level array of row objects. JSONL snapshots serialize one strict JSON
+object per line with a final newline. Top-level row keys follow Arrow schema
+order, while nested object keys are sorted recursively; compact encoding makes
+repeated publication deterministic without changing column order. OTS still
+computes its own independent Arrow identity after readback. Atomic visibility
+applies only to connector snapshot reads.
+
 ### Excel
 
 Excel supports the same portable read operations for governed worksheet
@@ -442,7 +479,8 @@ The immediate 2026-08-29 delivery scope is:
 2. Enable the OTS sister repository's direct TimescaleDB path against the
    shared plan semantics.
 3. Add Polars/Arrow execution and the local connector-process transport.
-4. Add managed CSV and SQLite implementations with conformance evidence.
+4. Add managed CSV, JSON, JSONL, and SQLite implementations with conformance
+   evidence.
 5. Add PostgreSQL, Excel, and MaybeSheet according to the capability rules
    above.
 
@@ -456,7 +494,12 @@ and an optional Arrow Flight transport in OTC.
 - The Polars/Arrow evaluator passes the shared temporal semantic corpus.
 - Local process tests prove bounds, cancellation, credential isolation,
   redaction, and content-addressed artifact integrity.
-- CSV and SQLite pass offline managed-storage lifecycle conformance.
+- CSV, JSON, JSONL, and SQLite pass offline managed-storage lifecycle
+  conformance.
+- JSON and JSONL use their normal schemes for both direct and managed
+  operations; snapshot selection remains outside the portable plan.
+- JSON array/object shape, JSONL record boundaries, duplicate-key rejection,
+  nested-value handling, and strict-number behavior pass format conformance.
 - PostgreSQL passes offline lifecycle conformance and configured-live evidence
   before any stable claim.
 - Excel claims only formula-safe temporal behavior.

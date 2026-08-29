@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a versioned portable time-series execution and managed-storage extension to Open Table Connector for CSV, Excel, MaybeSheet, SQLite, and PostgreSQL without turning OTC into the native TimescaleDB path.
+**Goal:** Add a versioned portable time-series execution and managed-storage extension to Open Table Connector for CSV, JSON, JSONL, Excel, MaybeSheet, SQLite, and PostgreSQL without turning OTC into the native TimescaleDB path.
 
 **Architecture:** Introduce two deep packages. `open-table-connector-timeseries` owns the closed `PortableTemporalPlan v1`, temporal descriptors, neutral receipts, managed-storage requests, and the Polars/Arrow evaluator. `open-table-connector-process` carries those models over a bounded local process protocol. Existing connectors opt into the extension through small provider modules; native TimescaleDB remains a direct OTS adapter in the sister repository.
 
@@ -35,8 +35,8 @@
 1. Complete OTC Tasks 1 and 2 and publish their schemas and golden fixtures.
 2. Complete OTS Tasks 1–3, vendoring the exact OTC fixture files and checksum.
 3. Complete OTC Tasks 3–5 and OTS Tasks 4–6; the local process recording client is the integration boundary.
-4. Complete OTC Tasks 6–10 and the matching OTS conformance work.
-5. Commit OTC Task 11 conformance without an attestation, complete OTS Tasks 9 and the non-attestation portion of Task 10, then write the same compatibility record into both repositories. The record pins the two pre-attestation surface commits so its own commits do not create a hash cycle.
+4. Complete OTC Tasks 6–11 and the matching OTS conformance work.
+5. Commit OTC Task 12 conformance without an attestation, complete OTS Tasks 9 and the non-attestation portion of Task 10, then write the same compatibility record into both repositories. The record pins the two pre-attestation surface commits so its own commits do not create a hash cycle.
 
 The repositories remain independently buildable. Tests may read vendored fixtures but must not import code or resolve files from a sibling checkout.
 
@@ -72,6 +72,9 @@ The repositories remain independently buildable. Tests may read vendored fixture
 
 - `packages/local_files/src/open_table_connector/local_files/managed_snapshots.py` — immutable snapshot and pointer-manifest primitive.
 - `packages/local_files/src/open_table_connector/local_files/temporal_csv.py` — CSV evaluator and managed store.
+- `packages/local_files/src/open_table_connector/local_files/json_codec.py` — strict shared JSON/JSONL Arrow codec.
+- `packages/local_files/src/open_table_connector/local_files/json_connector.py` — ordinary `json://` and `jsonl://` reads.
+- `packages/local_files/src/open_table_connector/local_files/temporal_json.py` — JSON/JSONL evaluator and managed store.
 - `packages/local_files/src/open_table_connector/local_files/temporal_excel.py` — workbook evaluator and formula-safe managed store.
 - `packages/sqlite/src/open_table_connector/sqlite/temporal.py` — prepared SQLite lowering and managed lifecycle.
 - `packages/postgres/src/open_table_connector/postgres/temporal.py` — prepared PostgreSQL lowering and managed lifecycle.
@@ -227,7 +230,7 @@ class ManagedTemporalStore(Protocol):
     def abort(self, request: ManagedAbortRequest) -> ManagedAbortReceipt: ...
 ~~~
 
-- `TemporalExecutionRequest` carries `target: TableURI`, `plan`, `credential_reference: str | None`, and `operation_id`.
+- `TemporalExecutionRequest` carries `target: TableURI`, `plan`, `credential_reference: str | None`, `operation_id`, and `snapshot_reference: str | None`. Snapshot selection is transport metadata and never enters `PortableTemporalPlan`.
 - `ManagedStageRequest` carries a content-addressed Arrow artifact reference, descriptor hash, logical target, physical target, and idempotency key.
 - `ManagedReadbackResult` carries independently observed Arrow data or an Arrow artifact reference plus `ManagedReadbackReceipt`.
 
@@ -398,6 +401,7 @@ git commit -m "feat: add portable temporal aggregation"
 - Supports exactly `hello`, `describe`, `execute`, `stage`, `commit`, `readback`, `abort`, and `cancel`.
 - `packages/process/pyproject.toml` depends on the workspace contract/timeseries packages and `pyarrow>=14,<20`; it contains no provider dependency.
 - Every envelope contains exactly `protocol`, `message_id`, `session_id`, `operation`, `connector`, `capability_version`, `resource_limits`, `credential_reference`, `payload`, and `artifact_references`.
+- An `execute` payload carries `target`, `portable_plan`, and optional `snapshot_reference` as sibling fields; the snapshot reference never changes portable plan bytes or hash.
 
 - [ ] **Step 1: Write framing and envelope tests**
 
@@ -455,6 +459,7 @@ git commit -m "feat: add local connector process protocol"
 - Create: `packages/local_files/tests/test_managed_snapshot_recovery.py`
 
 **Interfaces:**
+- Produces internal `ManagedSnapshotStore.stage_artifact(...)`, `publish_snapshot(...)`, `resolve_snapshot(target: TableURI, snapshot_reference: str) -> Path`, `read_snapshot(...)`, and `abort_stage(...)` primitives used by every managed local format.
 - Produces `CsvTemporalExecutor` and `CsvManagedTemporalStore`.
 - Defines managed targets as `managed+csv:///absolute/path/to/logical-name`. The logical path is a namespace, not a mutable CSV file.
 - Uses layout `<logical-name>.otc/snapshots/<content-hash>.csv`, `stages/<stage-id>.arrow`, `receipts/<operation-id>.json`, and atomic `current.json`.
@@ -492,7 +497,111 @@ git add packages/local_files pyproject.toml uv.lock
 git commit -m "feat: add managed CSV temporal storage"
 ~~~
 
-### Task 7: Add SQLite temporal lowering and lifecycle storage
+### Task 7: Add JSON and JSONL temporal storage on normal URI schemes
+
+**Files:**
+- Create: `packages/local_files/src/open_table_connector/local_files/json_codec.py`
+- Create: `packages/local_files/src/open_table_connector/local_files/json_connector.py`
+- Create: `packages/local_files/src/open_table_connector/local_files/temporal_json.py`
+- Modify: `packages/local_files/src/open_table_connector/local_files/probe.py`
+- Modify: `packages/local_files/src/open_table_connector/local_files/resolver.py`
+- Modify: `packages/local_files/src/open_table_connector/local_files/local_files_connector.py`
+- Modify: `packages/local_files/src/open_table_connector/local_files/__init__.py`
+- Modify: `packages/cli/src/open_table_connector/cli/formats.py`
+- Modify: `packages/cli/tests/test_formats.py`
+- Create: `packages/local_files/tests/test_json_codec.py`
+- Create: `packages/local_files/tests/test_json_connector.py`
+- Create: `packages/local_files/tests/test_temporal_json.py`
+- Create: `packages/local_files/tests/test_managed_json.py`
+
+**Interfaces:**
+- Produces `parse_json_table(text: str, *, source: str) -> pa.Table`, `parse_jsonl_table(text: str, *, source: str) -> pa.Table`, `encode_json_table(table: pa.Table) -> str`, and `encode_jsonl_table(table: pa.Table) -> str`.
+- Produces `JsonConnector` and `JsonTableReadRequest` for `json://` and `jsonl://` in `TableMode.BASE`; `.ndjson` is accepted by the JSONL format. The v1 codec is always strict UTF-8 and has no permissive parse options.
+- Produces `JsonTemporalExecutor` and `JsonManagedTemporalStore(format: Literal["json", "jsonl"])`.
+- Uses target schemes `json:///absolute/path/data.json` and `jsonl:///absolute/path/data.jsonl` for both direct and managed operations. Lifecycle mode is not encoded in the URI.
+- Uses `TemporalExecutionRequest.snapshot_reference` to distinguish a direct file execution from execution against an immutable committed snapshot.
+
+- [ ] **Step 1: Write failing strict codec and connector tests**
+
+Require JSON to contain one top-level array of objects and JSONL to contain one object per non-empty line. Assert first-seen column ordering, null filling for missing keys, UTF-8, nested struct/list preservation where Arrow can represent it, final newline for JSONL, compact deterministic output, and round-trip parity.
+
+~~~python
+from pathlib import Path
+
+from open_table_connector.contract import TableURI
+from open_table_connector.local_files import JsonConnector, JsonTableReadRequest
+
+
+def json_uri(scheme: str, path: Path) -> TableURI:
+    return TableURI(path.as_uri().replace("file://", f"{scheme}://", 1))
+
+
+def test_json_and_jsonl_use_normal_connector_schemes(tmp_path: Path) -> None:
+    json_path = tmp_path / "ticks.json"
+    json_path.write_text(
+        '[{"ts":"2026-08-29T00:00:00Z","symbol":"A","price":1}]',
+        encoding="utf-8",
+    )
+    jsonl_path = tmp_path / "ticks.jsonl"
+    jsonl_path.write_text(
+        '{"ts":"2026-08-29T00:00:00Z","symbol":"A","price":1}\n',
+        encoding="utf-8",
+    )
+    connector = JsonConnector()
+    json_result = connector.read_arrow(
+        JsonTableReadRequest(json_uri("json", json_path))
+    )
+    jsonl_result = connector.read_arrow(
+        JsonTableReadRequest(json_uri("jsonl", jsonl_path))
+    )
+    assert json_result.table.num_rows == 1
+    assert jsonl_result.table.num_rows == 1
+~~~
+
+Add explicit failures for a top-level scalar/object, a non-object row, duplicate keys at any object depth, `NaN`/`Infinity`, malformed/trailing JSON, a malformed late JSONL line, invalid UTF-8, and row/byte/time bounds. Safe errors expose line/column or row index but no record payload.
+
+- [ ] **Step 2: Run codec and connector tests to verify red**
+
+~~~bash
+uv run --frozen python -m pytest packages/local_files/tests/test_json_codec.py packages/local_files/tests/test_json_connector.py packages/cli/tests/test_formats.py -q
+~~~
+
+Expected: imports fail because the shared local-files codec and connector do not exist.
+
+- [ ] **Step 3: Promote the CLI codecs into the local-files package**
+
+Implement duplicate-key rejection with `json.loads(..., object_pairs_hook=reject_duplicate_keys, parse_constant=reject_non_finite)`. JSONL applies the same decoder independently to every non-empty line. Compute the first-seen union of object keys, normalize every row to that ordered key set, then convert with `pa.Table.from_pylist`. Reject incompatible nested shapes with stable `execution_failed` details.
+
+`JsonConnector.resolve` accepts only `json` or `jsonl`, requires a regular file for ordinary reads, verifies content rather than suffix alone, and enforces input byte limits before decoding. Extend `LocalFormat` and `LocalFilesConnector` detection/dispatch for `.json`, `.jsonl`, and `.ndjson`. Replace the CLI's private JSON functions with imports from `json_codec.py` so both surfaces share exact behavior.
+
+- [ ] **Step 4: Write failing temporal and managed lifecycle tests**
+
+Run every Task 3–4 semantic fixture through both formats. Require time, series-key, and tag fields to be scalar and aggregate inputs to be function-compatible. Test direct execution with `snapshot_reference=None`, exact committed-snapshot execution with a reference, mismatched target/reference rejection, stage invisibility, deterministic immutable snapshots, idempotent commit, independent readback, abort, pointer recovery, concurrent commit serialization, and traversal/symlink rejection.
+
+- [ ] **Step 5: Run temporal tests to verify red**
+
+~~~bash
+uv run --frozen python -m pytest packages/local_files/tests/test_temporal_json.py packages/local_files/tests/test_managed_json.py -q
+~~~
+
+Expected: temporal executor/store imports fail.
+
+- [ ] **Step 6: Implement temporal execution and managed snapshots**
+
+`JsonTemporalExecutor` resolves the direct path when no snapshot reference is supplied. With a snapshot reference, it asks `ManagedSnapshotStore` to resolve the immutable snapshot bound to the same target and rejects an unknown or cross-target reference before decoding.
+
+`JsonManagedTemporalStore` reuses the Task 6 locking, staging, receipt, fsync, and atomic-pointer primitive. It writes `<target>.otc/snapshots/<content-hash>.json` or `.jsonl`. JSON output is one compact top-level array; JSONL is one compact object per line with a final newline. Top-level row keys follow Arrow schema order, nested object keys are sorted recursively, non-finite values are rejected, and observed Arrow facts are recomputed from a newly decoded snapshot during readback.
+
+- [ ] **Step 7: Run tests and commit**
+
+~~~bash
+uv run --frozen python -m pytest packages/local_files/tests packages/cli/tests/test_formats.py -q
+git diff --check
+git add packages/local_files packages/cli/src/open_table_connector/cli/formats.py packages/cli/tests/test_formats.py
+git commit -m "feat: add JSON and JSONL temporal storage"
+~~~
+
+### Task 8: Add SQLite temporal lowering and lifecycle storage
 
 **Files:**
 - Create: `packages/timeseries/src/open_table_connector/timeseries/lowering.py`
@@ -543,7 +652,7 @@ git add packages/sqlite pyproject.toml uv.lock
 git commit -m "feat: add SQLite temporal storage"
 ~~~
 
-### Task 8: Add PostgreSQL temporal lowering and lifecycle storage
+### Task 9: Add PostgreSQL temporal lowering and lifecycle storage
 
 **Files:**
 - Modify: `packages/postgres/pyproject.toml`
@@ -601,7 +710,7 @@ git commit -m "feat: add PostgreSQL temporal storage"
 
 Expected: offline tests pass. The live test either passes with a configured DSN or reports one explicit skip without one.
 
-### Task 9: Add formula-safe Excel temporal storage
+### Task 10: Add formula-safe Excel temporal storage
 
 **Files:**
 - Create: `packages/local_files/src/open_table_connector/local_files/temporal_excel.py`
@@ -641,7 +750,7 @@ git add packages/local_files
 git commit -m "feat: add Excel temporal storage"
 ~~~
 
-### Task 10: Add capability-gated MaybeSheet temporal support
+### Task 11: Add capability-gated MaybeSheet temporal support
 
 **Files:**
 - Modify: `packages/maybe_sheet/pyproject.toml`
@@ -691,7 +800,7 @@ git add packages/maybe_sheet pyproject.toml uv.lock
 git commit -m "feat: add MaybeSheet temporal capabilities"
 ~~~
 
-### Task 11: Add cross-provider conformance, process integration, and the compatibility attestation
+### Task 12: Add cross-provider conformance, process integration, and the compatibility attestation
 
 **Files:**
 - Modify: `packages/conformance/pyproject.toml`
@@ -712,9 +821,9 @@ git commit -m "feat: add MaybeSheet temporal capabilities"
 
 - [ ] **Step 1: Write the failing capability-driven matrix**
 
-Parametrize ScanRange, Latest, AsOf, BucketAggregate, and GapFill over Polars, CSV, SQLite, PostgreSQL recording, Excel, and MaybeSheet recording executors. Compare normalized Arrow schemas and logical values, not serialized IPC bytes. Parametrize lifecycle assertions only over stores that advertise each lifecycle capability.
+Parametrize ScanRange, Latest, AsOf, BucketAggregate, and GapFill over Polars, CSV, JSON, JSONL, SQLite, PostgreSQL recording, Excel, and MaybeSheet recording executors. Compare normalized Arrow schemas and logical values, not serialized IPC bytes. Parametrize lifecycle assertions only over stores that advertise each lifecycle capability.
 
-Include DST, origin/offset, nanoseconds, empty buckets, nulls, duplicates, out-of-order rows, LOCF/interpolation edges, formula rejection, bounds failures, idempotency conflicts, unknown commit reconciliation, and abort.
+Include DST, origin/offset, nanoseconds, empty buckets, nulls, duplicates, out-of-order rows, LOCF/interpolation edges, strict JSON structure, JSONL late-record failures, nested values, formula rejection, bounds failures, idempotency conflicts, unknown commit reconciliation, and abort.
 
 - [ ] **Step 2: Add OTS-shaped process end-to-end tests**
 
@@ -730,11 +839,12 @@ Expected: matrix failures identify any missing registration, capability, or sche
 
 - [ ] **Step 4: Complete registry wiring and support labels**
 
-Register providers explicitly in the process package. Add the two new packages to discovery/build documentation. Generate the fixture manifest hash from the checked-in bytes. The compatibility record is created only after the OTS plan has vendored and passed the same fixtures.
+Register CSV, JSON, JSONL, Excel, SQLite, PostgreSQL, and MaybeSheet providers explicitly in the process package. Add the two new distributions to discovery/build documentation. Generate the fixture manifest hash from the checked-in bytes. The compatibility record is created only after the OTS plan has vendored and passed the same fixtures.
 
 Use these support labels:
 
 - CSV and Excel: `portable-storage` only when managed lifecycle tests pass.
+- JSON and JSONL: `portable-storage` only when strict format, snapshot-reference, and managed lifecycle tests pass.
 - SQLite: `portable-storage` and `ots-eligible` when the configured OTS requirements fit its evidence.
 - PostgreSQL: `portable-storage` offline; `ots-eligible` only with configured-live evidence.
 - MaybeSheet: `import-export` by default; stronger labels only from probed live commands and receipts.
@@ -801,7 +911,8 @@ git commit -m "docs: attest OTS OTC compatibility"
 - The OTS repository vendors the exact fixture bytes and verifies `manifest.sha256`.
 - Polars/Arrow passes the complete portable semantic corpus with mandatory bounds.
 - `otc.connector-process/v1` proves version pinning, cancellation, secret isolation, bounded diagnostics, and Arrow artifact integrity.
-- CSV and SQLite pass offline managed lifecycle conformance.
+- CSV, JSON, JSONL, and SQLite pass offline managed lifecycle conformance.
+- JSON and JSONL use `json://` and `jsonl://` for both direct and managed operations, with committed snapshot selection outside the portable plan.
 - PostgreSQL passes offline conformance and has an opt-in live evidence test; stable live claims are gated on its result.
 - Excel rejects formula-bearing governed ranges and claims no formula calculation/evidence.
 - MaybeSheet advertises only capabilities proven by its actual process description and receipts.
