@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-connectors.dev/schemas/temporal-table-descriptor-v1.schema.json",
+  "title": "Temporal table descriptor v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "time_field",
+    "timezone",
+    "precision",
+    "series_key_fields",
+    "tag_fields",
+    "value_fields",
+    "ingestion_time_field",
+    "duplicate_policy",
+    "ordering"
+  ],
+  "properties": {
+    "time_field": {"$ref": "#/$defs/fieldName"},
+    "timezone": {"type": "string", "minLength": 1},
+    "precision": {
+      "enum": ["second", "millisecond", "microsecond", "nanosecond"]
+    },
+    "series_key_fields": {"$ref": "#/$defs/fieldNames"},
+    "tag_fields": {"$ref": "#/$defs/fieldNames"},
+    "value_fields": {
+      "allOf": [
+        {"$ref": "#/$defs/fieldNames"},
+        {"minItems": 1}
+      ]
+    },
+    "ingestion_time_field": {
+      "oneOf": [
+        {"$ref": "#/$defs/fieldName"},
+        {"type": "null"}
+      ]
+    },
+    "duplicate_policy": {
+      "enum": ["preserve", "reject", "replace-latest"]
+    },
+    "ordering": {
+      "enum": ["unspecified", "nondecreasing", "strict"]
+    }
+  },
+  "$defs": {
+    "fieldName": {"type": "string", "minLength": 1},
+    "fieldNames": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/fieldName"},
+      "uniqueItems": true
+    }
+  }
+}

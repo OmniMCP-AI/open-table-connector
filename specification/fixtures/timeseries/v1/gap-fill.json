@@ -1,0 +1,52 @@
+{
+  "descriptor": {
+    "time_field": "ts",
+    "timezone": "UTC",
+    "precision": "nanosecond",
+    "series_key_fields": ["symbol"],
+    "tag_fields": ["venue"],
+    "value_fields": ["price", "size"],
+    "ingestion_time_field": "received_at",
+    "duplicate_policy": "replace-latest",
+    "ordering": "unspecified"
+  },
+  "plan": {
+    "schema_version": "otc.portable-temporal-plan/v1",
+    "descriptor_hash": "sha256:1838c5f919cce1407f02d59f1c05a00ee3a4b213441180fdcf446272895f588a",
+    "relation": "ticks",
+    "required_capabilities": [
+      "timeseries.aggregate.window/1.0",
+      "timeseries.fill/1.0"
+    ],
+    "resource_bounds": {"max_rows": 1000, "max_bytes": 1000000, "max_duration_ms": 5000},
+    "operation": {
+      "kind": "gap_fill",
+      "start": "2026-08-29T00:00:00.000000000Z",
+      "end": "2026-08-30T00:00:00.000000000Z",
+      "bucket": {
+        "kind": "calendar",
+        "count": 1,
+        "unit": "day",
+        "timezone": "America/New_York",
+        "week_start": 1,
+        "origin": "2026-08-29T00:00:00.000000000Z",
+        "offset_ns": 0
+      },
+      "group_by": ["symbol"],
+      "measures": [
+        {"output_field": "avg_price", "function": "avg", "value_field": "price"},
+        {"output_field": "rows", "function": "count", "value_field": null}
+      ],
+      "tag_predicates": [],
+      "fills": [
+        {"field": "avg_price", "mode": "linear", "value": null},
+        {"field": "rows", "mode": "constant", "value": 0}
+      ]
+    },
+    "output_order": [
+      {"field": "symbol", "direction": "asc"},
+      {"field": "bucket", "direction": "asc"}
+    ],
+    "result_row_limit": 500
+  }
+}
