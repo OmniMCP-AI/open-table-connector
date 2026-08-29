@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from hashlib import sha256
+from contextvars import ContextVar
 import re
 from typing import Any, Callable, Mapping
 from urllib.parse import urlsplit
@@ -86,6 +87,48 @@ class ResolvedPostgres:
     connect_kwargs: dict[str, Any]
 
 
+class PostgresTransaction:
+    def __init__(self, connector: "PostgresConnector", uri: TableURI, connection: Any) -> None:
+        self._connector = connector
+        self.uri = uri
+        self._connection = connection
+        self._closed = False
+
+    def execute(self, request: ExecutionRequest) -> ExecutionResult:
+        self._ensure_open(request.uri)
+        return self._connector.execute(request)
+
+    def write(self, request: TableWriteRequest) -> TableWriteResult:
+        self._ensure_open(request.uri)
+        return self._connector.write(request)
+
+    def commit(self) -> None:
+        self._finish(commit=True)
+
+    def abort(self) -> None:
+        self._finish(commit=False)
+
+    def _finish(self, *, commit: bool) -> None:
+        if self._closed:
+            raise ConnectorError(ConnectorErrorCode.CONFLICT, "PostgreSQL transaction is closed", {})
+        try:
+            self._connection.commit() if commit else self._connection.rollback()
+        finally:
+            self._connection.close()
+            self._closed = True
+            self._connector._clear_transaction(self)
+
+    def _ensure_open(self, uri: TableURI) -> None:
+        if self._closed:
+            raise ConnectorError(ConnectorErrorCode.CONFLICT, "PostgreSQL transaction is closed", {})
+        if uri != self.uri:
+            raise ConnectorError(
+                ConnectorErrorCode.CONFLICT,
+                "PostgreSQL transaction cannot cross database URIs",
+                {},
+            )
+
+
 def _rows_to_arrow(description: Any, rows: list[tuple[Any, ...]]) -> pa.Table:
     names = [str(item[0]) for item in description]
     columns = []
@@ -133,7 +176,10 @@ class PostgresConnector(
 
     def __init__(self, connection_factory: Callable[..., Any] | None = None) -> None:
         self._connection_factory = connection_factory
-        self._transaction_connection: Any | None = None
+        self._transaction_context: ContextVar[PostgresTransaction | None] = ContextVar(
+            f"postgres_transaction_{id(self)}",
+            default=None,
+        )
 
     @staticmethod
     def _execution_id(request: ExecutionRequest) -> str:
@@ -192,7 +238,9 @@ class PostgresConnector(
     def _read(self, request: PostgresTableReadRequest) -> tuple[pa.Table, str, PostgresReadOptions]:
         resolved = self.resolve(request.uri, ResolveContext(resource_limits=request.resource_limits, credentials=request.credentials))
         resource: ResolvedPostgres = resolved.resource
-        connection = self._transaction_connection or self._connect(resource)
+        active = self._active_transaction(request.uri)
+        connection = active._connection if active is not None else self._connect(resource)
+        owns_connection = active is None
         cursor = None
         try:
             cursor = connection.cursor()
@@ -219,7 +267,7 @@ class PostgresConnector(
             ) from None
         finally:
             _close_cursor(cursor)
-            if connection is not self._transaction_connection:
+            if owns_connection:
                 try:
                     connection.close()
                 except Exception:
@@ -246,12 +294,17 @@ class PostgresConnector(
 
     def execute(self, request: ExecutionRequest) -> ExecutionResult:
         resolved = self.resolve(request.uri, ResolveContext(resource_limits=request.resource_limits))
-        connection = self._transaction_connection or self._connect(resolved.resource)
+        active = self._active_transaction(request.uri)
+        if active is not None:
+            return self._execute_on(request, active._connection, resolved, commit=False)
+        return self._execute_on(request, self._connect(resolved.resource), resolved, commit=True)
+
+    def _execute_on(self, request, connection, resolved, *, commit: bool) -> ExecutionResult:
         cursor = None
         try:
             cursor = connection.cursor()
             cursor.execute(request.statement, request.parameters)
-            if connection is not self._transaction_connection:
+            if commit:
                 connection.commit()
             affected = cursor.rowcount if getattr(cursor, "rowcount", -1) >= 0 else None
             return ExecutionResult(self._execution_id(request), "completed", affected)
@@ -265,7 +318,7 @@ class PostgresConnector(
             ) from None
         finally:
             _close_cursor(cursor)
-            if connection is not self._transaction_connection:
+            if commit:
                 try:
                     connection.close()
                 except Exception:
@@ -279,7 +332,12 @@ class PostgresConnector(
         if not request.frame.columns:
             raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "cannot write a frame without columns", {})
         resolved = self.resolve(request.uri, ResolveContext())
-        connection = self._transaction_connection or self._connect(resolved.resource)
+        active = self._active_transaction(request.uri)
+        if active is not None:
+            return self._write_on(request, active._connection, resolved, commit=False)
+        return self._write_on(request, self._connect(resolved.resource), resolved, commit=True)
+
+    def _write_on(self, request, connection, resolved, *, commit: bool) -> TableWriteResult:
         cursors: list[Any] = []
         quoted_table = self._quote(request.table)
         columns = tuple(request.frame.columns)
@@ -313,7 +371,7 @@ class PostgresConnector(
                     f"INSERT INTO {quoted_table} ({quoted_columns}) VALUES ({placeholders})",
                     rows,
                 )
-            if connection is not self._transaction_connection:
+            if commit:
                 connection.commit()
             arrow = request.frame.to_arrow()
             schema = arrow_schema_fingerprint(arrow.schema)
@@ -353,36 +411,40 @@ class PostgresConnector(
         finally:
             for cursor in cursors:
                 _close_cursor(cursor)
-            if connection is not self._transaction_connection:
+            if commit:
                 try:
                     connection.close()
                 except Exception:
                     pass
 
-    def begin(self, uri: TableURI | None = None) -> None:
+    def begin(self, uri: TableURI | None = None) -> PostgresTransaction:
         if uri is None:
             raise ConnectorError(ConnectorErrorCode.INVALID_URI, "PostgreSQL begin requires a database URI", {})
-        if self._transaction_connection is not None:
+        if self._transaction_context.get() is not None:
             raise ConnectorError(ConnectorErrorCode.CONFLICT, "PostgreSQL transaction is already active", {})
         resolved = self.resolve(uri, ResolveContext())
-        self._transaction_connection = self._connect(resolved.resource)
+        transaction = PostgresTransaction(self, uri, self._connect(resolved.resource))
+        self._transaction_context.set(transaction)
+        return transaction
 
     def commit(self) -> None:
-        if self._transaction_connection is None:
+        transaction = self._transaction_context.get()
+        if transaction is None:
             raise ConnectorError(ConnectorErrorCode.CONFLICT, "PostgreSQL transaction is not active", {})
-        connection = self._transaction_connection
-        try:
-            connection.commit()
-        finally:
-            connection.close()
-            self._transaction_connection = None
+        transaction.commit()
 
     def abort(self) -> None:
-        if self._transaction_connection is None:
+        transaction = self._transaction_context.get()
+        if transaction is None:
             raise ConnectorError(ConnectorErrorCode.CONFLICT, "PostgreSQL transaction is not active", {})
-        connection = self._transaction_connection
-        try:
-            connection.rollback()
-        finally:
-            connection.close()
-            self._transaction_connection = None
+        transaction.abort()
+
+    def _active_transaction(self, uri: TableURI) -> PostgresTransaction | None:
+        transaction = self._transaction_context.get()
+        if transaction is not None:
+            transaction._ensure_open(uri)
+        return transaction
+
+    def _clear_transaction(self, transaction: PostgresTransaction) -> None:
+        if self._transaction_context.get() is transaction:
+            self._transaction_context.set(None)

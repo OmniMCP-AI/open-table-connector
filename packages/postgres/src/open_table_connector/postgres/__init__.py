@@ -6,7 +6,8 @@ from .identity import (
     TABLE_READ_POLARS_CAPABILITY,
     TABLE_WRITE_CAPABILITY,
 )
-from .reader import PostgresConnector, PostgresReadOptions, PostgresTableReadRequest
+from .reader import PostgresConnector, PostgresReadOptions, PostgresTableReadRequest, PostgresTransaction
+from .temporal import PostgresManagedTemporalStore, PostgresTemporalExecutor, lower_postgres
 
 __all__ = [
     "CONNECTOR_IDENTITY",
@@ -16,6 +17,10 @@ __all__ = [
     "TABLE_READ_POLARS_CAPABILITY",
     "TABLE_WRITE_CAPABILITY",
     "PostgresConnector",
+    "PostgresManagedTemporalStore",
     "PostgresReadOptions",
     "PostgresTableReadRequest",
+    "PostgresTemporalExecutor",
+    "PostgresTransaction",
+    "lower_postgres",
 ]
