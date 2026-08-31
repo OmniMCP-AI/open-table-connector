@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any
 from urllib.parse import urlsplit
 
-from open_table_connector.contract import ConnectorError, ConnectorErrorCode
+from open_table_connector.contract import (
+    SCHEME_FILE,
+    SCHEME_HTTPS,
+    ConnectorError,
+    ConnectorErrorCode,
+)
 
 from .adapters import ConnectorAdapter, build_adapters
 from .model import Endpoint
@@ -34,7 +40,7 @@ class ConnectorRegistry:
     def register(self, adapter: ConnectorAdapter) -> None:
         hosts = tuple(getattr(adapter, "hosts", ()))
         for scheme in adapter.schemes:
-            route_hosts = hosts if scheme == "https" and hosts else (None,)
+            route_hosts = hosts if scheme == SCHEME_HTTPS and hosts else (None,)
             for host in route_hosts:
                 key = (scheme.casefold(), host.casefold() if host else None)
                 if key in self._routes:
@@ -44,7 +50,7 @@ class ConnectorRegistry:
                         {"scheme": key[0], **({"host": key[1]} if key[1] else {})},
                     )
         for scheme in adapter.schemes:
-            route_hosts = hosts if scheme == "https" and hosts else (None,)
+            route_hosts = hosts if scheme == SCHEME_HTTPS and hosts else (None,)
             for host in route_hosts:
                 key = (scheme.casefold(), host.casefold() if host else None)
                 self._routes[key] = adapter
@@ -56,13 +62,13 @@ class ConnectorRegistry:
     def connector_for(self, endpoint: Endpoint) -> ConnectorAdapter:
         if endpoint.is_stdio or endpoint.path is not None:
             for adapter in self._adapters:
-                if "file" in adapter.schemes:
+                if SCHEME_FILE in adapter.schemes:
                     return adapter
             raise self._invalid(endpoint, None)
         assert endpoint.uri is not None
         scheme = endpoint.uri.scheme.casefold()
         parsed = urlsplit(endpoint.uri.value)
-        host = (parsed.hostname or "").casefold() if scheme == "https" else None
+        host = (parsed.hostname or "").casefold() if scheme == SCHEME_HTTPS else None
         adapter = self._routes.get((scheme, host)) or self._routes.get((scheme, None))
         if adapter is not None:
             return adapter
@@ -75,19 +81,19 @@ class ConnectorRegistry:
         if capability_id not in {capability.capability_id for capability in adapter.capabilities}:
             raise ConnectorError(ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
                                  "connector does not support the requested capability",
-                                 {"scheme": endpoint.uri.scheme if endpoint.uri else "file", "capability": capability_id})
+                                 {"scheme": endpoint.uri.scheme if endpoint.uri else SCHEME_FILE, "capability": capability_id})
         return adapter
 
     @staticmethod
     def _invalid(endpoint: Endpoint, host: str | None) -> ConnectorError:
-        details = {"scheme": endpoint.uri.scheme if endpoint.uri else "file"}
+        details = {"scheme": endpoint.uri.scheme if endpoint.uri else SCHEME_FILE}
         if host:
             details["host"] = host
         return ConnectorError(ConnectorErrorCode.INVALID_URI, "no connector supports this endpoint", details)
 
     @staticmethod
     def _unsupported_scheme(endpoint: Endpoint) -> ConnectorError:
-        scheme = endpoint.uri.scheme if endpoint.uri else "file"
+        scheme = endpoint.uri.scheme if endpoint.uri else SCHEME_FILE
         return ConnectorError(
             ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
             "no connector advertises this endpoint scheme",

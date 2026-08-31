@@ -7,7 +7,12 @@ from typing import Literal
 
 import pyarrow as pa
 
-from open_table_connector.contract import ConnectorError, TableURI
+from open_table_connector.contract import (
+    ConnectorError,
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
+    TableURI,
+)
 from open_table_connector.timeseries import (
     AggregateFunction,
     BucketAggregate,
@@ -68,10 +73,10 @@ class JsonManagedTemporalStore:
         clock=None,
         fault_injector=None,
     ) -> None:
-        if format_name not in {"json", "jsonl"}:
+        if format_name not in {PROVIDER_JSON, PROVIDER_JSONL}:
             raise ValueError("format_name must be json or jsonl")
-        encoder = encode_json_table if format_name == "json" else encode_jsonl_table
-        parser = parse_json_table if format_name == "json" else parse_jsonl_table
+        encoder = encode_json_table if format_name == PROVIDER_JSON else encode_jsonl_table
+        parser = parse_json_table if format_name == PROVIDER_JSON else parse_jsonl_table
         self.format_name: JsonFormat = format_name
         self.snapshots = ManagedSnapshotStore(
             artifact_root,
@@ -159,7 +164,7 @@ class JsonTemporalExecutor:
     def execute(self, request: TemporalExecutionRequest) -> TemporalExecutionResult:
         if not isinstance(request, TemporalExecutionRequest):
             raise TypeError("request must be a TemporalExecutionRequest")
-        if request.target.scheme not in {"json", "jsonl"}:
+        if request.target.scheme not in {PROVIDER_JSON, PROVIDER_JSONL}:
             raise TemporalExtensionError(
                 TemporalErrorCode.PROTOCOL_INVALID,
                 "JSON temporal executor accepts only json and jsonl targets",
@@ -215,7 +220,7 @@ def _read_direct(
             "JSON source exceeds max_bytes",
             {"bytes": len(data)},
         )
-    parser = parse_json_table if format_name.value == "json" else parse_jsonl_table
+    parser = parse_json_table if format_name.value == PROVIDER_JSON else parse_jsonl_table
     return _decode_temporal_json(data, parser, descriptor, source=str(path))
 
 

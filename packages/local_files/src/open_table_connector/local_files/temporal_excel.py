@@ -10,7 +10,12 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 
 import pyarrow as pa
 
-from open_table_connector.contract import TableURI
+from open_table_connector.contract import (
+    PROVIDER_EXCEL,
+    SCHEME_MANAGED_XLSX,
+    SCHEME_XLSX,
+    TableURI,
+)
 from open_table_connector.timeseries import (
     ManagedAbortReceipt,
     ManagedAbortRequest,
@@ -66,8 +71,8 @@ class ExcelManagedTemporalStore:
         self.snapshots = ManagedSnapshotStore(
             artifact_root,
             descriptor,
-            target_scheme="managed+xlsx",
-            extension="xlsx",
+            target_scheme=SCHEME_MANAGED_XLSX,
+            extension=SCHEME_XLSX,
             encode_snapshot=lambda table: _encode_workbook(table, self.worksheet),
             decode_snapshot=lambda data: _decode_workbook(data, self.worksheet, descriptor),
             target_fragment=("sheet", self.worksheet),
@@ -410,7 +415,7 @@ def _target_parts(target: TableURI, worksheet: str):
 
 
 def _direct_source(target: TableURI, worksheet: str, *, required: bool) -> Path | None:
-    if target.scheme not in {"xlsx", "excel"}:
+    if target.scheme not in {SCHEME_XLSX, PROVIDER_EXCEL}:
         if required:
             raise TemporalExtensionError(
                 TemporalErrorCode.PROTOCOL_INVALID,

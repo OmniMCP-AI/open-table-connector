@@ -9,6 +9,7 @@ import polars as pl
 from open_table_connector.contract import (
     ArrowReadResult,
     ArrowTableReader,
+    PROVIDER_EXCEL,
     InspectRequest,
     PolarsReadResult,
     PolarsTableReader,
@@ -34,10 +35,10 @@ from .receipts import make_receipt, normalize_parameters
 from .resolver import LocalFormat, ResolvedLocalTable, _resolve_explicit_local_path
 
 
-EXCEL_CONNECTOR_IDENTITY = connector_identity("excel")
+EXCEL_CONNECTOR_IDENTITY = connector_identity(PROVIDER_EXCEL)
 EXCEL_CAPABILITY_MANIFEST = capability_manifest(
     connector=EXCEL_CONNECTOR_IDENTITY,
-    uri_schemes=("excel",),
+    uri_schemes=(PROVIDER_EXCEL,),
 )
 
 
@@ -70,7 +71,7 @@ class ExcelConnector(URIResolver, TableInspector, ArrowTableReader, PolarsTableR
         path, sheet = _resolve_explicit_local_path(
             uri,
             context,
-            scheme="excel",
+            scheme=PROVIDER_EXCEL,
             expected_format=LocalFormat.EXCEL,
             allow_sheet_fragment=True,
         )

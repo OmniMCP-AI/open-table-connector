@@ -13,6 +13,8 @@ from urllib.parse import urlsplit
 import polars as pl
 import pyarrow as pa
 from open_table_connector.contract import (
+    PROVIDER_POSTGRES,
+    SCHEME_POSTGRESQL,
     ArrowReadResult,
     ArrowTableReader,
     BaseConvention,
@@ -213,7 +215,7 @@ class PostgresConnector(
         return "TEXT"
 
     def resolve(self, uri: TableURI, context: ResolveContext) -> ResolvedTable:
-        if uri.scheme not in {"postgres", "postgresql"}:
+        if uri.scheme not in {PROVIDER_POSTGRES, SCHEME_POSTGRESQL}:
             raise ConnectorError(ConnectorErrorCode.INVALID_URI, "Postgres Connector requires postgres URI", {"scheme": uri.scheme})
         parsed = urlsplit(uri.value)
         if parsed.query or parsed.fragment:

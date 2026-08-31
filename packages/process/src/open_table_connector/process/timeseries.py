@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
-from types import MappingProxyType
 import threading
-from typing import Mapping
+from collections.abc import Mapping
+from types import MappingProxyType
 
-from open_table_connector.contract import TableURI
+from open_table_connector.contract import (
+    PROVIDER_CSV,
+    PROVIDER_EXCEL,
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
+    PROVIDER_MAYBE_SHEET,
+    PROVIDER_POSTGRES,
+    PROVIDER_SQLITE,
+    TableURI,
+)
 from open_table_connector.timeseries import (
     ManagedAbortRequest,
     ManagedCommitRequest,
@@ -22,7 +31,6 @@ from open_table_connector.timeseries import (
 from .envelope import ProcessOperation
 from .registry import ConnectorRegistration
 from .server import ProcessError, ProcessRequestContext, ProcessResult
-
 
 _PORTABLE = {
     "timeseries.describe": "1.0",
@@ -49,13 +57,13 @@ def _capabilities(*parts: Mapping[str, str]) -> Mapping[str, str]:
 
 PORTABLE_PROVIDER_CAPABILITIES = MappingProxyType(
     {
-        "csv": _capabilities(_PORTABLE, _LIFECYCLE),
-        "json": _capabilities(_PORTABLE, _LIFECYCLE),
-        "jsonl": _capabilities(_PORTABLE, _LIFECYCLE),
-        "sqlite": _capabilities(_PORTABLE, _LIFECYCLE),
-        "postgres": _capabilities(_PORTABLE, _LIFECYCLE),
-        "excel": _capabilities(_PORTABLE, _LIFECYCLE),
-        "maybe_sheet": _capabilities(_PORTABLE),
+        PROVIDER_CSV: _capabilities(_PORTABLE, _LIFECYCLE),
+        PROVIDER_JSON: _capabilities(_PORTABLE, _LIFECYCLE),
+        PROVIDER_JSONL: _capabilities(_PORTABLE, _LIFECYCLE),
+        PROVIDER_SQLITE: _capabilities(_PORTABLE, _LIFECYCLE),
+        PROVIDER_POSTGRES: _capabilities(_PORTABLE, _LIFECYCLE),
+        PROVIDER_EXCEL: _capabilities(_PORTABLE, _LIFECYCLE),
+        PROVIDER_MAYBE_SHEET: _capabilities(_PORTABLE),
     }
 )
 

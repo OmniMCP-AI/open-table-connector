@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, TypeAlias
 
 from .identity import ConnectorIdentity
+from .names import SCHEME_HTTPS
 
 PluginFactory: TypeAlias = Callable[..., Any]
 
@@ -42,7 +43,7 @@ class PluginDescriptor:
         object.__setattr__(self, "hosts", _normalise_tokens(self.hosts, "plugin hosts"))
         if not self.schemes:
             raise ValueError("plugin schemes must not be empty")
-        if self.hosts and "https" not in self.schemes:
+        if self.hosts and SCHEME_HTTPS not in self.schemes:
             raise ValueError("plugin hosts are only valid for https routes")
 
     def route_keys(self) -> tuple[tuple[str, str | None], ...]:
@@ -50,7 +51,7 @@ class PluginDescriptor:
 
         keys: list[tuple[str, str | None]] = []
         for scheme in self.schemes:
-            hosts = self.hosts if scheme == "https" and self.hosts else (None,)
+            hosts = self.hosts if scheme == SCHEME_HTTPS and self.hosts else (None,)
             keys.extend((scheme, host) for host in hosts)
         return tuple(keys)
 

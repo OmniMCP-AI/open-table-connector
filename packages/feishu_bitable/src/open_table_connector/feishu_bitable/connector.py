@@ -5,13 +5,15 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any, Protocol
-from urllib.parse import quote, urlsplit
 from urllib.error import HTTPError
+from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
 import polars as pl
 import pyarrow as pa
 from open_table_connector.contract import (
+    PROVIDER_FEISHU_BITABLE,
+    SCHEME_FEISHU,
     ArrowReadResult,
     ArrowTableReader,
     BaseConvention,
@@ -41,7 +43,7 @@ from open_table_connector.contract.fingerprints import (
     operation_identity,
 )
 
-CONNECTOR_IDENTITY = ConnectorIdentity("feishu_bitable", "0.1.0", "1.0")
+CONNECTOR_IDENTITY = ConnectorIdentity(PROVIDER_FEISHU_BITABLE, "0.1.0", "1.0")
 URI_RESOLVER_CAPABILITY = CapabilityIdentity("uri.resolve", "1.0")
 TABLE_INSPECT_CAPABILITY = CapabilityIdentity("table.inspect", "1.0")
 TABLE_READ_ARROW_CAPABILITY = CapabilityIdentity("table.read.arrow", "1.0")
@@ -49,7 +51,7 @@ TABLE_READ_POLARS_CAPABILITY = CapabilityIdentity("table.read.polars", "1.0")
 TABLE_WRITE_CAPABILITY = CapabilityIdentity("table.write", "1.0")
 FEISHU_BATCH_CREATE_LIMIT = 500
 FEISHU_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
-CAPABILITY_MANIFEST = CapabilityManifest(CONNECTOR_IDENTITY, (URI_RESOLVER_CAPABILITY, TABLE_INSPECT_CAPABILITY, TABLE_READ_ARROW_CAPABILITY, TABLE_READ_POLARS_CAPABILITY, TABLE_WRITE_CAPABILITY), (TableMode.BASE,), ("feishu", "feishu_bitable"))
+CAPABILITY_MANIFEST = CapabilityManifest(CONNECTOR_IDENTITY, (URI_RESOLVER_CAPABILITY, TABLE_INSPECT_CAPABILITY, TABLE_READ_ARROW_CAPABILITY, TABLE_READ_POLARS_CAPABILITY, TABLE_WRITE_CAPABILITY), (TableMode.BASE,), (SCHEME_FEISHU, PROVIDER_FEISHU_BITABLE))
 
 
 class FeishuTransport(Protocol):
@@ -140,7 +142,7 @@ class FeishuBitableConnector(URIResolver, TableInspector, ArrowTableReader, Pola
 
     def resolve(self, uri: TableURI, context: ResolveContext) -> ResolvedTable:
         parsed = urlsplit(uri.value)
-        if uri.scheme not in {"feishu", "feishu_bitable"} or not parsed.netloc or not parsed.path.strip("/"):
+        if uri.scheme not in {SCHEME_FEISHU, PROVIDER_FEISHU_BITABLE} or not parsed.netloc or not parsed.path.strip("/"):
             raise ConnectorError(ConnectorErrorCode.INVALID_URI, "Feishu Bitable URI must be feishu://app_token/table_id", {"scheme": uri.scheme})
         parts = parsed.path.strip("/").split("/")
         if len(parts) != 1 or not parts[0]:
@@ -196,7 +198,7 @@ class FeishuBitableConnector(URIResolver, TableInspector, ArrowTableReader, Pola
 
     def inspect(self, request: InspectRequest):
         result = self.read_arrow(request)
-        return TableInspection(request.uri, TableMode.BASE, tuple(result.table.column_names), result.receipt.schema_fingerprint, result.table.num_rows, result.receipt.coordinate_convention, {"provider": "feishu_bitable"})
+        return TableInspection(request.uri, TableMode.BASE, tuple(result.table.column_names), result.receipt.schema_fingerprint, result.table.num_rows, result.receipt.coordinate_convention, {"provider": PROVIDER_FEISHU_BITABLE})
 
     def write(self, request: TableWriteRequest) -> TableWriteResult:
         if request.if_exists == "error":

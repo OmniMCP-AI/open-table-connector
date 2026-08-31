@@ -9,15 +9,22 @@ from typing import Any
 from urllib.parse import urlsplit
 from urllib.request import url2pathname
 
-from open_table_connector.contract import TableURI
+from open_table_connector.contract import (
+    PROVIDER_CSV,
+    PROVIDER_EXCEL,
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
+    SCHEME_FILE,
+    TableURI,
+)
 
 
 class FormatName(StrEnum):
     AUTO = "auto"
-    CSV = "csv"
-    EXCEL = "excel"
-    JSON = "json"
-    JSONL = "jsonl"
+    CSV = PROVIDER_CSV
+    EXCEL = PROVIDER_EXCEL
+    JSON = PROVIDER_JSON
+    JSONL = PROVIDER_JSONL
     TABLE = "table"
 
 
@@ -54,7 +61,7 @@ def parse_endpoint(value: str) -> Endpoint:
 
     parsed = urlsplit(value)
     if parsed.scheme:
-        if parsed.scheme.casefold() == "file":
+        if parsed.scheme.casefold() == SCHEME_FILE:
             validated = TableURI(value)
             file_uri = urlsplit(validated.value)
             if file_uri.netloc.casefold() not in ("", "localhost"):

@@ -1,6 +1,12 @@
 """Capability declaration for the local-files Connector."""
 
-from open_table_connector.contract import CapabilityManifest, TableMode
+from open_table_connector.contract import (
+    CapabilityManifest,
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
+    SCHEME_FILE,
+    TableMode,
+)
 
 from .identity import (
     CONNECTOR_IDENTITY,
@@ -27,5 +33,5 @@ def capability_manifest(*, connector, uri_schemes: tuple[str, ...]) -> Capabilit
 
 CAPABILITY_MANIFEST = capability_manifest(
     connector=CONNECTOR_IDENTITY,
-    uri_schemes=("file", "json", "jsonl"),
+    uri_schemes=(SCHEME_FILE, PROVIDER_JSON, PROVIDER_JSONL),
 )

@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 from urllib.parse import parse_qsl, unquote, urlsplit
 
-from open_table_connector.contract import ResolveContext, ResolvedTable, TableMode, TableURI
+from open_table_connector.contract import (
+    SCHEME_FILE,
+    ResolveContext,
+    ResolvedTable,
+    TableMode,
+    TableURI,
+)
 from open_table_connector.contract.errors import ConnectorError, ConnectorErrorCode
 
 from .probe import LocalFormat, detect_format
@@ -104,7 +109,7 @@ def _sheet_from_uri(uri: TableURI) -> str | None:
 
 class LocalURIResolver:
     def resolve(self, uri: TableURI, context: ResolveContext) -> ResolvedTable:
-        if uri.scheme != "file":
+        if uri.scheme != SCHEME_FILE:
             raise ConnectorError(
                 ConnectorErrorCode.INVALID_URI,
                 "local-files Connector accepts only file URIs",

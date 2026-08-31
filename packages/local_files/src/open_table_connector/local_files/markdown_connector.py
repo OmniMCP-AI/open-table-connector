@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 import polars as pl
 from open_table_connector.contract import (
+    SCHEME_MD,
     ArrowReadResult,
     ArrowTableReader,
     ConnectorError,
@@ -34,11 +35,10 @@ from .markdown_reader import read_markdown_arrow
 from .receipts import make_receipt, normalize_parameters
 from .resolver import LocalFormat, ResolvedLocalTable, _resolve_explicit_local_path
 
-
-MARKDOWN_CONNECTOR_IDENTITY = connector_identity("md")
+MARKDOWN_CONNECTOR_IDENTITY = connector_identity(SCHEME_MD)
 MARKDOWN_CAPABILITY_MANIFEST = capability_manifest(
     connector=MARKDOWN_CONNECTOR_IDENTITY,
-    uri_schemes=("md",),
+    uri_schemes=(SCHEME_MD,),
 )
 MARKDOWN_COORDINATE_CONVENTION = SheetConvention(sheet="data", header_rows=1, first_data_row=2)
 
@@ -69,7 +69,7 @@ class MarkdownConnector(URIResolver, TableInspector, ArrowTableReader, PolarsTab
         path, _ = _resolve_explicit_local_path(
             uri,
             context,
-            scheme="md",
+            scheme=SCHEME_MD,
             expected_format=LocalFormat.MARKDOWN,
         )
         return ResolvedTable(

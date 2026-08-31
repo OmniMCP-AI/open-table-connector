@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib.parse import urlsplit
@@ -10,6 +11,23 @@ from urllib.parse import urlsplit
 import polars as pl
 import pyarrow as pa
 from open_table_connector.contract import (
+    HOST_GOOGLE_DOCS,
+    HOST_MAYBE,
+    PACKAGE_NAMESPACE,
+    PROVIDER_CSV,
+    PROVIDER_EXCEL,
+    PROVIDER_FEISHU_BITABLE,
+    PROVIDER_GOOGLE_SHEETS,
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
+    PROVIDER_LOCAL_FILES,
+    PROVIDER_MAYBE_SHEET,
+    SCHEME_FEISHU,
+    SCHEME_FILE,
+    SCHEME_GSHEETS,
+    SCHEME_HTTPS,
+    SCHEME_MAYBE,
+    SCHEME_MD,
     ArrowReadResult,
     BaseConvention,
     CapabilityIdentity,
@@ -72,7 +90,7 @@ def _conflict(endpoint: Endpoint) -> ConnectorError:
     return ConnectorError(
         ConnectorErrorCode.CONFLICT,
         "destination already contains rows",
-        {"scheme": endpoint.uri.scheme if endpoint.uri else "file"},
+        {"scheme": endpoint.uri.scheme if endpoint.uri else SCHEME_FILE},
     )
 
 
@@ -99,9 +117,9 @@ class GoogleSheetsAdapter:
     connector: Any
     transport: Any = None
     environment_token: str | None = None
-    schemes: tuple[str, ...] = ("gsheets", "https")
-    hosts: tuple[str, ...] = ("docs.google.com",)
-    identity: ConnectorIdentity = ConnectorIdentity("google_sheets", "0.1.0", "1.0")
+    schemes: tuple[str, ...] = (SCHEME_GSHEETS, SCHEME_HTTPS)
+    hosts: tuple[str, ...] = (HOST_GOOGLE_DOCS,)
+    identity: ConnectorIdentity = ConnectorIdentity(PROVIDER_GOOGLE_SHEETS, "0.1.0", "1.0")
     capabilities: tuple[CapabilityIdentity, ...] = ()
 
     def __post_init__(self) -> None:
@@ -152,8 +170,8 @@ class FeishuBitableAdapter:
     connector: Any
     transport: Any = None
     environment_token: str | None = None
-    schemes: tuple[str, ...] = ("feishu", "feishu_bitable")
-    identity: ConnectorIdentity = ConnectorIdentity("feishu_bitable", "0.1.0", "1.0")
+    schemes: tuple[str, ...] = (SCHEME_FEISHU, PROVIDER_FEISHU_BITABLE)
+    identity: ConnectorIdentity = ConnectorIdentity(PROVIDER_FEISHU_BITABLE, "0.1.0", "1.0")
     capabilities: tuple[CapabilityIdentity, ...] = ()
     provider_owned_fields: tuple[str, ...] = ("_record_id",)
 
@@ -201,9 +219,9 @@ class FeishuBitableAdapter:
 @dataclass
 class MaybeSheetAdapter:
     connector: Any
-    schemes: tuple[str, ...] = ("maybe", "https")
-    hosts: tuple[str, ...] = ("www.maybe.ai",)
-    identity: ConnectorIdentity = ConnectorIdentity("maybe_sheet", "0.1.0", "1.0")
+    schemes: tuple[str, ...] = (SCHEME_MAYBE, SCHEME_HTTPS)
+    hosts: tuple[str, ...] = (HOST_MAYBE,)
+    identity: ConnectorIdentity = ConnectorIdentity(PROVIDER_MAYBE_SHEET, "0.1.0", "1.0")
     modes: tuple[TableMode, ...] = (TableMode.BASE,)
     capabilities: tuple[CapabilityIdentity, ...] = (
         CapabilityIdentity("base.read", "1.0"),
@@ -213,7 +231,7 @@ class MaybeSheetAdapter:
 
     def _target(self, endpoint: Endpoint, options: CliOptions) -> str:
         uri = _uri(endpoint)
-        if uri.scheme == "https":
+        if uri.scheme == SCHEME_HTTPS:
             if options.target:
                 return options.target
             raise ConnectorError(
@@ -222,7 +240,7 @@ class MaybeSheetAdapter:
                 {"option": "target"},
             )
 
-        if uri.scheme == "maybe":
+        if uri.scheme == SCHEME_MAYBE:
             parsed = urlsplit(uri.value)
             target = parsed.path[1:] if parsed.path.startswith("/") else ""
             if (
@@ -235,7 +253,7 @@ class MaybeSheetAdapter:
                 raise ConnectorError(
                     ConnectorErrorCode.INVALID_URI,
                     "MaybeSheet URI must use maybe://DOCUMENT/TARGET",
-                    {"scheme": "maybe"},
+                    {"scheme": SCHEME_MAYBE},
                 )
             return options.target or target
 
@@ -289,9 +307,9 @@ class MaybeSheetAdapter:
 @dataclass
 class CsvAdapter:
     connector: Any
-    schemes: tuple[str, ...] = ("csv",)
+    schemes: tuple[str, ...] = (PROVIDER_CSV,)
     hosts: tuple[str, ...] = ()
-    identity: ConnectorIdentity = ConnectorIdentity("csv", "0.1.0", "1.0")
+    identity: ConnectorIdentity = ConnectorIdentity(PROVIDER_CSV, "0.1.0", "1.0")
     modes: tuple[TableMode, ...] = (TableMode.SHEET,)
     capabilities: tuple[CapabilityIdentity, ...] = (
         CapabilityIdentity("uri.resolve", "1.0"),
@@ -324,9 +342,9 @@ class CsvAdapter:
 @dataclass
 class ExcelAdapter:
     connector: Any
-    schemes: tuple[str, ...] = ("excel",)
+    schemes: tuple[str, ...] = (PROVIDER_EXCEL,)
     hosts: tuple[str, ...] = ()
-    identity: ConnectorIdentity = ConnectorIdentity("excel", "0.1.0", "1.0")
+    identity: ConnectorIdentity = ConnectorIdentity(PROVIDER_EXCEL, "0.1.0", "1.0")
     modes: tuple[TableMode, ...] = (TableMode.SHEET,)
     capabilities: tuple[CapabilityIdentity, ...] = (
         CapabilityIdentity("uri.resolve", "1.0"),
@@ -359,9 +377,9 @@ class ExcelAdapter:
 @dataclass
 class MarkdownAdapter:
     connector: Any
-    schemes: tuple[str, ...] = ("md",)
+    schemes: tuple[str, ...] = (SCHEME_MD,)
     hosts: tuple[str, ...] = ()
-    identity: ConnectorIdentity = ConnectorIdentity("md", "0.1.0", "1.0")
+    identity: ConnectorIdentity = ConnectorIdentity(SCHEME_MD, "0.1.0", "1.0")
     modes: tuple[TableMode, ...] = (TableMode.SHEET,)
     capabilities: tuple[CapabilityIdentity, ...] = (
         CapabilityIdentity("uri.resolve", "1.0"),
@@ -394,9 +412,9 @@ class MarkdownAdapter:
 @dataclass
 class LocalAdapter:
     connector: Any
-    schemes: tuple[str, ...] = ("file", "json", "jsonl")
+    schemes: tuple[str, ...] = (SCHEME_FILE, PROVIDER_JSON, PROVIDER_JSONL)
     hosts: tuple[str, ...] = ()
-    identity: ConnectorIdentity = ConnectorIdentity("local_files", "0.1.0", "1.0")
+    identity: ConnectorIdentity = ConnectorIdentity(PROVIDER_LOCAL_FILES, "0.1.0", "1.0")
     modes: tuple[TableMode, ...] = (TableMode.SHEET,)
     capabilities: tuple[CapabilityIdentity, ...] = (
         CapabilityIdentity("uri.resolve", "1.0"),
@@ -493,35 +511,35 @@ def build_adapters(env: Mapping[str, str], transports: Mapping[str, Any] | None 
         from open_table_connector.google_sheets import GoogleSheetsConnector
 
         google = GoogleSheetsConnector(
-            transports.get("google_sheets"),
+            transports.get(PROVIDER_GOOGLE_SHEETS),
             access_token=env.get("GOOGLE_SHEETS_ACCESS_TOKEN"),
         )
         adapters.append(
             GoogleSheetsAdapter(
                 google,
-                transports.get("google_sheets"),
+                transports.get(PROVIDER_GOOGLE_SHEETS),
                 env.get("GOOGLE_SHEETS_ACCESS_TOKEN"),
             )
         )
     except ModuleNotFoundError as exc:
-        if exc.name and not exc.name.startswith("open_table_connector"):
+        if exc.name and not exc.name.startswith(PACKAGE_NAMESPACE):
             raise
     try:
         from open_table_connector.feishu_bitable import FeishuBitableConnector
 
         feishu = FeishuBitableConnector(
-            transports.get("feishu_bitable"),
+            transports.get(PROVIDER_FEISHU_BITABLE),
             tenant_access_token=env.get("FEISHU_TENANT_ACCESS_TOKEN"),
         )
         adapters.append(
             FeishuBitableAdapter(
                 feishu,
-                transports.get("feishu_bitable"),
+                transports.get(PROVIDER_FEISHU_BITABLE),
                 env.get("FEISHU_TENANT_ACCESS_TOKEN"),
             )
         )
     except ModuleNotFoundError as exc:
-        if exc.name and not exc.name.startswith("open_table_connector"):
+        if exc.name and not exc.name.startswith(PACKAGE_NAMESPACE):
             raise
     try:
         from open_table_connector.maybe_sheet import (
@@ -530,11 +548,11 @@ def build_adapters(env: Mapping[str, str], transports: Mapping[str, Any] | None 
         )
 
         maybe = MaybeSheetConnector(
-            transports.get("maybe_sheet") or SubprocessProcessClient(environment=env)
+            transports.get(PROVIDER_MAYBE_SHEET) or SubprocessProcessClient(environment=env)
         )
         adapters.append(MaybeSheetAdapter(maybe))
     except ModuleNotFoundError as exc:
-        if exc.name and not exc.name.startswith("open_table_connector"):
+        if exc.name and not exc.name.startswith(PACKAGE_NAMESPACE):
             raise
     try:
         from open_table_connector.local_files import (
@@ -553,7 +571,7 @@ def build_adapters(env: Mapping[str, str], transports: Mapping[str, Any] | None 
             )
         )
     except ModuleNotFoundError as exc:
-        if exc.name and not exc.name.startswith("open_table_connector"):
+        if exc.name and not exc.name.startswith(PACKAGE_NAMESPACE):
             raise
     return tuple(adapters)
 

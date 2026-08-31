@@ -8,8 +8,12 @@ from typing import TypeAlias
 from urllib.parse import quote
 
 import polars as pl
-
 from open_table_connector.contract import (
+    PROVIDER_CSV,
+    PROVIDER_EXCEL,
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
+    SCHEME_MD,
     ArrowReadResult,
     ArrowTableReader,
     BaseConvention,
@@ -119,7 +123,7 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
             return (
                 self._csv_connector,
                 CsvTableReadRequest(
-                    self._explicit_uri(resolved.path, "csv"),
+                    self._explicit_uri(resolved.path, PROVIDER_CSV),
                     resource_limits=request.resource_limits,
                     options=CsvReadOptions(
                         separator=request.options.separator,
@@ -131,7 +135,7 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
             return (
                 self._excel_connector,
                 ExcelTableReadRequest(
-                    self._explicit_uri(resolved.path, "excel", sheet=resolved.sheet),
+                    self._explicit_uri(resolved.path, PROVIDER_EXCEL, sheet=resolved.sheet),
                     resource_limits=request.resource_limits,
                     options=ExcelReadOptions(
                         sheet=request.options.sheet,
@@ -140,7 +144,7 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
                 ),
             )
         if resolved.format in {LocalFormat.JSON, LocalFormat.JSONL}:
-            scheme = "json" if resolved.format is LocalFormat.JSON else "jsonl"
+            scheme = PROVIDER_JSON if resolved.format is LocalFormat.JSON else PROVIDER_JSONL
             return (
                 self._json_connector,
                 JsonTableReadRequest(
@@ -151,7 +155,7 @@ class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsT
         return (
             self._markdown_connector,
             MarkdownTableReadRequest(
-                self._explicit_uri(resolved.path, "md"),
+                self._explicit_uri(resolved.path, SCHEME_MD),
                 resource_limits=request.resource_limits,
                 options=MarkdownReadOptions(encoding=request.options.encoding),
             ),

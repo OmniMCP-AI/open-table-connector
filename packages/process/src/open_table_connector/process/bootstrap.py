@@ -8,7 +8,20 @@ import stat
 from collections.abc import Mapping
 from pathlib import Path
 
-from open_table_connector.contract import TableURI
+from open_table_connector.contract import (
+    PROVIDER_CSV,
+    PROVIDER_EXCEL,
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
+    PROVIDER_MAYBE_SHEET,
+    PROVIDER_POSTGRES,
+    PROVIDER_SQLITE,
+    SCHEME_MANAGED_CSV,
+    SCHEME_MANAGED_XLSX,
+    SCHEME_MAYBE,
+    SCHEME_XLSX,
+    TableURI,
+)
 from open_table_connector.timeseries import (
     TemporalExecutionRequest,
     TemporalExecutionResult,
@@ -23,22 +36,22 @@ from .timeseries import TemporalProcessHandler, temporal_registration
 
 _COMMON_FIELDS = {"schema_version", "provider", "descriptor", "target", "managed"}
 _PROVIDER_FIELDS = {
-    "csv": set(),
-    "json": set(),
-    "jsonl": set(),
-    "excel": {"worksheet"},
-    "sqlite": {"physical_table"},
-    "postgres": {"physical_table"},
-    "maybe_sheet": {"maybe_sheet_binary"},
+    PROVIDER_CSV: set(),
+    PROVIDER_JSON: set(),
+    PROVIDER_JSONL: set(),
+    PROVIDER_EXCEL: {"worksheet"},
+    PROVIDER_SQLITE: {"physical_table"},
+    PROVIDER_POSTGRES: {"physical_table"},
+    PROVIDER_MAYBE_SHEET: {"maybe_sheet_binary"},
 }
 _TARGET_SCHEMES = {
-    "csv": {"csv", "managed+csv"},
-    "json": {"json"},
-    "jsonl": {"jsonl"},
-    "excel": {"excel", "xlsx", "managed+xlsx"},
-    "sqlite": {"sqlite"},
-    "postgres": {"postgres"},
-    "maybe_sheet": {"maybe"},
+    PROVIDER_CSV: {PROVIDER_CSV, SCHEME_MANAGED_CSV},
+    PROVIDER_JSON: {PROVIDER_JSON},
+    PROVIDER_JSONL: {PROVIDER_JSONL},
+    PROVIDER_EXCEL: {PROVIDER_EXCEL, SCHEME_XLSX, SCHEME_MANAGED_XLSX},
+    PROVIDER_SQLITE: {PROVIDER_SQLITE},
+    PROVIDER_POSTGRES: {PROVIDER_POSTGRES},
+    PROVIDER_MAYBE_SHEET: {SCHEME_MAYBE},
 }
 
 

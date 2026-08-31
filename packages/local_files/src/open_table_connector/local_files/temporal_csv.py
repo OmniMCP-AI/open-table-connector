@@ -11,7 +11,7 @@ from urllib.parse import unquote, urlsplit
 import pyarrow as pa
 import pyarrow.csv as pa_csv
 
-from open_table_connector.contract import TableURI
+from open_table_connector.contract import PROVIDER_CSV, TableURI
 from open_table_connector.timeseries import (
     ManagedAbortReceipt,
     ManagedAbortRequest,
@@ -140,7 +140,7 @@ class CsvManagedTemporalStore:
             artifact_root,
             descriptor,
             target_scheme="managed+csv",
-            extension="csv",
+            extension=PROVIDER_CSV,
             encode_snapshot=_encode_csv,
             decode_snapshot=lambda data: _decode_csv(data, descriptor),
             clock=clock,
@@ -229,7 +229,7 @@ class CsvTemporalExecutor:
                 request.snapshot_reference,
                 request.plan.resource_bounds,
             )
-        elif request.target.scheme == "csv":
+        elif request.target.scheme == PROVIDER_CSV:
             path = _direct_csv_path(request.target)
             if path.stat().st_size > request.plan.resource_bounds.max_bytes:
                 raise TemporalExtensionError(

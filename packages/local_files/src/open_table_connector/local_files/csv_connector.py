@@ -9,6 +9,7 @@ import polars as pl
 from open_table_connector.contract import (
     ArrowReadResult,
     ArrowTableReader,
+    PROVIDER_CSV,
     InspectRequest,
     PolarsReadResult,
     PolarsTableReader,
@@ -34,8 +35,10 @@ from .receipts import make_receipt, normalize_parameters
 from .resolver import LocalFormat, ResolvedLocalTable, _resolve_explicit_local_path
 
 
-CSV_CONNECTOR_IDENTITY = connector_identity("csv")
-CSV_CAPABILITY_MANIFEST = capability_manifest(connector=CSV_CONNECTOR_IDENTITY, uri_schemes=("csv",))
+CSV_CONNECTOR_IDENTITY = connector_identity(PROVIDER_CSV)
+CSV_CAPABILITY_MANIFEST = capability_manifest(
+    connector=CSV_CONNECTOR_IDENTITY, uri_schemes=(PROVIDER_CSV,)
+)
 CSV_COORDINATE_CONVENTION = SheetConvention(sheet="data", header_rows=1, first_data_row=2)
 
 
@@ -68,7 +71,7 @@ class CsvConnector(URIResolver, TableInspector, ArrowTableReader, PolarsTableRea
         path, _ = _resolve_explicit_local_path(
             uri,
             context,
-            scheme="csv",
+            scheme=PROVIDER_CSV,
             expected_format=LocalFormat.CSV,
         )
         return ResolvedTable(

@@ -9,13 +9,19 @@ import re
 import sys
 from collections.abc import Sequence
 
+from open_table_connector.contract import (
+    PROVIDER_CSV,
+    PROVIDER_EXCEL,
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
+)
+
 from .commands import run_command
 from .output import emit_error
 from .registry import build_default_registry
 
-
-_FORMATS = ("auto", "csv", "excel", "json", "jsonl", "table")
-_OUTPUT_FORMATS = ("csv", "json", "jsonl", "table")
+_FORMATS = ("auto", PROVIDER_CSV, PROVIDER_EXCEL, PROVIDER_JSON, PROVIDER_JSONL, "table")
+_OUTPUT_FORMATS = (PROVIDER_CSV, PROVIDER_JSON, PROVIDER_JSONL, "table")
 _PARSER_FLAGS = frozenset(
     {
         "--from",
@@ -94,7 +100,7 @@ def _add_options(
     require_from: bool,
     require_to: bool,
     output_choices: Sequence[str] = _OUTPUT_FORMATS,
-    output_default: str | None = "jsonl",
+    output_default: str | None = PROVIDER_JSONL,
     include_to_format: bool = False,
 ) -> None:
     parser.add_argument("--from", dest="from_value", required=require_from, metavar="SOURCE")
@@ -118,7 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True, parser_class=_ArgumentParser)
 
     list_parser = subparsers.add_parser("list", help="list available connectors")
-    list_parser.add_argument("--output-format", choices=_OUTPUT_FORMATS, default="jsonl")
+    list_parser.add_argument("--output-format", choices=_OUTPUT_FORMATS, default=PROVIDER_JSONL)
     inspect_parser = subparsers.add_parser("inspect", help="inspect a table")
     _add_options(inspect_parser, require_from=True, require_to=False)
     read_parser = subparsers.add_parser("read", help="read a table")

@@ -6,9 +6,24 @@ from collections.abc import Mapping
 from importlib.metadata import entry_points
 from typing import Any
 
-from open_table_connector.contract import PluginDescriptor
-
-CLI_PLUGIN_GROUP = "open_table_connector.cli_adapters"
+from open_table_connector.contract import (
+    CLI_PLUGIN_GROUP,
+    HOST_GOOGLE_DOCS,
+    HOST_MAYBE,
+    PACKAGE_NAMESPACE,
+    PROVIDER_CSV,
+    PROVIDER_EXCEL,
+    PROVIDER_FEISHU_BITABLE,
+    PROVIDER_GOOGLE_SHEETS,
+    PROVIDER_LOCAL_FILES,
+    PROVIDER_MAYBE_SHEET,
+    SCHEME_FEISHU,
+    SCHEME_GSHEETS,
+    SCHEME_HTTPS,
+    SCHEME_MAYBE,
+    SCHEME_MD,
+    PluginDescriptor,
+)
 
 
 def _descriptor_entries() -> tuple[Any, ...]:
@@ -37,7 +52,7 @@ def discover_cli_adapters(
                 descriptor.name, adapter, env=env, transports=transports
             )
         except ModuleNotFoundError as exc:
-            if exc.name and not exc.name.startswith("open_table_connector"):
+            if exc.name and not exc.name.startswith(PACKAGE_NAMESPACE):
                 raise
             continue
         if adapter is not None:
@@ -62,18 +77,18 @@ def _wrap_provider_adapter(
     )
 
     adapters = {
-        "google_sheets": lambda: GoogleSheetsAdapter(
+        PROVIDER_GOOGLE_SHEETS: lambda: GoogleSheetsAdapter(
             value,
-            transports.get("google_sheets"),
+            transports.get(PROVIDER_GOOGLE_SHEETS),
             env.get("GOOGLE_SHEETS_ACCESS_TOKEN"),
         ),
-        "feishu_bitable": lambda: FeishuBitableAdapter(
+        PROVIDER_FEISHU_BITABLE: lambda: FeishuBitableAdapter(
             value,
-            transports.get("feishu_bitable"),
+            transports.get(PROVIDER_FEISHU_BITABLE),
             env.get("FEISHU_TENANT_ACCESS_TOKEN"),
         ),
-        "maybe_sheet": lambda: MaybeSheetAdapter(value),
-        "local_files": lambda: LocalAdapter(value),
+        PROVIDER_MAYBE_SHEET: lambda: MaybeSheetAdapter(value),
+        PROVIDER_LOCAL_FILES: lambda: LocalAdapter(value),
     }
     factory = adapters.get(name)
     return factory() if factory is not None else value
@@ -83,11 +98,11 @@ def google_plugin() -> PluginDescriptor:
     from open_table_connector.cli.adapters import GoogleSheetsAdapter
 
     return PluginDescriptor(
-        "google_sheets",
+        PROVIDER_GOOGLE_SHEETS,
         GoogleSheetsAdapter.identity,
-        GoogleSheetsAdapter.schemes,
+        (SCHEME_GSHEETS, SCHEME_HTTPS),
         _google_factory,
-        GoogleSheetsAdapter.hosts,
+        (HOST_GOOGLE_DOCS,),
     )
 
 
@@ -95,14 +110,14 @@ def _google_factory(*, env: Mapping[str, str], transports: Mapping[str, Any]) ->
     from open_table_connector.google_sheets import GoogleSheetsConnector
 
     connector = GoogleSheetsConnector(
-        transports.get("google_sheets"),
+        transports.get(PROVIDER_GOOGLE_SHEETS),
         access_token=env.get("GOOGLE_SHEETS_ACCESS_TOKEN"),
     )
     from open_table_connector.cli.adapters import GoogleSheetsAdapter
 
     return GoogleSheetsAdapter(
         connector,
-        transports.get("google_sheets"),
+        transports.get(PROVIDER_GOOGLE_SHEETS),
         env.get("GOOGLE_SHEETS_ACCESS_TOKEN"),
     )
 
@@ -111,9 +126,9 @@ def feishu_plugin() -> PluginDescriptor:
     from open_table_connector.cli.adapters import FeishuBitableAdapter
 
     return PluginDescriptor(
-        "feishu_bitable",
+        PROVIDER_FEISHU_BITABLE,
         FeishuBitableAdapter.identity,
-        FeishuBitableAdapter.schemes,
+        (SCHEME_FEISHU, PROVIDER_FEISHU_BITABLE),
         _feishu_factory,
     )
 
@@ -122,14 +137,14 @@ def _feishu_factory(*, env: Mapping[str, str], transports: Mapping[str, Any]) ->
     from open_table_connector.feishu_bitable import FeishuBitableConnector
 
     connector = FeishuBitableConnector(
-        transports.get("feishu_bitable"),
+        transports.get(PROVIDER_FEISHU_BITABLE),
         tenant_access_token=env.get("FEISHU_TENANT_ACCESS_TOKEN"),
     )
     from open_table_connector.cli.adapters import FeishuBitableAdapter
 
     return FeishuBitableAdapter(
         connector,
-        transports.get("feishu_bitable"),
+        transports.get(PROVIDER_FEISHU_BITABLE),
         env.get("FEISHU_TENANT_ACCESS_TOKEN"),
     )
 
@@ -138,11 +153,11 @@ def maybe_sheet_plugin() -> PluginDescriptor:
     from open_table_connector.cli.adapters import MaybeSheetAdapter
 
     return PluginDescriptor(
-        "maybe_sheet",
+        PROVIDER_MAYBE_SHEET,
         MaybeSheetAdapter.identity,
-        MaybeSheetAdapter.schemes,
+        (SCHEME_MAYBE, SCHEME_HTTPS),
         _maybe_factory,
-        MaybeSheetAdapter.hosts,
+        (HOST_MAYBE,),
     )
 
 
@@ -150,7 +165,7 @@ def _maybe_factory(*, env: Mapping[str, str], transports: Mapping[str, Any]) -> 
     from open_table_connector.maybe_sheet import MaybeSheetConnector, SubprocessProcessClient
 
     connector = MaybeSheetConnector(
-        transports.get("maybe_sheet") or SubprocessProcessClient(environment=env)
+        transports.get(PROVIDER_MAYBE_SHEET) or SubprocessProcessClient(environment=env)
     )
     from open_table_connector.cli.adapters import MaybeSheetAdapter
 
@@ -160,7 +175,7 @@ def _maybe_factory(*, env: Mapping[str, str], transports: Mapping[str, Any]) -> 
 def csv_plugin() -> PluginDescriptor:
     from open_table_connector.cli.adapters import CsvAdapter
 
-    return PluginDescriptor("csv", CsvAdapter.identity, CsvAdapter.schemes, _csv_factory)
+    return PluginDescriptor(PROVIDER_CSV, CsvAdapter.identity, CsvAdapter.schemes, _csv_factory)
 
 
 def _csv_factory(*, env: Mapping[str, str], transports: Mapping[str, Any]) -> Any:
@@ -173,7 +188,7 @@ def _csv_factory(*, env: Mapping[str, str], transports: Mapping[str, Any]) -> An
 def excel_plugin() -> PluginDescriptor:
     from open_table_connector.cli.adapters import ExcelAdapter
 
-    return PluginDescriptor("excel", ExcelAdapter.identity, ExcelAdapter.schemes, _excel_factory)
+    return PluginDescriptor(PROVIDER_EXCEL, ExcelAdapter.identity, ExcelAdapter.schemes, _excel_factory)
 
 
 def _excel_factory(*, env: Mapping[str, str], transports: Mapping[str, Any]) -> Any:
@@ -187,7 +202,7 @@ def markdown_plugin() -> PluginDescriptor:
     from open_table_connector.cli.adapters import MarkdownAdapter
 
     return PluginDescriptor(
-        "md", MarkdownAdapter.identity, MarkdownAdapter.schemes, _markdown_factory
+        SCHEME_MD, MarkdownAdapter.identity, MarkdownAdapter.schemes, _markdown_factory
     )
 
 
@@ -202,7 +217,7 @@ def local_files_plugin() -> PluginDescriptor:
     from open_table_connector.cli.adapters import LocalAdapter
 
     return PluginDescriptor(
-        "local_files", LocalAdapter.identity, LocalAdapter.schemes, _local_factory
+        PROVIDER_LOCAL_FILES, LocalAdapter.identity, LocalAdapter.schemes, _local_factory
     )
 
 

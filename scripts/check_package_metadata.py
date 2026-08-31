@@ -6,9 +6,11 @@ import tomllib
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from open_table_connector.contract import PROVIDER_FEISHU_BITABLE, PROVIDER_GOOGLE_SHEETS
+
 _INTERNAL_PREFIX = "open-table-connector-"
 _INTERNAL_RANGE = ">=0.1,<0.2"
-_HOSTED_CONNECTORS = ("google_sheets", "feishu_bitable")
+_HOSTED_CONNECTORS = (PROVIDER_GOOGLE_SHEETS, PROVIDER_FEISHU_BITABLE)
 
 
 class PackageMetadata(NamedTuple):

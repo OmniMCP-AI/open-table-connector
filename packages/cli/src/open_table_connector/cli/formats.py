@@ -15,17 +15,26 @@ from typing import TextIO
 from urllib.parse import parse_qsl, unquote, urlsplit
 
 import pyarrow as pa
-from open_table_connector.contract import ConnectorError, ConnectorErrorCode, ResourceLimits
+from open_table_connector.contract import (
+    PROVIDER_CSV,
+    PROVIDER_EXCEL,
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
+    SCHEME_MD,
+    ConnectorError,
+    ConnectorErrorCode,
+    ResourceLimits,
+)
 
 from .model import Endpoint, FormatName
 
 _MARKDOWN_SUFFIXES = {".table", ".md", ".markdown"}
 _LOCAL_FORMAT_SCHEMES = {
-    "csv": FormatName.CSV,
-    "excel": FormatName.EXCEL,
-    "json": FormatName.JSON,
-    "jsonl": FormatName.JSONL,
-    "md": FormatName.TABLE,
+    PROVIDER_CSV: FormatName.CSV,
+    PROVIDER_EXCEL: FormatName.EXCEL,
+    PROVIDER_JSON: FormatName.JSON,
+    PROVIDER_JSONL: FormatName.JSONL,
+    SCHEME_MD: FormatName.TABLE,
 }
 
 

@@ -5,17 +5,25 @@ from __future__ import annotations
 from enum import StrEnum
 from pathlib import Path
 
+from open_table_connector.contract import (
+    PROVIDER_CSV,
+    PROVIDER_EXCEL,
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
+    SCHEME_MD,
+)
 from open_table_connector.contract.errors import ConnectorError, ConnectorErrorCode
+
 from .json_codec import parse_json_table, parse_jsonl_table
 from .markdown_reader import is_markdown_payload
 
 
 class LocalFormat(StrEnum):
-    CSV = "csv"
-    EXCEL = "excel"
-    JSON = "json"
-    JSONL = "jsonl"
-    MARKDOWN = "md"
+    CSV = PROVIDER_CSV
+    EXCEL = PROVIDER_EXCEL
+    JSON = PROVIDER_JSON
+    JSONL = PROVIDER_JSONL
+    MARKDOWN = SCHEME_MD
 
 
 XLSX_ZIP_SIGNATURE = b"PK\x03\x04"

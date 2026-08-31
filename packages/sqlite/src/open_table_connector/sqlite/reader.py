@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from hashlib import sha256
-from contextvars import ContextVar
 import re
 import sqlite3
+from collections.abc import Callable
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Any, Callable
+from hashlib import sha256
+from typing import Any
 from urllib.parse import unquote, urlsplit
 
 import polars as pl
 import pyarrow as pa
-
 from open_table_connector.contract import (
+    PROVIDER_SQLITE,
     ArrowReadResult,
     ArrowTableReader,
     BaseConvention,
@@ -26,7 +27,6 @@ from open_table_connector.contract import (
     NeutralReceipt,
     PolarsReadResult,
     PolarsTableReader,
-    ResourceLimits,
     ResolveContext,
     ResolvedTable,
     SqlExecutor,
@@ -35,18 +35,20 @@ from open_table_connector.contract import (
     TableMode,
     TableReadRequest,
     TableURI,
+    TableWriter,
     TableWriteRequest,
     TableWriteResult,
-    TableWriter,
     TransactionalStore,
     URIResolver,
 )
-from open_table_connector.contract.fingerprints import arrow_content_fingerprint, arrow_schema_fingerprint, operation_identity
+from open_table_connector.contract.fingerprints import (
+    arrow_content_fingerprint,
+    arrow_schema_fingerprint,
+    operation_identity,
+)
 
 from .identity import (
     CONNECTOR_IDENTITY,
-    TABLE_EXECUTE_CAPABILITY,
-    TABLE_INSPECT_CAPABILITY,
     TABLE_READ_ARROW_CAPABILITY,
     TABLE_READ_POLARS_CAPABILITY,
     TABLE_WRITE_CAPABILITY,
@@ -94,7 +96,7 @@ class ResolvedSQLite:
 class SQLiteTransaction:
     """Explicit transaction handle with context-local legacy routing."""
 
-    def __init__(self, connector: "SQLiteConnector", uri: TableURI, connection: Any) -> None:
+    def __init__(self, connector: SQLiteConnector, uri: TableURI, connection: Any) -> None:
         self._connector = connector
         self.uri = uri
         self._connection = connection
@@ -167,7 +169,7 @@ class SQLiteConnector(
 
     @staticmethod
     def _execution_id(request: ExecutionRequest) -> str:
-        payload = f"{request.uri.value}\0{request.statement}".encode("utf-8")
+        payload = f"{request.uri.value}\0{request.statement}".encode()
         return "exec_" + sha256(payload).hexdigest()
 
     @staticmethod
@@ -193,7 +195,7 @@ class SQLiteConnector(
         return value
 
     def resolve(self, uri: TableURI, context: ResolveContext) -> ResolvedTable:
-        if uri.scheme != "sqlite":
+        if uri.scheme != PROVIDER_SQLITE:
             raise ConnectorError(ConnectorErrorCode.INVALID_URI, "SQLite Connector requires sqlite URI", {"scheme": uri.scheme})
         parsed = urlsplit(uri.value)
         if parsed.query or parsed.fragment:

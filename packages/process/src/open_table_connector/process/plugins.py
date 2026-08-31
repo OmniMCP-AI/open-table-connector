@@ -7,10 +7,13 @@ from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Any
 
-from open_table_connector.contract import TableURI
+from open_table_connector.contract import (
+    PACKAGE_NAMESPACE,
+    PROCESS_PLUGIN_GROUP,
+    TableURI,
+)
 from open_table_connector.timeseries import TemporalTableDescriptor
 
-PROCESS_PLUGIN_GROUP = "open_table_connector.process_handlers"
 ProcessBinding = tuple[Any, Any]
 ProcessPluginFactory = Callable[..., ProcessBinding]
 
@@ -48,7 +51,7 @@ def discover_process_binding(
                 root=root,
             )
         except ModuleNotFoundError as exc:
-            if exc.name and not exc.name.startswith("open_table_connector"):
+            if exc.name and not exc.name.startswith(PACKAGE_NAMESPACE):
                 raise
             raise ValueError(f"process provider is unavailable: {provider}") from exc
         if (

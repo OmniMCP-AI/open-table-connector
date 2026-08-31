@@ -19,6 +19,8 @@ from open_table_connector.contract import (
     InspectRequest,
     PolarsReadResult,
     PolarsTableReader,
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
     ResolveContext,
     ResolvedTable,
     TableInspector,
@@ -41,10 +43,10 @@ from .receipts import make_receipt, normalize_parameters, source_revision
 from .resolver import ResolvedLocalTable
 
 
-JSON_CONNECTOR_IDENTITY = connector_identity("json")
+JSON_CONNECTOR_IDENTITY = connector_identity(PROVIDER_JSON)
 JSON_CAPABILITY_MANIFEST = capability_manifest(
     connector=JSON_CONNECTOR_IDENTITY,
-    uri_schemes=("json", "jsonl"),
+    uri_schemes=(PROVIDER_JSON, PROVIDER_JSONL),
 )
 
 
@@ -118,7 +120,7 @@ class JsonConnector(URIResolver, TableInspector, ArrowTableReader, PolarsTableRe
 
 
 def _json_path(uri: TableURI) -> tuple[Path, LocalFormat]:
-    if uri.scheme not in {"json", "jsonl"}:
+    if uri.scheme not in {PROVIDER_JSON, PROVIDER_JSONL}:
         raise ConnectorError(
             ConnectorErrorCode.INVALID_URI,
             "JSON Connector accepts only json and jsonl URIs",
@@ -147,7 +149,7 @@ def _json_path(uri: TableURI) -> tuple[Path, LocalFormat]:
             "JSON URI cannot address a symlink",
             {"path": str(path)},
         )
-    format_name = LocalFormat.JSON if uri.scheme == "json" else LocalFormat.JSONL
+    format_name = LocalFormat.JSON if uri.scheme == PROVIDER_JSON else LocalFormat.JSONL
     return path, format_name
 
 

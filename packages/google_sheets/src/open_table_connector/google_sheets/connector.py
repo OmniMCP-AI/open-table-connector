@@ -1,32 +1,58 @@
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from hashlib import sha256
-import json
-from typing import Any, Mapping, Protocol
-from urllib.parse import quote, unquote, urlsplit
+from typing import Any, Protocol
 from urllib.error import HTTPError
+from urllib.parse import quote, unquote, urlsplit
 from urllib.request import Request, urlopen
 
 import polars as pl
 import pyarrow as pa
-
 from open_table_connector.contract import (
-    ArrowReadResult, ArrowTableReader, CapabilityIdentity, CapabilityManifest, ConnectorError,
-    ConnectorErrorCode, ConnectorIdentity, InspectRequest, PolarsReadResult, PolarsTableReader,
-    ResolveContext, ResolvedTable, SheetConvention, TableInspection, TableInspector, TableMode,
-    TableReadRequest, TableURI, TableWriteRequest, TableWriteResult, TableWriter, URIResolver,
+    HOST_GOOGLE_DOCS,
+    PROVIDER_GOOGLE_SHEETS,
+    SCHEME_GSHEETS,
+    SCHEME_HTTPS,
+    ArrowReadResult,
+    ArrowTableReader,
+    CapabilityIdentity,
+    CapabilityManifest,
+    ConnectorError,
+    ConnectorErrorCode,
+    ConnectorIdentity,
+    InspectRequest,
+    PolarsReadResult,
+    PolarsTableReader,
+    ResolveContext,
+    ResolvedTable,
+    SheetConvention,
+    TableInspection,
+    TableInspector,
+    TableMode,
+    TableReadRequest,
+    TableURI,
+    TableWriter,
+    TableWriteRequest,
+    TableWriteResult,
+    URIResolver,
 )
-from open_table_connector.contract.fingerprints import arrow_content_fingerprint, arrow_schema_fingerprint, operation_identity
+from open_table_connector.contract.fingerprints import (
+    arrow_content_fingerprint,
+    arrow_schema_fingerprint,
+    operation_identity,
+)
 
-CONNECTOR_IDENTITY = ConnectorIdentity("google_sheets", "0.1.0", "1.0")
+CONNECTOR_IDENTITY = ConnectorIdentity(PROVIDER_GOOGLE_SHEETS, "0.1.0", "1.0")
 URI_RESOLVER_CAPABILITY = CapabilityIdentity("uri.resolve", "1.0")
 TABLE_INSPECT_CAPABILITY = CapabilityIdentity("table.inspect", "1.0")
 TABLE_READ_ARROW_CAPABILITY = CapabilityIdentity("table.read.arrow", "1.0")
 TABLE_READ_POLARS_CAPABILITY = CapabilityIdentity("table.read.polars", "1.0")
 TABLE_WRITE_CAPABILITY = CapabilityIdentity("table.write", "1.0")
 GOOGLE_SHEETS_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
-CAPABILITY_MANIFEST = CapabilityManifest(CONNECTOR_IDENTITY, (URI_RESOLVER_CAPABILITY, TABLE_INSPECT_CAPABILITY, TABLE_READ_ARROW_CAPABILITY, TABLE_READ_POLARS_CAPABILITY, TABLE_WRITE_CAPABILITY), (TableMode.SHEET,), ("gsheets", "https"))
+CAPABILITY_MANIFEST = CapabilityManifest(CONNECTOR_IDENTITY, (URI_RESOLVER_CAPABILITY, TABLE_INSPECT_CAPABILITY, TABLE_READ_ARROW_CAPABILITY, TABLE_READ_POLARS_CAPABILITY, TABLE_WRITE_CAPABILITY), (TableMode.SHEET,), (SCHEME_GSHEETS, SCHEME_HTTPS))
 
 
 class SheetsTransport(Protocol):
@@ -119,10 +145,10 @@ class GoogleSheetsConnector(URIResolver, TableInspector, ArrowTableReader, Polar
 
     def resolve(self, uri: TableURI, context: ResolveContext) -> ResolvedTable:
         parsed = urlsplit(uri.value)
-        if uri.scheme == "gsheets":
+        if uri.scheme == SCHEME_GSHEETS:
             spreadsheet_id = parsed.netloc
             sheet = unquote(parsed.path.lstrip("/"))
-        elif uri.scheme == "https" and parsed.hostname == "docs.google.com":
+        elif uri.scheme == SCHEME_HTTPS and parsed.hostname == HOST_GOOGLE_DOCS:
             parts = parsed.path.split("/")
             try:
                 spreadsheet_id = parts[parts.index("d") + 1]
@@ -194,7 +220,7 @@ class GoogleSheetsConnector(URIResolver, TableInspector, ArrowTableReader, Polar
 
     def inspect(self, request: InspectRequest):
         result = self.read_arrow(request)
-        return TableInspection(request.uri, TableMode.SHEET, tuple(result.table.column_names), result.receipt.schema_fingerprint, result.table.num_rows, result.receipt.coordinate_convention, {"provider": "google_sheets"})
+        return TableInspection(request.uri, TableMode.SHEET, tuple(result.table.column_names), result.receipt.schema_fingerprint, result.table.num_rows, result.receipt.coordinate_convention, {"provider": PROVIDER_GOOGLE_SHEETS})
 
     def write(self, request: TableWriteRequest) -> TableWriteResult:
         if request.if_exists == "error":

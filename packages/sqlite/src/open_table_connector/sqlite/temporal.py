@@ -2,26 +2,25 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-from datetime import UTC, datetime
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import sqlite3
 import stat
 import time
-from typing import Iterator
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from pathlib import Path
 
 import pyarrow as pa
-
-from open_table_connector.contract import TableURI
+from open_table_connector.contract import PROVIDER_SQLITE, TableURI
 from open_table_connector.timeseries import (
     AbortDisposition,
     AggregateFunction,
-    AsOf,
     ArrowArtifactReference,
+    AsOf,
     BucketAggregate,
     FixedBucket,
     GapFill,
@@ -49,13 +48,13 @@ from open_table_connector.timeseries import (
     TimeRange,
     TimestampPrecision,
     VisibilityGuarantee,
-    temporal_descriptor_hash,
     storage_to_timestamp,
+    temporal_descriptor_hash,
     timestamp_to_storage,
     validate_stage_retry,
 )
-from .identity import CONNECTOR_IDENTITY
 
+from .identity import CONNECTOR_IDENTITY
 
 _TABLE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*(?:\.[A-Za-z_][A-Za-z0-9_$]*)?$")
 _SUPPORTED_AGGREGATES = {
@@ -829,7 +828,7 @@ def _storage_where(
 def _database_path(uri: TableURI) -> str:
     from urllib.parse import unquote, urlsplit
 
-    if uri.scheme != "sqlite":
+    if uri.scheme != PROVIDER_SQLITE:
         raise TemporalExtensionError(
             TemporalErrorCode.PROTOCOL_INVALID,
             "SQLite temporal target requires sqlite URI",

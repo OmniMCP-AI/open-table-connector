@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
 
+from .names import SCHEME_FILE
+
 _SECRET_QUERY_KEYS = {
     "access_token",
     "api_key",
@@ -43,7 +45,7 @@ class TableURI:
             raise ValueError("TableURI cannot contain credentials")
         if _secret_parameter_keys(parsed.query) or _secret_parameter_keys(parsed.fragment):
             raise ValueError("TableURI cannot contain credential query parameters")
-        if parsed.scheme.casefold() == "file" and not parsed.path.startswith("/"):
+        if parsed.scheme.casefold() == SCHEME_FILE and not parsed.path.startswith("/"):
             raise ValueError("file TableURI must use an absolute path")
         object.__setattr__(self, "value", value)
 

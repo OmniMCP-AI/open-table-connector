@@ -5,14 +5,23 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from open_table_connector.contract import PluginDescriptor
+from open_table_connector.contract import (
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
+    PROVIDER_LOCAL_FILES,
+    SCHEME_FILE,
+    PluginDescriptor,
+)
 
 
 def provider_plugin() -> PluginDescriptor:
     from .identity import CONNECTOR_IDENTITY
 
     return PluginDescriptor(
-        "local_files", CONNECTOR_IDENTITY, ("file", "json", "jsonl"), _provider_factory
+        PROVIDER_LOCAL_FILES,
+        CONNECTOR_IDENTITY,
+        (SCHEME_FILE, PROVIDER_JSON, PROVIDER_JSONL),
+        _provider_factory,
     )
 
 

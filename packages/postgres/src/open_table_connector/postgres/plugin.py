@@ -5,20 +5,22 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from open_table_connector.contract import PluginDescriptor
+from open_table_connector.contract import PROVIDER_POSTGRES, PluginDescriptor
 
 
 def provider_plugin() -> PluginDescriptor:
     from .identity import CONNECTOR_IDENTITY
 
-    return PluginDescriptor("postgres", CONNECTOR_IDENTITY, ("postgres",), _provider_factory)
+    return PluginDescriptor(
+        PROVIDER_POSTGRES, CONNECTOR_IDENTITY, (PROVIDER_POSTGRES,), _provider_factory
+    )
 
 
 def _provider_factory(*, env: Mapping[str, str], transports: Mapping[str, Any]) -> Any:
     del env
     from .reader import PostgresConnector
 
-    return PostgresConnector(transports.get("postgres"))
+    return PostgresConnector(transports.get(PROVIDER_POSTGRES))
 
 
 def process_plugin(**kwargs: Any) -> tuple[Any, Any]:

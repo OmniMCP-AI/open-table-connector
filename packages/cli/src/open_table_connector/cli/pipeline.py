@@ -5,8 +5,19 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 import pyarrow as pa
-
-from open_table_connector.contract import ArrowReadResult, ConnectorError, ConnectorErrorCode, TableInspection
+from open_table_connector.contract import (
+    PROVIDER_CSV,
+    PROVIDER_EXCEL,
+    PROVIDER_FEISHU_BITABLE,
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
+    SCHEME_FILE,
+    SCHEME_MD,
+    ArrowReadResult,
+    ConnectorError,
+    ConnectorErrorCode,
+    TableInspection,
+)
 
 from .adapters import ConnectorAdapter
 from .formats import infer_format, write_local
@@ -59,7 +70,7 @@ def convert_endpoint(
         raise ConnectorError(
             ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
             "local destination format could not be inferred; provide --to-format",
-            {"scheme": "file", "format": destination_format.value},
+            {"scheme": SCHEME_FILE, "format": destination_format.value},
         )
 
     _validate_source_format(source, options)
@@ -107,7 +118,11 @@ def _is_local(endpoint: Endpoint) -> bool:
     return (
         endpoint.is_stdio
         or endpoint.path is not None
-        or (endpoint.uri is not None and endpoint.uri.scheme in {"csv", "excel", "json", "jsonl", "md"})
+        or (
+            endpoint.uri is not None
+            and endpoint.uri.scheme
+            in {PROVIDER_CSV, PROVIDER_EXCEL, PROVIDER_JSON, PROVIDER_JSONL, SCHEME_MD}
+        )
     )
 
 
@@ -118,7 +133,7 @@ def _validate_source_format(endpoint: Endpoint, options: CliOptions) -> None:
         ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
         "connector sources do not support --from-format; omit the override",
         {
-            "scheme": endpoint.uri.scheme if endpoint.uri is not None else "file",
+            "scheme": endpoint.uri.scheme if endpoint.uri is not None else SCHEME_FILE,
             "option": "from-format",
             "format": options.from_format.value,
         },
@@ -126,7 +141,7 @@ def _validate_source_format(endpoint: Endpoint, options: CliOptions) -> None:
 
 
 def _unsupported(endpoint: Endpoint, message: str) -> ConnectorError:
-    scheme = endpoint.uri.scheme if endpoint.uri is not None else "file"
+    scheme = endpoint.uri.scheme if endpoint.uri is not None else SCHEME_FILE
     return ConnectorError(
         ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
         message,
@@ -144,7 +159,7 @@ def _table_for_destination(
     """
 
     source_identity = getattr(getattr(receipt, "connector", None), "connector_id", None)
-    if source_identity != "feishu_bitable" or "_record_id" not in table.column_names:
+    if source_identity != PROVIDER_FEISHU_BITABLE or "_record_id" not in table.column_names:
         return table
 
     owned = getattr(destination_adapter, "provider_owned_fields", ())

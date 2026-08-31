@@ -1,6 +1,10 @@
 """Identity constants for the local-files Connector."""
 
-from open_table_connector.contract import CapabilityIdentity, ConnectorIdentity
+from open_table_connector.contract import (
+    PROVIDER_LOCAL_FILES,
+    CapabilityIdentity,
+    ConnectorIdentity,
+)
 
 
 def connector_identity(connector_id: str) -> ConnectorIdentity:
@@ -11,7 +15,7 @@ def connector_identity(connector_id: str) -> ConnectorIdentity:
     )
 
 
-CONNECTOR_IDENTITY = connector_identity("local_files")
+CONNECTOR_IDENTITY = connector_identity(PROVIDER_LOCAL_FILES)
 URI_RESOLVER_CAPABILITY = CapabilityIdentity("uri.resolve", "1.0")
 TABLE_INSPECT_CAPABILITY = CapabilityIdentity("table.inspect", "1.0")
 TABLE_READ_ARROW_CAPABILITY = CapabilityIdentity("table.read.arrow", "1.0")

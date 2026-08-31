@@ -15,6 +15,7 @@ from open_table_connector.contract import (
     BoundedReadReceipt,
     BoundedTableReadRequest,
     ConnectorIdentity,
+    PROVIDER_JSONL,
     ReadExtent,
     TableMode,
 )
@@ -38,7 +39,7 @@ class LocalBoundedReader:
         data = path.read_bytes()
         if len(data) > (request.resource_limits.max_bytes or len(data)):
             raise ValueError("bounded read exceeds max_bytes")
-        if request.uri.scheme == "jsonl" or path.suffix.casefold() == ".jsonl":
+        if request.uri.scheme == PROVIDER_JSONL or path.suffix.casefold() == ".jsonl":
             rows = [json.loads(line) for line in data.decode("utf-8").splitlines() if line.strip()]
         else:
             records = list(csv.reader(data.decode("utf-8").splitlines()))
