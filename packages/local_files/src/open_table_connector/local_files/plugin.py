@@ -11,7 +11,9 @@ from open_table_connector.contract import PluginDescriptor
 def provider_plugin() -> PluginDescriptor:
     from .identity import CONNECTOR_IDENTITY
 
-    return PluginDescriptor("local_files", CONNECTOR_IDENTITY, ("file",), _provider_factory)
+    return PluginDescriptor(
+        "local_files", CONNECTOR_IDENTITY, ("file", "json", "jsonl"), _provider_factory
+    )
 
 
 def _provider_factory(*, env: Mapping[str, str], transports: Mapping[str, Any]) -> Any:

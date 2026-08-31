@@ -26,6 +26,9 @@ excel = "open_table_connector.local_files.plugin:excel_process_plugin"
 [project.entry-points."open_table_connector.providers"]
 local_files = "open_table_connector.local_files.plugin:provider_plugin"
 
+[project.entry-points."open_table_connector.cli_adapters"]
+local_files = "open_table_connector.local_files.plugin:provider_plugin"
+
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
 open-table-connector-timeseries = { workspace = true }

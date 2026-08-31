@@ -16,6 +16,9 @@ maybe_sheet = "open_table_connector.maybe_sheet.plugin:process_plugin"
 [project.entry-points."open_table_connector.providers"]
 maybe_sheet = "open_table_connector.maybe_sheet.plugin:provider_plugin"
 
+[project.entry-points."open_table_connector.cli_adapters"]
+maybe_sheet = "open_table_connector.maybe_sheet.plugin:provider_plugin"
+
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
 open-table-connector-timeseries = { workspace = true }

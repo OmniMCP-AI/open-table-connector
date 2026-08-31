@@ -33,6 +33,9 @@ def discover_cli_adapters(
             if not isinstance(descriptor, PluginDescriptor):
                 raise TypeError("CLI plugin entry point must return PluginDescriptor")
             adapter = descriptor.factory(env=env, transports=transports)
+            adapter = _wrap_provider_adapter(
+                descriptor.name, adapter, env=env, transports=transports
+            )
         except ModuleNotFoundError as exc:
             if exc.name and not exc.name.startswith("open_table_connector"):
                 raise
@@ -40,6 +43,40 @@ def discover_cli_adapters(
         if adapter is not None:
             adapters.append(adapter)
     return tuple(adapters)
+
+
+def _wrap_provider_adapter(
+    name: str,
+    value: Any,
+    *,
+    env: Mapping[str, str],
+    transports: Mapping[str, Any],
+) -> Any:
+    """Adapt provider-owned connector factories to the CLI host seam."""
+
+    from open_table_connector.cli.adapters import (
+        FeishuBitableAdapter,
+        GoogleSheetsAdapter,
+        LocalAdapter,
+        MaybeSheetAdapter,
+    )
+
+    adapters = {
+        "google_sheets": lambda: GoogleSheetsAdapter(
+            value,
+            transports.get("google_sheets"),
+            env.get("GOOGLE_SHEETS_ACCESS_TOKEN"),
+        ),
+        "feishu_bitable": lambda: FeishuBitableAdapter(
+            value,
+            transports.get("feishu_bitable"),
+            env.get("FEISHU_TENANT_ACCESS_TOKEN"),
+        ),
+        "maybe_sheet": lambda: MaybeSheetAdapter(value),
+        "local_files": lambda: LocalAdapter(value),
+    }
+    factory = adapters.get(name)
+    return factory() if factory is not None else value
 
 
 def google_plugin() -> PluginDescriptor:

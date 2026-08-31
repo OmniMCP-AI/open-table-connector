@@ -17,6 +17,9 @@ dependencies = [
 [project.entry-points."open_table_connector.providers"]
 feishu_bitable = "open_table_connector.feishu_bitable.plugin:provider_plugin"
 
+[project.entry-points."open_table_connector.cli_adapters"]
+feishu_bitable = "open_table_connector.feishu_bitable.plugin:provider_plugin"
+
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
 

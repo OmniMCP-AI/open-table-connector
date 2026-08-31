@@ -21,11 +21,13 @@ def provider_plugin() -> PluginDescriptor:
 
 
 def _provider_factory(*, env: Mapping[str, str], transports: Mapping[str, Any]) -> Any:
-    del transports
     from .connector import MaybeSheetConnector
     from .process import SubprocessProcessClient
 
-    return MaybeSheetConnector(SubprocessProcessClient(environment=env))
+    process = transports.get("maybe_sheet")
+    if process is None:
+        process = SubprocessProcessClient(environment=env)
+    return MaybeSheetConnector(process)
 
 
 def process_plugin(**kwargs: Any) -> tuple[Any, None]:
