@@ -110,6 +110,11 @@ class ConfiguredConnectorRegistry:
     _routes: dict[tuple[str, str | None], ConfiguredPlugin] = field(
         default_factory=dict, init=False, repr=False
     )
+    _manual_adapters: list[ConnectorAdapter] = field(default_factory=list, init=False, repr=False)
+    _manual_routes: dict[tuple[str, str | None], ConnectorAdapter] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _manual_path_adapter: ConnectorAdapter | None = field(default=None, init=False, repr=False)
     _path_plugin: ConfiguredPlugin | None = field(default=None, init=False, repr=False)
     _diagnostics: tuple[str, ...] = field(default=(), init=False)
 
@@ -182,9 +187,128 @@ class ConfiguredConnectorRegistry:
     def list(self) -> tuple[PluginDescriptor, ...]:
         if self._plugins and not isinstance(self._plugins[0], ConfiguredPlugin):
             return tuple(self._plugins)  # type: ignore[return-value]
-        return tuple(plugin.descriptor for plugin in self._plugins)
+        descriptors = [plugin.descriptor for plugin in self._plugins]
+        descriptors.extend(
+            self._descriptor_for_adapter(adapter) for adapter in self._manual_adapters
+        )
+        return tuple(descriptors)
+
+    def register(self, adapter_or_descriptor: ConnectorAdapter | PluginDescriptor) -> None:
+        """Register an additional adapter descriptor at runtime.
+
+        Provider packages normally register through entry points, but hosts and
+        tests may add a descriptor (or an already-created adapter) explicitly.
+        The same route collision checks apply to both paths, so dynamic
+        registration cannot shadow a configured provider.
+        """
+        if not isinstance(adapter_or_descriptor, PluginDescriptor):
+            adapter = adapter_or_descriptor
+            descriptor = self._descriptor_for_adapter(adapter)
+            provider_id = descriptor.identity.connector_id
+            if any(
+                plugin.descriptor.identity.connector_id == provider_id for plugin in self._plugins
+            ) or any(item.identity.connector_id == provider_id for item in self._manual_adapters):
+                raise ConnectorError(
+                    ConnectorErrorCode.CONFLICT,
+                    "connector provider is already registered",
+                    {"provider_id": provider_id},
+                )
+            for route_key in descriptor.route_keys():
+                if route_key in self._routes or route_key in self._manual_routes:
+                    raise ConnectorError(
+                        ConnectorErrorCode.CONFLICT,
+                        "connector route is already registered",
+                        {
+                            "scheme": route_key[0],
+                            **({"host": route_key[1]} if route_key[1] else {}),
+                        },
+                    )
+            self._manual_adapters.append(adapter)
+            for route_key in descriptor.route_keys():
+                self._manual_routes[route_key] = adapter
+            if descriptor.handles_paths:
+                if self._path_plugin is not None or self._manual_path_adapter is not None:
+                    raise ConnectorError(
+                        ConnectorErrorCode.CONFLICT,
+                        "multiple connectors handle path endpoints",
+                        {},
+                    )
+                self._manual_path_adapter = adapter
+            return
+
+        if isinstance(adapter_or_descriptor, PluginDescriptor):
+            descriptor = adapter_or_descriptor
+            factory = descriptor.factory
+
+        provider_id = descriptor.identity.connector_id
+        if any(
+            plugin.descriptor.identity.connector_id == provider_id for plugin in self._plugins
+        ) or any(item.identity.connector_id == provider_id for item in self._manual_adapters):
+            raise ConnectorError(
+                ConnectorErrorCode.CONFLICT,
+                "connector provider is already registered",
+                {"provider_id": provider_id},
+            )
+        for route_key in descriptor.route_keys():
+            if route_key in self._routes or route_key in self._manual_routes:
+                raise ConnectorError(
+                    ConnectorErrorCode.CONFLICT,
+                    "connector route is already registered",
+                    {
+                        "scheme": route_key[0],
+                        **({"host": route_key[1]} if route_key[1] else {}),
+                    },
+                )
+        # Preserve the descriptor's factory while giving explicit registrations
+        # an empty provider configuration.  Factories that need credentials
+        # should be configured through the TOML/entry-point path instead.
+        plugin = ConfiguredPlugin(
+            PluginDescriptor(
+                name=descriptor.name,
+                identity=descriptor.identity,
+                schemes=descriptor.schemes,
+                factory=factory,
+                hosts=descriptor.hosts,
+                capabilities=descriptor.capabilities,
+                modes=descriptor.modes,
+                local=descriptor.local,
+                handles_paths=descriptor.handles_paths,
+            ),
+            ProviderConfig(provider_id),
+        )
+        for route_key in descriptor.route_keys():
+            self._routes[route_key] = plugin
+        if descriptor.handles_paths:
+            if self._path_plugin is not None:
+                raise ConnectorError(
+                    ConnectorErrorCode.CONFLICT,
+                    "multiple connectors handle path endpoints",
+                    {},
+                )
+            self._path_plugin = plugin
+        self._plugins.append(plugin)
+
+    @staticmethod
+    def _descriptor_for_adapter(adapter: ConnectorAdapter) -> PluginDescriptor:
+        try:
+            return PluginDescriptor(
+                name=adapter.identity.connector_id,
+                identity=adapter.identity,
+                schemes=tuple(adapter.schemes),
+                factory=lambda _context, instance=adapter: instance,
+                hosts=tuple(getattr(adapter, "hosts", ())),
+                capabilities=tuple(getattr(adapter, "capabilities", ())),
+                modes=tuple(getattr(adapter, "modes", ())),
+                local=bool(getattr(adapter, "local", False)),
+                handles_paths=bool(getattr(adapter, "handles_paths", False)),
+            )
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ConnectorError.configuration("invalid connector adapter registration") from exc
 
     def descriptor_for(self, endpoint: AdapterEndpoint) -> PluginDescriptor:
+        manual = self._manual_for(endpoint)
+        if manual is not None:
+            return self._descriptor_for_adapter(manual)
         if self._plugins and not isinstance(self._plugins[0], ConfiguredPlugin):
             adapter = self.connector_for(endpoint)
             return PluginDescriptor(
@@ -202,6 +326,9 @@ class ConfiguredConnectorRegistry:
         return plugin.descriptor
 
     def connector_for(self, endpoint: AdapterEndpoint) -> _LazyAdapter:
+        manual = self._manual_for(endpoint)
+        if manual is not None:
+            return manual  # type: ignore[return-value]
         if self._plugins and not isinstance(self._plugins[0], ConfiguredPlugin):
             if endpoint.is_stdio or endpoint.path is not None:
                 for adapter in self._plugins:
@@ -229,6 +356,17 @@ class ConfiguredConnectorRegistry:
         return _LazyAdapter(self, self._plugin_for(endpoint))
 
     def require_capability(self, endpoint: AdapterEndpoint, capability_id: str):
+        manual = self._manual_for(endpoint)
+        if manual is not None:
+            if capability_id not in {
+                capability.capability_id for capability in manual.capabilities
+            }:
+                raise ConnectorError(
+                    ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+                    "connector does not support the requested capability",
+                    {"capability": capability_id},
+                )
+            return manual
         if self._plugins and not isinstance(self._plugins[0], ConfiguredPlugin):
             adapter = self.connector_for(endpoint)
             if capability_id not in {
@@ -254,6 +392,16 @@ class ConfiguredConnectorRegistry:
                 },
             )
         return _LazyAdapter(self, plugin)
+
+    def _manual_for(self, endpoint: AdapterEndpoint) -> ConnectorAdapter | None:
+        if endpoint.is_stdio or endpoint.path is not None:
+            return self._manual_path_adapter
+        if endpoint.uri is None:
+            return None
+        scheme = endpoint.uri.scheme.casefold()
+        parsed = urlsplit(endpoint.uri.value)
+        host = parsed.hostname.casefold() if scheme == SCHEME_HTTPS and parsed.hostname else None
+        return self._manual_routes.get((scheme, host)) or self._manual_routes.get((scheme, None))
 
     def _plugin_for(self, endpoint: AdapterEndpoint) -> ConfiguredPlugin:
         if self._plugins and not isinstance(self._plugins[0], ConfiguredPlugin):
