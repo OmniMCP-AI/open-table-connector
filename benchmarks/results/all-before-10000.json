@@ -1,0 +1,38 @@
+{
+  "environment": {
+    "commit": "61ed061342e2347cf84b5905d0530aa3d7dd382f",
+    "cpu": "arm",
+    "dirty": true,
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "polars": "1.44.1",
+    "pyarrow": "19.0.1",
+    "python": "3.12.13"
+  },
+  "median_ns": 1107166,
+  "minimum_ns": 852042,
+  "peak_bytes": [
+    2896,
+    2776,
+    2734,
+    2718,
+    2702,
+    2686,
+    2654
+  ],
+  "phase": "before",
+  "repetitions": 7,
+  "rows": 10000,
+  "samples_ns": [
+    1411667,
+    1107166,
+    1211000,
+    1196166,
+    991583,
+    852042,
+    1063459
+  ],
+  "schema_version": "1.0",
+  "suite": "all",
+  "unique_timestamps": 1000,
+  "warmups": 1
+}
