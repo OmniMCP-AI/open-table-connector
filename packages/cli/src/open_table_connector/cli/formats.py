@@ -7,28 +7,17 @@ import io
 import json
 import math
 import sys
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence, TextIO
+from typing import TextIO
 from urllib.parse import parse_qsl, unquote, urlsplit
 
 import pyarrow as pa
-
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode, ResourceLimits
-from open_table_connector.local_files import (
-    encode_json_table,
-    encode_jsonl_table,
-    parse_json_table,
-    parse_jsonl_table,
-    read_excel_arrow,
-    read_markdown_arrow,
-    write_excel,
-    write_markdown_table as write_markdown_table_codec,
-)
 
 from .model import Endpoint, FormatName
-
 
 _MARKDOWN_SUFFIXES = {".table", ".md", ".markdown"}
 _LOCAL_FORMAT_SCHEMES = {
@@ -63,6 +52,8 @@ def infer_format(endpoint: Endpoint, explicit: FormatName) -> FormatName:
 
 def read_local(source: Endpoint, format_name: FormatName, stream: TextIO | None = None) -> pa.Table:
     if format_name is FormatName.EXCEL:
+        from open_table_connector.local_files import read_excel_arrow
+
         if source.path is None:
             raise ConnectorError(
                 ConnectorErrorCode.INVALID_URI,
@@ -80,8 +71,12 @@ def read_local(source: Endpoint, format_name: FormatName, stream: TextIO | None 
     if format_name is FormatName.CSV:
         return _read_csv(text, source)
     if format_name is FormatName.JSON:
+        from open_table_connector.local_files import parse_json_table
+
         return parse_json_table(text, source=_endpoint_path(source) or "stdin")
     if format_name is FormatName.JSONL:
+        from open_table_connector.local_files import parse_jsonl_table
+
         return parse_jsonl_table(text, source=_endpoint_path(source) or "stdin")
     if format_name is FormatName.TABLE:
         return _read_markdown_table(text, source)
@@ -101,6 +96,8 @@ def write_local(
     sheet: str | None = None,
 ) -> None:
     if format_name is FormatName.EXCEL:
+        from open_table_connector.local_files import write_excel
+
         if destination.is_stdio:
             raise ConnectorError(
                 ConnectorErrorCode.INVALID_URI,
@@ -115,9 +112,13 @@ def write_local(
             _write_csv(table, text_stream)
             return
         if format_name is FormatName.JSON:
+            from open_table_connector.local_files import encode_json_table
+
             text_stream.write(encode_json_table(table))
             return
         if format_name is FormatName.JSONL:
+            from open_table_connector.local_files import encode_jsonl_table
+
             text_stream.write(encode_jsonl_table(table))
             return
         if format_name is FormatName.TABLE:
@@ -239,6 +240,8 @@ def _read_csv(text: str, source: Endpoint) -> pa.Table:
 
 
 def _read_markdown_table(text: str, source: Endpoint) -> pa.Table:
+    from open_table_connector.local_files import read_markdown_arrow
+
     return read_markdown_arrow(text, source=_endpoint_path(source))
 
 
@@ -270,6 +273,8 @@ def write_markdown_table(
     headers: Sequence[str], rows: Iterable[Sequence[str]], stream: TextIO
 ) -> None:
     """Write an aligned Markdown table with escaped single-line cells."""
+    from open_table_connector.local_files import write_markdown_table as write_markdown_table_codec
+
     write_markdown_table_codec(headers, rows, stream)
 
 

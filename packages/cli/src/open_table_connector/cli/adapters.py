@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import math
-from pathlib import Path
-from typing import Any, Mapping, Protocol
+from dataclasses import dataclass
+from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 import polars as pl
 import pyarrow as pa
-
 from open_table_connector.contract import (
     ArrowReadResult,
     BaseConvention,
@@ -22,42 +20,16 @@ from open_table_connector.contract import (
     NeutralReceipt,
     ResourceLimits,
     TableInspection,
-    TableReadRequest,
+    TableMode,
     TableURI,
     TableWriteRequest,
     TableWriteResult,
-    TableMode,
 )
 from open_table_connector.contract.fingerprints import (
     arrow_content_fingerprint,
     arrow_schema_fingerprint,
     operation_identity,
 )
-from open_table_connector.feishu_bitable import (
-    FeishuBitableConnector,
-    FeishuBitableReadOptions,
-    FeishuBitableTableReadRequest,
-)
-from open_table_connector.google_sheets import (
-    GoogleSheetsConnector,
-    GoogleSheetsReadOptions,
-    GoogleSheetsTableReadRequest,
-)
-from open_table_connector.local_files import (
-    CsvConnector,
-    CsvReadOptions,
-    CsvTableReadRequest,
-    ExcelConnector,
-    ExcelReadOptions,
-    ExcelTableReadRequest,
-    LocalFilesConnector,
-    LocalReadOptions,
-    LocalTableReadRequest,
-    MarkdownConnector,
-    MarkdownReadOptions,
-    MarkdownTableReadRequest,
-)
-from open_table_connector.maybe_sheet import MaybeSheetConnector, MaybeSheetReadRequest, SubprocessProcessClient
 
 from .formats import infer_format, read_local, write_local
 from .model import CliOptions, Endpoint, FormatName
@@ -124,7 +96,7 @@ def _connector_uri(endpoint: Endpoint) -> TableURI:
 
 @dataclass
 class GoogleSheetsAdapter:
-    connector: GoogleSheetsConnector
+    connector: Any
     transport: Any = None
     environment_token: str | None = None
     schemes: tuple[str, ...] = ("gsheets", "https")
@@ -135,7 +107,9 @@ class GoogleSheetsAdapter:
     def __post_init__(self) -> None:
         self.capabilities = tuple(self.connector.manifest.capabilities)
 
-    def _connector(self, options: CliOptions) -> GoogleSheetsConnector:
+    def _connector(self, options: CliOptions) -> Any:
+        from open_table_connector.google_sheets import GoogleSheetsConnector
+
         return GoogleSheetsConnector(self.transport, access_token=options.token or self.environment_token)
 
     def preflight_write(self, endpoint: Endpoint, options: CliOptions) -> None:
@@ -154,6 +128,11 @@ class GoogleSheetsAdapter:
         )
 
     def read(self, endpoint: Endpoint, options: CliOptions) -> ArrowReadResult:
+        from open_table_connector.google_sheets import (
+            GoogleSheetsReadOptions,
+            GoogleSheetsTableReadRequest,
+        )
+
         request = GoogleSheetsTableReadRequest(
             _uri(endpoint),
             _limits(options),
@@ -170,7 +149,7 @@ class GoogleSheetsAdapter:
 
 @dataclass
 class FeishuBitableAdapter:
-    connector: FeishuBitableConnector
+    connector: Any
     transport: Any = None
     environment_token: str | None = None
     schemes: tuple[str, ...] = ("feishu", "feishu_bitable")
@@ -181,7 +160,9 @@ class FeishuBitableAdapter:
     def __post_init__(self) -> None:
         self.capabilities = tuple(self.connector.manifest.capabilities)
 
-    def _connector(self, options: CliOptions) -> FeishuBitableConnector:
+    def _connector(self, options: CliOptions) -> Any:
+        from open_table_connector.feishu_bitable import FeishuBitableConnector
+
         return FeishuBitableConnector(self.transport, tenant_access_token=options.token or self.environment_token)
 
     def preflight_write(self, endpoint: Endpoint, options: CliOptions) -> None:
@@ -200,6 +181,11 @@ class FeishuBitableAdapter:
         )
 
     def read(self, endpoint: Endpoint, options: CliOptions) -> ArrowReadResult:
+        from open_table_connector.feishu_bitable import (
+            FeishuBitableReadOptions,
+            FeishuBitableTableReadRequest,
+        )
+
         request = FeishuBitableTableReadRequest(
             _uri(endpoint), _limits(options), FeishuBitableReadOptions(field_names=options.field_names)
         )
@@ -214,7 +200,7 @@ class FeishuBitableAdapter:
 
 @dataclass
 class MaybeSheetAdapter:
-    connector: MaybeSheetConnector
+    connector: Any
     schemes: tuple[str, ...] = ("maybe", "https")
     hosts: tuple[str, ...] = ("www.maybe.ai",)
     identity: ConnectorIdentity = ConnectorIdentity("maybe_sheet", "0.1.0", "1.0")
@@ -279,7 +265,9 @@ class MaybeSheetAdapter:
             )
         self._target(endpoint, options)
 
-    def _request(self, endpoint: Endpoint, options: CliOptions) -> MaybeSheetReadRequest:
+    def _request(self, endpoint: Endpoint, options: CliOptions) -> Any:
+        from open_table_connector.maybe_sheet import MaybeSheetReadRequest
+
         token = options.token
         credentials = {} if token is None else {"access_token": token}
         return MaybeSheetReadRequest(
@@ -300,16 +288,22 @@ class MaybeSheetAdapter:
 
 @dataclass
 class CsvAdapter:
-    connector: CsvConnector
+    connector: Any
     schemes: tuple[str, ...] = ("csv",)
-    identity: ConnectorIdentity = CsvConnector.identity
-    modes: tuple[TableMode, ...] = tuple(CsvConnector.manifest.modes)
+    hosts: tuple[str, ...] = ()
+    identity: ConnectorIdentity = ConnectorIdentity("csv", "0.1.0", "1.0")
+    modes: tuple[TableMode, ...] = (TableMode.SHEET,)
     capabilities: tuple[CapabilityIdentity, ...] = (
-        *tuple(CsvConnector.manifest.capabilities),
+        CapabilityIdentity("uri.resolve", "1.0"),
+        CapabilityIdentity("table.inspect", "1.0"),
+        CapabilityIdentity("table.read.arrow", "1.0"),
+        CapabilityIdentity("table.read.polars", "1.0"),
         CapabilityIdentity("table.write", "1.0"),
     )
 
-    def _request(self, endpoint: Endpoint, options: CliOptions) -> CsvTableReadRequest:
+    def _request(self, endpoint: Endpoint, options: CliOptions) -> Any:
+        from open_table_connector.local_files import CsvReadOptions, CsvTableReadRequest
+
         return CsvTableReadRequest(
             _connector_uri(endpoint),
             resource_limits=_limits(options),
@@ -329,16 +323,22 @@ class CsvAdapter:
 
 @dataclass
 class ExcelAdapter:
-    connector: ExcelConnector
+    connector: Any
     schemes: tuple[str, ...] = ("excel",)
-    identity: ConnectorIdentity = ExcelConnector.identity
-    modes: tuple[TableMode, ...] = tuple(ExcelConnector.manifest.modes)
+    hosts: tuple[str, ...] = ()
+    identity: ConnectorIdentity = ConnectorIdentity("excel", "0.1.0", "1.0")
+    modes: tuple[TableMode, ...] = (TableMode.SHEET,)
     capabilities: tuple[CapabilityIdentity, ...] = (
-        *tuple(ExcelConnector.manifest.capabilities),
+        CapabilityIdentity("uri.resolve", "1.0"),
+        CapabilityIdentity("table.inspect", "1.0"),
+        CapabilityIdentity("table.read.arrow", "1.0"),
+        CapabilityIdentity("table.read.polars", "1.0"),
         CapabilityIdentity("table.write", "1.0"),
     )
 
-    def _request(self, endpoint: Endpoint, options: CliOptions) -> ExcelTableReadRequest:
+    def _request(self, endpoint: Endpoint, options: CliOptions) -> Any:
+        from open_table_connector.local_files import ExcelReadOptions, ExcelTableReadRequest
+
         return ExcelTableReadRequest(
             _connector_uri(endpoint),
             resource_limits=_limits(options),
@@ -358,16 +358,22 @@ class ExcelAdapter:
 
 @dataclass
 class MarkdownAdapter:
-    connector: MarkdownConnector
+    connector: Any
     schemes: tuple[str, ...] = ("md",)
-    identity: ConnectorIdentity = MarkdownConnector.identity
-    modes: tuple[TableMode, ...] = tuple(MarkdownConnector.manifest.modes)
+    hosts: tuple[str, ...] = ()
+    identity: ConnectorIdentity = ConnectorIdentity("md", "0.1.0", "1.0")
+    modes: tuple[TableMode, ...] = (TableMode.SHEET,)
     capabilities: tuple[CapabilityIdentity, ...] = (
-        *tuple(MarkdownConnector.manifest.capabilities),
+        CapabilityIdentity("uri.resolve", "1.0"),
+        CapabilityIdentity("table.inspect", "1.0"),
+        CapabilityIdentity("table.read.arrow", "1.0"),
+        CapabilityIdentity("table.read.polars", "1.0"),
         CapabilityIdentity("table.write", "1.0"),
     )
 
-    def _request(self, endpoint: Endpoint, options: CliOptions) -> MarkdownTableReadRequest:
+    def _request(self, endpoint: Endpoint, options: CliOptions) -> Any:
+        from open_table_connector.local_files import MarkdownReadOptions, MarkdownTableReadRequest
+
         return MarkdownTableReadRequest(
             _connector_uri(endpoint),
             resource_limits=_limits(options),
@@ -387,17 +393,24 @@ class MarkdownAdapter:
 
 @dataclass
 class LocalAdapter:
-    connector: LocalFilesConnector = field(default_factory=LocalFilesConnector)
+    connector: Any
     schemes: tuple[str, ...] = ("file", "json", "jsonl")
     hosts: tuple[str, ...] = ()
-    identity: ConnectorIdentity = LocalFilesConnector.identity
-    modes: tuple[TableMode, ...] = tuple(LocalFilesConnector.manifest.modes)
-    capabilities: tuple[CapabilityIdentity, ...] = tuple(LocalFilesConnector.manifest.capabilities)
+    identity: ConnectorIdentity = ConnectorIdentity("local_files", "0.1.0", "1.0")
+    modes: tuple[TableMode, ...] = (TableMode.SHEET,)
+    capabilities: tuple[CapabilityIdentity, ...] = (
+        CapabilityIdentity("uri.resolve", "1.0"),
+        CapabilityIdentity("table.inspect", "1.0"),
+        CapabilityIdentity("table.read.arrow", "1.0"),
+        CapabilityIdentity("table.read.polars", "1.0"),
+    )
 
     def _format(self, endpoint: Endpoint, options: CliOptions, *, output: bool = False) -> FormatName:
         return infer_format(endpoint, options.output_format if output else options.from_format)
 
-    def _read_request(self, endpoint: Endpoint, options: CliOptions) -> LocalTableReadRequest:
+    def _read_request(self, endpoint: Endpoint, options: CliOptions) -> Any:
+        from open_table_connector.local_files import LocalReadOptions, LocalTableReadRequest
+
         return LocalTableReadRequest(
             _connector_uri(endpoint),
             resource_limits=_limits(options),
@@ -470,18 +483,79 @@ def _local_receipt(
 
 def build_adapters(env: Mapping[str, str], transports: Mapping[str, Any] | None = None) -> tuple[ConnectorAdapter, ...]:
     transports = transports or {}
-    google = GoogleSheetsConnector(transports.get("google_sheets"), access_token=env.get("GOOGLE_SHEETS_ACCESS_TOKEN"))
-    feishu = FeishuBitableConnector(transports.get("feishu_bitable"), tenant_access_token=env.get("FEISHU_TENANT_ACCESS_TOKEN"))
-    maybe = MaybeSheetConnector(transports.get("maybe_sheet") or SubprocessProcessClient(environment=env))
-    return (
-        GoogleSheetsAdapter(google, transports.get("google_sheets"), env.get("GOOGLE_SHEETS_ACCESS_TOKEN")),
-        FeishuBitableAdapter(feishu, transports.get("feishu_bitable"), env.get("FEISHU_TENANT_ACCESS_TOKEN")),
-        MaybeSheetAdapter(maybe),
-        CsvAdapter(CsvConnector()),
-        ExcelAdapter(ExcelConnector()),
-        MarkdownAdapter(MarkdownConnector()),
-        LocalAdapter(),
-    )
+    from .plugins import discover_cli_adapters
+
+    discovered = discover_cli_adapters(env, transports)
+    if discovered:
+        return discovered
+    adapters: list[ConnectorAdapter] = []
+    try:
+        from open_table_connector.google_sheets import GoogleSheetsConnector
+
+        google = GoogleSheetsConnector(
+            transports.get("google_sheets"),
+            access_token=env.get("GOOGLE_SHEETS_ACCESS_TOKEN"),
+        )
+        adapters.append(
+            GoogleSheetsAdapter(
+                google,
+                transports.get("google_sheets"),
+                env.get("GOOGLE_SHEETS_ACCESS_TOKEN"),
+            )
+        )
+    except ModuleNotFoundError as exc:
+        if exc.name and not exc.name.startswith("open_table_connector"):
+            raise
+    try:
+        from open_table_connector.feishu_bitable import FeishuBitableConnector
+
+        feishu = FeishuBitableConnector(
+            transports.get("feishu_bitable"),
+            tenant_access_token=env.get("FEISHU_TENANT_ACCESS_TOKEN"),
+        )
+        adapters.append(
+            FeishuBitableAdapter(
+                feishu,
+                transports.get("feishu_bitable"),
+                env.get("FEISHU_TENANT_ACCESS_TOKEN"),
+            )
+        )
+    except ModuleNotFoundError as exc:
+        if exc.name and not exc.name.startswith("open_table_connector"):
+            raise
+    try:
+        from open_table_connector.maybe_sheet import (
+            MaybeSheetConnector,
+            SubprocessProcessClient,
+        )
+
+        maybe = MaybeSheetConnector(
+            transports.get("maybe_sheet") or SubprocessProcessClient(environment=env)
+        )
+        adapters.append(MaybeSheetAdapter(maybe))
+    except ModuleNotFoundError as exc:
+        if exc.name and not exc.name.startswith("open_table_connector"):
+            raise
+    try:
+        from open_table_connector.local_files import (
+            CsvConnector,
+            ExcelConnector,
+            LocalFilesConnector,
+            MarkdownConnector,
+        )
+
+        adapters.extend(
+            (
+                CsvAdapter(CsvConnector()),
+                ExcelAdapter(ExcelConnector()),
+                MarkdownAdapter(MarkdownConnector()),
+                LocalAdapter(LocalFilesConnector()),
+            )
+        )
+    except ModuleNotFoundError as exc:
+        if exc.name and not exc.name.startswith("open_table_connector"):
+            raise
+    return tuple(adapters)
 
 
 __all__ = ["ConnectorAdapter", "build_adapters"]

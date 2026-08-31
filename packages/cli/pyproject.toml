@@ -11,18 +11,32 @@ license = { text = "Apache-2.0" }
 readme = "README.md"
 dependencies = [
   "open-table-connector-contract>=0.1,<0.2",
+  "polars>=1,<2",
+  "pyarrow>=14,<20",
+]
+
+[project.optional-dependencies]
+local = ["open-table-connector-local-files>=0.1,<0.2"]
+providers = [
+  "open-table-connector-local-files>=0.1,<0.2",
   "open-table-connector-google-sheets>=0.1,<0.2",
   "open-table-connector-feishu-bitable>=0.1,<0.2",
   "open-table-connector-maybe-sheet>=0.1,<0.2",
-  "open-table-connector-local-files>=0.1,<0.2",
-  "polars>=1,<2",
-  "pyarrow>=14,<20",
 ]
 
 [project.scripts]
 otc = "open_table_connector.cli.__main__:main"
 open-table-connector = "open_table_connector.cli.__main__:main"
 open-connectors = "open_table_connector.cli.__main__:main"
+
+[project.entry-points."open_table_connector.cli_adapters"]
+google_sheets = "open_table_connector.cli.plugins:google_plugin"
+feishu_bitable = "open_table_connector.cli.plugins:feishu_plugin"
+maybe_sheet = "open_table_connector.cli.plugins:maybe_sheet_plugin"
+csv = "open_table_connector.cli.plugins:csv_plugin"
+excel = "open_table_connector.cli.plugins:excel_plugin"
+markdown = "open_table_connector.cli.plugins:markdown_plugin"
+local_files = "open_table_connector.cli.plugins:local_files_plugin"
 
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
