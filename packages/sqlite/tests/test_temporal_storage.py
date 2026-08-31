@@ -12,8 +12,17 @@ from open_table_connector.timeseries import (
     ManagedReadbackRequest,
     PolarsTemporalExecutor,
     ResourceBounds,
+    TemporalErrorCode,
+    TemporalExtensionError,
     TemporalExecutionRequest,
 )
+from open_table_connector.contract import TableURI
+
+
+def test_managed_store_rejects_memory_database(tmp_path: Path) -> None:
+    with pytest.raises(TemporalExtensionError) as raised:
+        SQLiteManagedTemporalStore(TableURI("sqlite:///:memory:"), tmp_path, descriptor())
+    assert raised.value.code is TemporalErrorCode.PROTOCOL_INVALID
 
 from packages.local_files.tests.test_temporal_csv import operations
 from packages.timeseries.tests.fixtures import MemoryTemporalSource, descriptor

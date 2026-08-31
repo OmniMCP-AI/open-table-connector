@@ -55,6 +55,12 @@ from .identity import (
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*(?:\.[A-Za-z_][A-Za-z0-9_$]*)?$")
 
 
+def _quote_qualified_identifier(value: str) -> str:
+    if not isinstance(value, str) or _IDENTIFIER.fullmatch(value) is None:
+        raise ValueError("identifier must be a simple qualified name")
+    return ".".join('"' + part.replace('"', '""') + '"' for part in value.split("."))
+
+
 @dataclass(frozen=True)
 class SQLiteReadOptions:
     table: str | None = None
@@ -210,7 +216,7 @@ class SQLiteConnector(
                 connection = self._connection_factory(resource.path)
             cursor = connection.cursor()
             options = request.options
-            statement = options.query or f'SELECT * FROM "{options.table}"'
+            statement = options.query or f"SELECT * FROM {_quote_qualified_identifier(options.table)}"
             cursor.execute(statement, options.parameters)
             description = cursor.description or ()
             rows: list[tuple[Any, ...]] = []
@@ -309,7 +315,7 @@ class SQLiteConnector(
         commit: bool,
     ) -> TableWriteResult:
         table_name = request.table
-        quoted_table = self._quote(table_name)
+        quoted_table = _quote_qualified_identifier(table_name)
         columns = tuple(request.frame.columns)
         quoted_columns = ", ".join(self._quote(column) for column in columns)
         definitions = ", ".join(

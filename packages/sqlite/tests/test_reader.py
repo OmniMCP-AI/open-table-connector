@@ -24,6 +24,22 @@ def test_sqlite_reads_real_db_and_preserves_base_coordinates(tmp_path) -> None:
     assert result.receipt.coordinate_convention.record_id_field == "id"
 
 
+def test_sqlite_reads_qualified_main_table(tmp_path) -> None:
+    path = tmp_path / "qualified.db"
+    connection = sqlite3.connect(path)
+    connection.execute("create table orders (id integer)")
+    connection.execute("insert into orders values (1)")
+    connection.commit()
+    connection.close()
+    result = SQLiteConnector().read_polars(
+        SQLiteTableReadRequest(
+            TableURI(f"sqlite://{path.as_posix()}"),
+            options=SQLiteReadOptions(table="main.orders"),
+        )
+    )
+    assert result.frame.to_dicts() == [{"id": 1}]
+
+
 def test_sqlite_write_execute_and_transaction_are_physical_roles(tmp_path) -> None:
     path = tmp_path / "materialized.db"
     uri = TableURI(f"sqlite://{path.as_posix()}")

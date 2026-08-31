@@ -281,6 +281,12 @@ class SQLiteManagedTemporalStore:
     ) -> None:
         self.database_uri = database_uri
         self.database_path = _database_path(database_uri)
+        if self.database_path == ":memory:":
+            raise TemporalExtensionError(
+                TemporalErrorCode.PROTOCOL_INVALID,
+                "managed SQLite stores require a persistent database",
+                {},
+            )
         self.artifact_root = Path(artifact_root).absolute()
         self.artifact_root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.descriptor = descriptor
