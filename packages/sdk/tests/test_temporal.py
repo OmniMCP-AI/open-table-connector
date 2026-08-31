@@ -183,6 +183,28 @@ def test_temporal_query_identity_includes_the_portable_operation(fake_connector)
     assert first.plan_hash != latest.plan_hash
 
 
+def test_time_series_rejects_connectors_without_temporal_extension() -> None:
+    from .conftest import legacy_descriptor
+
+    config = otc.ClientConfig.empty()
+    client = otc.Client.from_config(
+        config,
+        descriptors=(legacy_descriptor(),),
+        resolver=otc.EnvironmentCredentialResolver(config, {}),
+    )
+    table = client.open("legacy://warehouse/orders").require_value()
+    series = table.time_series(temporal_descriptor())
+
+    with pytest.raises(otc.OTCError) as raised:
+        series.scan_range(
+            "2026-08-29T00:00:00.000000000Z",
+            "2026-08-29T00:10:00.000000000Z",
+        )
+
+    assert raised.value.result.error is not None
+    assert raised.value.result.error.code is otc.ErrorCode.UNSUPPORTED_CAPABILITY
+
+
 def test_temporal_sql_lowers_scan_latest_bucket_and_gapfill_to_existing_queries(
     fake_connector,
 ) -> None:

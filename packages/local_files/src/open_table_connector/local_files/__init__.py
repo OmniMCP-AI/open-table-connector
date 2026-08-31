@@ -29,6 +29,7 @@ from .markdown_connector import MarkdownConnector, MarkdownReadOptions, Markdown
 from .markdown_reader import is_markdown_payload, read_markdown_arrow, write_markdown_table
 from .probe import LocalFormat, detect_format
 from .resolver import LocalURIResolver, ResolvedLocalTable
+from .sdk_temporal import LocalFilesSdkTemporalExtension
 from .temporal_csv import CsvManagedTemporalStore, CsvTemporalExecutor
 from .temporal_excel import ExcelManagedTemporalStore, ExcelTemporalExecutor
 from .temporal_json import JsonManagedTemporalStore, JsonTemporalExecutor
@@ -65,6 +66,7 @@ __all__ = [
     "LocalFilesConnector",
     "LocalReadOptions",
     "LocalTableReadRequest",
+    "LocalFilesSdkTemporalExtension",
     "LocalBoundedReader",
     "MarkdownConnector",
     "MarkdownReadOptions",

@@ -17,6 +17,7 @@ from open_table_connector.contract import (
     ArrowReadResult,
     ArrowTableReader,
     BaseConvention,
+    CapabilityIdentity,
     InspectRequest,
     PolarsReadResult,
     PolarsTableReader,
@@ -44,6 +45,8 @@ from .manifest import CAPABILITY_MANIFEST
 from .markdown_connector import MarkdownConnector, MarkdownReadOptions, MarkdownTableReadRequest
 from .receipts import make_receipt, options_identity, source_revision
 from .resolver import LocalFormat, LocalURIResolver, ResolvedLocalTable
+from .sdk_temporal import LocalFilesSdkConnectorMixin
+from open_table_connector.timeseries.capabilities import ALL_CAPABILITIES
 
 
 @dataclass(frozen=True)
@@ -81,9 +84,24 @@ ConcreteConnectorRequest: TypeAlias = (
 )
 
 
-class LocalFilesConnector(URIResolver, TableInspector, ArrowTableReader, PolarsTableReader):
+class LocalFilesConnector(
+    LocalFilesSdkConnectorMixin,
+    URIResolver,
+    TableInspector,
+    ArrowTableReader,
+    PolarsTableReader,
+):
     identity = CONNECTOR_IDENTITY
     manifest = CAPABILITY_MANIFEST
+    schemes = CAPABILITY_MANIFEST.uri_schemes
+    hosts: tuple[str, ...] = ()
+    capabilities = (
+        *CAPABILITY_MANIFEST.capabilities,
+        *(CapabilityIdentity.parse(item) for item in ALL_CAPABILITIES),
+    )
+    modes = CAPABILITY_MANIFEST.modes
+    local = True
+    handles_paths = True
 
     def __init__(self, resolver: LocalURIResolver | None = None) -> None:
         self._resolver = resolver or LocalURIResolver()

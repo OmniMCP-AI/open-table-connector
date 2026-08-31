@@ -19,6 +19,7 @@ from open_table_connector.contract import (
     ArrowReadResult,
     ArrowTableReader,
     BaseConvention,
+    CapabilityIdentity,
     ConnectorError,
     ConnectorErrorCode,
     ExecutionRequest,
@@ -49,10 +50,15 @@ from open_table_connector.contract.fingerprints import (
 
 from .identity import (
     CONNECTOR_IDENTITY,
+    TABLE_EXECUTE_CAPABILITY,
+    TABLE_INSPECT_CAPABILITY,
     TABLE_READ_ARROW_CAPABILITY,
     TABLE_READ_POLARS_CAPABILITY,
     TABLE_WRITE_CAPABILITY,
 )
+from .sdk_temporal import SQLiteSdkConnectorMixin
+
+from open_table_connector.timeseries.capabilities import ALL_CAPABILITIES
 
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*(?:\.[A-Za-z_][A-Za-z0-9_$]*)?$")
 
@@ -150,6 +156,7 @@ def _rows_to_arrow(description: Any, rows: list[tuple[Any, ...]]) -> pa.Table:
 
 
 class SQLiteConnector(
+    SQLiteSdkConnectorMixin,
     URIResolver,
     TableInspector,
     ArrowTableReader,
@@ -159,6 +166,19 @@ class SQLiteConnector(
     TransactionalStore,
 ):
     identity = CONNECTOR_IDENTITY
+    schemes = (PROVIDER_SQLITE,)
+    hosts: tuple[str, ...] = ()
+    capabilities = (
+        TABLE_READ_ARROW_CAPABILITY,
+        TABLE_READ_POLARS_CAPABILITY,
+        TABLE_INSPECT_CAPABILITY,
+        TABLE_EXECUTE_CAPABILITY,
+        TABLE_WRITE_CAPABILITY,
+        *(CapabilityIdentity.parse(item) for item in ALL_CAPABILITIES),
+    )
+    modes = (TableMode.BASE,)
+    local = True
+    handles_paths = False
 
     def __init__(self, connection_factory: Callable[[str], Any] | None = None) -> None:
         self._connection_factory = connection_factory or sqlite3.connect

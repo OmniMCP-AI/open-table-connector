@@ -7,6 +7,7 @@ from .identity import (
     TABLE_WRITE_CAPABILITY,
 )
 from .reader import SQLiteConnector, SQLiteReadOptions, SQLiteTableReadRequest, SQLiteTransaction
+from .sdk_temporal import SQLiteSdkTemporalExtension
 from .temporal import SQLiteManagedTemporalStore, SQLiteTemporalExecutor, lower_sqlite
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "SQLiteReadOptions",
     "SQLiteTableReadRequest",
     "SQLiteTemporalExecutor",
+    "SQLiteSdkTemporalExtension",
     "SQLiteTransaction",
     "lower_sqlite",
 ]

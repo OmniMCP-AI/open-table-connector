@@ -22,6 +22,9 @@ from open_table_connector.contract import (
     ProviderFactoryContext,
     parse_adapter_endpoint,
 )
+from open_table_connector.contract import (
+    TableMode as LegacyTableMode,
+)
 
 from .config import ClientConfig, CredentialBinding
 from .connector import LegacyConnectorAdapterBridge, TableConnector, _sdk_mode_to_legacy
@@ -310,6 +313,11 @@ class ConnectorRegistry:
 
     @staticmethod
     def _descriptor_for_connector(connector: TableConnector) -> PluginDescriptor:
+        modes = tuple(getattr(connector, "modes", ()))
+        normalized_modes = tuple(
+            mode if isinstance(mode, LegacyTableMode) else _sdk_mode_to_legacy(mode)
+            for mode in modes
+        )
         return PluginDescriptor(
             name=connector.identity.connector_id,
             identity=connector.identity,
@@ -317,7 +325,7 @@ class ConnectorRegistry:
             factory=lambda _context, instance=connector: instance,
             hosts=tuple(getattr(connector, "hosts", ())),
             capabilities=tuple(getattr(connector, "capabilities", ())),
-            modes=tuple(_sdk_mode_to_legacy(mode) for mode in getattr(connector, "modes", ())),
+            modes=normalized_modes,
             local=bool(getattr(connector, "local", False)),
             handles_paths=bool(getattr(connector, "handles_paths", False)),
         )
