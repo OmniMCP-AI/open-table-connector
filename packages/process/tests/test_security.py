@@ -4,6 +4,9 @@ from io import BytesIO, StringIO
 
 from open_table_connector.process import (
     BoundedDiagnostics,
+    ConnectorProcessRegistry,
+    ConnectorRegistration,
+    ProcessResult,
     read_frame,
     redact_text,
     run_server,
@@ -53,3 +56,45 @@ def test_operation_failures_are_safe_frames_not_process_failures(tmp_path) -> No
     }
     assert read_frame(stdout, 1_000_000) is None
     assert stderr.getvalue() == ""
+
+
+def test_worker_serialization_failure_returns_redacted_error(tmp_path) -> None:
+    class Handler:
+        def handle(self, _context):
+            return ProcessResult({"bad": object()})
+
+    registration = ConnectorRegistration(
+        connector_id="fixture",
+        connector_version="1.2.3",
+        contract_version="1.0",
+        portable_plan_version="otc.portable-temporal-plan/v1",
+        capability_versions={"timeseries.scan.range": "1.0"},
+        handler=Handler(),
+    )
+    registry = ConnectorProcessRegistry((registration,))
+    stdin = BytesIO()
+    write_frame(stdin, envelope_wire())
+    write_frame(
+        stdin,
+        envelope_wire(
+            message_id="execute",
+            operation="execute",
+            payload={
+                "target": "json:///ticks.json",
+                "portable_plan": {
+                    "required_capabilities": ["timeseries.scan.range/1.0"],
+                    "operation": {"kind": "scan_range"},
+                },
+            },
+        ),
+    )
+    stdin.seek(0)
+    stdout = BytesIO()
+    stderr = StringIO()
+    assert run_server(stdin, stdout, stderr, artifact_root=tmp_path, registry=registry) == 0
+    stdout.seek(0)
+    assert read_frame(stdout, 1_000_000)["payload"]["ok"] is True
+    failed = read_frame(stdout, 1_000_000)
+    assert failed["payload"]["ok"] is False
+    assert failed["payload"]["error"]["code"] == "execution_failed"
+    assert "object at 0x" not in stderr.getvalue()

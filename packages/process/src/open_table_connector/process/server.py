@@ -2,22 +2,23 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from concurrent.futures import ThreadPoolExecutor
 import os
 import re
 import threading
+from collections.abc import Iterable, Mapping
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from types import MappingProxyType
-from typing import BinaryIO, Iterable, Mapping, TextIO
+from typing import BinaryIO, TextIO
 
 from open_table_connector.timeseries import ArrowArtifactReference
 
 from .artifacts import ArtifactStore
 from .credentials import CredentialLease, CredentialResolver
 from .envelope import (
-    ConnectorProcessEnvelope,
     PORTABLE_PLAN_VERSION,
     PROCESS_PROTOCOL,
+    ConnectorProcessEnvelope,
     ProcessOperation,
 )
 from .framing import FrameError, read_frame, write_frame
@@ -195,7 +196,9 @@ class ConnectorProcessServer:
                 registration.connector_id,
             )
         except PermissionError as exc:
-            raise ProcessError("protocol_invalid", "credential reference is not authorized") from exc
+            raise ProcessError(
+                "protocol_invalid", "credential reference is not authorized"
+            ) from exc
         try:
             context = ProcessRequestContext(envelope, self._artifacts, lease)
             try:
@@ -391,14 +394,30 @@ def run_server(
         credential_resolver or CredentialResolver(),
     )
     output_lock = threading.Lock()
+    futures: set[Future[None]] = set()
 
     def handle_and_write(envelope: ConnectorProcessEnvelope) -> None:
         try:
             response = server.handle(envelope)
         except ProcessError as exc:
             response = server.error_response(envelope, exc)
-        with output_lock:
-            write_frame(stdout, response)
+        try:
+            with output_lock:
+                write_frame(stdout, response)
+        except FrameError:
+            fallback = server.error_response(
+                envelope,
+                ProcessError("execution_failed", "connector result is not serializable"),
+            )
+            with output_lock:
+                write_frame(stdout, fallback)
+
+    def observe(future: Future[None]) -> None:
+        futures.discard(future)
+        try:
+            future.exception()
+        except Exception:
+            diagnostics.write("worker failed while processing request")
 
     with ThreadPoolExecutor(max_workers=4, thread_name_prefix="otc-process") as workers:
         while True:
@@ -417,7 +436,9 @@ def run_server(
             if envelope.operation in {ProcessOperation.HELLO, ProcessOperation.CANCEL}:
                 handle_and_write(envelope)
             else:
-                workers.submit(handle_and_write, envelope)
+                future = workers.submit(handle_and_write, envelope)
+                futures.add(future)
+                future.add_done_callback(observe)
 
 
 __all__ = [
