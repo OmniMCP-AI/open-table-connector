@@ -52,6 +52,7 @@ TABLE_READ_ARROW_CAPABILITY = CapabilityIdentity("table.read.arrow", "1.0")
 TABLE_READ_POLARS_CAPABILITY = CapabilityIdentity("table.read.polars", "1.0")
 TABLE_WRITE_CAPABILITY = CapabilityIdentity("table.write", "1.0")
 GOOGLE_SHEETS_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+GOOGLE_SHEETS_API_ENDPOINT = "https://sheets.googleapis.com"
 CAPABILITY_MANIFEST = CapabilityManifest(CONNECTOR_IDENTITY, (URI_RESOLVER_CAPABILITY, TABLE_INSPECT_CAPABILITY, TABLE_READ_ARROW_CAPABILITY, TABLE_READ_POLARS_CAPABILITY, TABLE_WRITE_CAPABILITY), (TableMode.SHEET,), (SCHEME_GSHEETS, SCHEME_HTTPS))
 
 
@@ -138,10 +139,23 @@ class GoogleSheetsConnector(URIResolver, TableInspector, ArrowTableReader, Polar
     identity = CONNECTOR_IDENTITY
     manifest = CAPABILITY_MANIFEST
 
-    def __init__(self, transport: SheetsTransport | None = None, *, access_token: str | None = None, timeout: int = 30):
+    def __init__(
+        self,
+        transport: SheetsTransport | None = None,
+        *,
+        access_token: str | None = None,
+        timeout: int = 30,
+        api_endpoint: str = GOOGLE_SHEETS_API_ENDPOINT,
+    ):
         self._transport = transport or UrllibSheetsTransport()
         self._access_token = access_token
         self._timeout = timeout
+        if not isinstance(api_endpoint, str) or not api_endpoint.strip():
+            raise ValueError("Google Sheets API endpoint must be a non-empty string")
+        self._api_endpoint = api_endpoint.rstrip("/")
+
+    def _url(self, path: str) -> str:
+        return f"{self._api_endpoint}{path}"
 
     def resolve(self, uri: TableURI, context: ResolveContext) -> ResolvedTable:
         parsed = urlsplit(uri.value)
@@ -170,8 +184,8 @@ class GoogleSheetsConnector(URIResolver, TableInspector, ArrowTableReader, Polar
     def _sheet_title(self, spreadsheet_id: str, gid: int) -> str:
         if isinstance(gid, bool) or not isinstance(gid, int) or gid < 0:
             raise ConnectorError(ConnectorErrorCode.INVALID_URI, "Google Sheets gid must be a non-negative integer", {})
-        url = (
-            f"https://sheets.googleapis.com/v4/spreadsheets/{quote(spreadsheet_id, safe='')}"
+        url = self._url(
+            f"/v4/spreadsheets/{quote(spreadsheet_id, safe='')}"
             "?fields=sheets(properties(sheetId,title))"
         )
         payload = self._transport.request("GET", url, headers=self._headers(), timeout=self._timeout)
@@ -194,7 +208,10 @@ class GoogleSheetsConnector(URIResolver, TableInspector, ArrowTableReader, Polar
         options = request.options
         selected_sheet = options.sheet or resource.sheet
         value_range = options.range or selected_sheet
-        url = f"https://sheets.googleapis.com/v4/spreadsheets/{quote(resource.spreadsheet_id, safe='')}/values/{quote(value_range, safe='')}?majorDimension=ROWS"
+        url = self._url(
+            f"/v4/spreadsheets/{quote(resource.spreadsheet_id, safe='')}/values/"
+            f"{quote(value_range, safe='')}?majorDimension=ROWS"
+        )
         payload = self._transport.request("GET", url, headers=self._headers(), timeout=request.resource_limits.timeout_seconds or self._timeout)
         table = _arrow_from_values(list(payload.get("values", [])), options.header_row)
         if request.resource_limits.max_rows is not None:
@@ -237,7 +254,10 @@ class GoogleSheetsConnector(URIResolver, TableInspector, ArrowTableReader, Polar
         body = {"range": value_range, "majorDimension": "ROWS", "values": values}
         method = "POST" if request.if_exists == "append" else "PUT"
         suffix = ":append" if method == "POST" else ""
-        url = f"https://sheets.googleapis.com/v4/spreadsheets/{quote(resource.spreadsheet_id, safe='')}/values/{quote(value_range, safe='')}{suffix}?valueInputOption=RAW&includeValuesInResponse=true"
+        url = self._url(
+            f"/v4/spreadsheets/{quote(resource.spreadsheet_id, safe='')}/values/"
+            f"{quote(value_range, safe='')}{suffix}?valueInputOption=RAW&includeValuesInResponse=true"
+        )
         payload = self._transport.request(method, url, headers=self._headers(), body=body, timeout=self._timeout)
         revision = "sha256:" + sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
         table = pa.Table.from_pydict({name: request.frame.get_column(name).to_list() for name in request.frame.columns})
