@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import polars as pl
 import pytest
-
 from open_table_connector.contract import (
     ConnectorError,
     ConnectorErrorCode,
@@ -11,7 +10,12 @@ from open_table_connector.contract import (
     TableURI,
     TableWriteRequest,
 )
-from open_table_connector.feishu_bitable import FeishuBitableConnector, FeishuBitableReadOptions, FeishuBitableTableReadRequest
+from open_table_connector.feishu_bitable import (
+    FEISHU_BATCH_CREATE_LIMIT,
+    FeishuBitableConnector,
+    FeishuBitableReadOptions,
+    FeishuBitableTableReadRequest,
+)
 from open_table_connector.feishu_bitable.connector import UrllibFeishuTransport
 
 
@@ -94,6 +98,20 @@ def test_feishu_writes_batch_records() -> None:
     assert headers["Authorization"] == "Bearer tenant-token"
     assert body == {"records": [{"fields": {"name": "Ada", "score": 10}}]}
     assert result.receipt.vendor_receipt_ref is None
+
+
+def test_feishu_writes_are_chunked_at_provider_limit() -> None:
+    transport = FakeTransport()
+    connector = FeishuBitableConnector(transport=transport, tenant_access_token="tenant-token")
+    frame = pl.DataFrame({"id": list(range(FEISHU_BATCH_CREATE_LIMIT + 1))})
+
+    result = connector.write(
+        TableWriteRequest(TableURI("feishu://app-token/table-id"), frame, if_exists="append")
+    )
+
+    writes = [call for call in transport.calls if call[0] == "POST"]
+    assert [len(call[3]["records"]) for call in writes] == [FEISHU_BATCH_CREATE_LIMIT, 1]
+    assert result.affected_rows == FEISHU_BATCH_CREATE_LIMIT + 1
 
 
 def test_feishu_error_policy_rejected_before_provider_io() -> None:

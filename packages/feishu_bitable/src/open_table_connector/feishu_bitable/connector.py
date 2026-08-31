@@ -1,22 +1,44 @@
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from hashlib import sha256
-import json
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
 import polars as pl
 import pyarrow as pa
-
 from open_table_connector.contract import (
-    ArrowReadResult, ArrowTableReader, BaseConvention, CapabilityIdentity, CapabilityManifest,
-    ConnectorError, ConnectorErrorCode, ConnectorIdentity, InspectRequest, PolarsReadResult,
-    PolarsTableReader, ResolveContext, ResolvedTable, TableInspection, TableInspector, TableMode,
-    TableReadRequest, TableURI, TableWriteRequest, TableWriteResult, TableWriter, URIResolver,
+    ArrowReadResult,
+    ArrowTableReader,
+    BaseConvention,
+    CapabilityIdentity,
+    CapabilityManifest,
+    ConnectorError,
+    ConnectorErrorCode,
+    ConnectorIdentity,
+    InspectRequest,
+    PolarsReadResult,
+    PolarsTableReader,
+    ResolveContext,
+    ResolvedTable,
+    TableInspection,
+    TableInspector,
+    TableMode,
+    TableReadRequest,
+    TableURI,
+    TableWriter,
+    TableWriteRequest,
+    TableWriteResult,
+    URIResolver,
 )
-from open_table_connector.contract.fingerprints import arrow_content_fingerprint, arrow_schema_fingerprint, operation_identity
+from open_table_connector.contract.fingerprints import (
+    arrow_content_fingerprint,
+    arrow_schema_fingerprint,
+    operation_identity,
+)
 
 CONNECTOR_IDENTITY = ConnectorIdentity("feishu_bitable", "0.1.0", "1.0")
 URI_RESOLVER_CAPABILITY = CapabilityIdentity("uri.resolve", "1.0")
@@ -24,6 +46,7 @@ TABLE_INSPECT_CAPABILITY = CapabilityIdentity("table.inspect", "1.0")
 TABLE_READ_ARROW_CAPABILITY = CapabilityIdentity("table.read.arrow", "1.0")
 TABLE_READ_POLARS_CAPABILITY = CapabilityIdentity("table.read.polars", "1.0")
 TABLE_WRITE_CAPABILITY = CapabilityIdentity("table.write", "1.0")
+FEISHU_BATCH_CREATE_LIMIT = 500
 CAPABILITY_MANIFEST = CapabilityManifest(CONNECTOR_IDENTITY, (URI_RESOLVER_CAPABILITY, TABLE_INSPECT_CAPABILITY, TABLE_READ_ARROW_CAPABILITY, TABLE_READ_POLARS_CAPABILITY, TABLE_WRITE_CAPABILITY), (TableMode.BASE,), ("feishu", "feishu_bitable"))
 
 
@@ -165,12 +188,33 @@ class FeishuBitableConnector(URIResolver, TableInspector, ArrowTableReader, Pola
         if request.if_exists not in {"append"}:
             raise ConnectorError(ConnectorErrorCode.UNSUPPORTED_CAPABILITY, "Feishu Bitable only supports append writes", {"if_exists": request.if_exists})
         resource = self.resolve(request.uri, ResolveContext()).resource
-        records = [{"fields": {name: value for name, value in zip(request.frame.columns, row)}} for row in request.frame.rows()]
+        records = [
+            {
+                "fields": {
+                    name: value
+                    for name, value in zip(request.frame.columns, row, strict=False)
+                }
+            }
+            for row in request.frame.rows()
+        ]
         url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{quote(resource.app_token, safe='')}/tables/{quote(resource.table_id, safe='')}/records/batch_create"
-        payload = self._transport.request("POST", url, headers=self._headers(), body={"records": records}, timeout=self._timeout)
-        if payload.get("code", 0) != 0:
-            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "Feishu Bitable write failed", {"code": payload.get("code")})
-        revision = "sha256:" + sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
+        payloads: list[Mapping[str, Any]] = []
+        for start in range(0, len(records), FEISHU_BATCH_CREATE_LIMIT):
+            payload = self._transport.request(
+                "POST",
+                url,
+                headers=self._headers(),
+                body={"records": records[start : start + FEISHU_BATCH_CREATE_LIMIT]},
+                timeout=self._timeout,
+            )
+            if payload.get("code", 0) != 0:
+                raise ConnectorError(
+                    ConnectorErrorCode.EXECUTION_FAILED,
+                    "Feishu Bitable write failed",
+                    {"code": payload.get("code")},
+                )
+            payloads.append(payload)
+        revision = "sha256:" + sha256(json.dumps(payloads, sort_keys=True, default=str).encode()).hexdigest()
         table = pa.Table.from_pydict({name: request.frame.get_column(name).to_list() for name in request.frame.columns})
         schema = arrow_schema_fingerprint(table.schema)
         content = arrow_content_fingerprint(table)
