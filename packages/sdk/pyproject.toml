@@ -21,7 +21,7 @@ open-table-connector-contract = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["open_table_connector.sdk*"]
+include = ["open_table_connector.sdk*", "open_table_connector.otc*"]
 namespaces = true
 
 [tool.setuptools.package-data]

@@ -9,9 +9,9 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from open_table_connector.contract import (
+    CLI_PLUGIN_GROUP,
     CREDENTIAL_ACCESS_TOKEN,
     CREDENTIAL_TENANT_ACCESS_TOKEN,
-    CLI_PLUGIN_GROUP,
     PROVIDER_FEISHU_BITABLE,
     PROVIDER_GOOGLE_SHEETS,
     PROVIDER_MAYBE_SHEET,
@@ -67,6 +67,25 @@ def _registry_error(code: ErrorCode, message: str, **details: object) -> OTCErro
 class ConfiguredPlugin:
     descriptor: PluginDescriptor
     config: ProviderConfig
+
+
+def discover_descriptors(
+    entries: Iterable[EntryPoint] | None = None,
+) -> tuple[PluginDescriptor, ...]:
+    """Load SDK provider descriptors from the installed entry points."""
+
+    discovered = entry_points() if entries is None else tuple(entries)
+    if hasattr(discovered, "select"):
+        selected = discovered.select(group=CLI_PLUGIN_GROUP)
+    else:
+        selected = discovered
+    descriptors: list[PluginDescriptor] = []
+    for entry in sorted(selected, key=lambda item: (item.name, item.value)):
+        loaded = entry.load()
+        descriptor = loaded() if callable(loaded) else loaded
+        if isinstance(descriptor, PluginDescriptor):
+            descriptors.append(descriptor)
+    return tuple(descriptors)
 
 
 def discover_configured_plugins(
@@ -352,6 +371,7 @@ class ConnectorRegistry:
 __all__ = [
     "ConfiguredPlugin",
     "ConnectorRegistry",
+    "discover_descriptors",
     "discover_configured_plugins",
     "with_default_credential_bindings",
 ]

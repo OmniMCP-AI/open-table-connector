@@ -122,6 +122,44 @@ def test_client_materialize_is_create_only_and_preserves_conflicts(fake_connecto
     assert raised.value.result.error.code is otc.ErrorCode.DESTINATION_EXISTS
 
 
+def test_client_materialize_collects_table_sources_and_orders_receipts(fake_connector) -> None:
+    client = otc.Client(registry=otc.ConnectorRegistry([fake_connector]))
+    source = client.open("fake://warehouse/orders").require_value()
+
+    result = client.materialize(
+        source,
+        to=otc.DirectDestination("fake://warehouse/materialized"),
+    )
+
+    assert result.require_value().uri.value == "fake://warehouse/materialized"
+    assert [receipt.operation for receipt in result.receipts[-2:]] == [
+        "table.read",
+        "table.create",
+    ]
+    assert all(
+        call[0] != "create_table" or call[1] == "fake://warehouse/materialized"
+        for call in fake_connector.calls
+    )
+
+
+def test_client_binds_and_collects_sheet_ranges_with_client_affinity(fake_connector) -> None:
+    client = otc.Client(registry=otc.ConnectorRegistry([fake_connector]))
+    bound = client.bind_sheet_range(
+        grid="fake://warehouse/orders",
+        cell_range="A1:B2",
+        header=True,
+        schema=fake_connector.frame.schema,
+    ).require_value()
+
+    assert bound.observed_revision == "range-rev-1"
+    assert client.collect(bound).require_value().height == fake_connector.frame.height
+
+    other = otc.Client(registry=otc.ConnectorRegistry([fake_connector]))
+    with pytest.raises(otc.OTCError) as raised:
+        other.collect(bound)
+    assert raised.value.result.error.code is otc.ErrorCode.CLIENT_AFFINITY_MISMATCH
+
+
 def test_client_materialize_works_through_a_legacy_write_adapter() -> None:
     config = otc.ClientConfig.empty()
     client = otc.Client.from_config(

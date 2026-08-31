@@ -47,6 +47,7 @@ class _LazyAdapter:
         self.modes = descriptor.modes
         self.local = descriptor.local
         self.handles_paths = descriptor.handles_paths
+        self.provider_owned_fields: tuple[str, ...] = ()
 
     def read(self, endpoint: AdapterEndpoint, options):
         with self._registry.open_adapter(endpoint) as adapter:
@@ -138,11 +139,13 @@ class ConfiguredConnectorRegistry:
         if len(set(discovered_ids)) != len(discovered_ids):
             raise ConnectorError.configuration(
                 "duplicate CLI provider descriptor",
-                safe_details={"provider_id": sorted(
-                    provider_id
-                    for provider_id in set(discovered_ids)
-                    if discovered_ids.count(provider_id) > 1
-                )[0]},
+                safe_details={
+                    "provider_id": sorted(
+                        provider_id
+                        for provider_id in set(discovered_ids)
+                        if discovered_ids.count(provider_id) > 1
+                    )[0]
+                },
             )
         discovered_id_set = set(discovered_ids)
         registry._diagnostics = tuple(
@@ -391,7 +394,12 @@ class ConfiguredConnectorRegistry:
                     "capability": capability_id,
                 },
             )
-        return _LazyAdapter(self, plugin)
+        adapter = _LazyAdapter(self, plugin)
+        with self.open_adapter(endpoint) as resolved:
+            owned = getattr(resolved, "provider_owned_fields", ())
+            if isinstance(owned, tuple):
+                adapter.provider_owned_fields = tuple(str(field) for field in owned)
+        return adapter
 
     def _manual_for(self, endpoint: AdapterEndpoint) -> ConnectorAdapter | None:
         if endpoint.is_stdio or endpoint.path is not None:
@@ -461,9 +469,7 @@ class ConfiguredConnectorRegistry:
         with lease:
             selected_transport = self._transports.get(config.provider_id)
             transports = (
-                {config.provider_id: selected_transport}
-                if selected_transport is not None
-                else {}
+                {config.provider_id: selected_transport} if selected_transport is not None else {}
             )
             context = ProviderFactoryContext(
                 config=config,

@@ -28,6 +28,7 @@ from open_table_connector.contract import (
 from open_table_connector.contract import (
     TableMode as LegacyTableMode,
 )
+from open_table_connector.sdk.connector import ArrowTableCarrier
 from open_table_connector.timeseries import (
     AbortDisposition as LegacyAbortDisposition,
 )
@@ -404,19 +405,49 @@ class FakeSdkConnector:
         *,
         limit: int | None = None,
         continuation: str | None = None,
-    ) -> otc.OperationResult[pl.DataFrame]:
+    ) -> otc.OperationResult[ArrowTableCarrier]:
         self.calls.append(("read_table", {"limit": limit, "continuation": continuation}))
         frame = self.frame if limit is None else self.frame.head(limit)
         next_token = None
         if limit is not None and limit < self.frame.height and continuation is None:
             next_token = "page-2"
         return otc.OperationResult(
-            value=frame,
+            value=ArrowTableCarrier(frame.to_arrow()),
             outcome=otc.Outcome.SUCCEEDED,
             commit=otc.CommitState.NOT_APPLICABLE,
             verification=otc.VerificationState.PASSED,
             receipts=(make_receipt("table.read", row_count=frame.height),),
             continuation=next_token,
+        )
+
+    def bind_sheet_range(
+        self, source: otc.SheetRangeSource
+    ) -> otc.OperationResult[otc.SheetRangeSource]:
+        return otc.OperationResult(
+            value=otc.SheetRangeSource(
+                grid=source.grid,
+                cell_range=source.cell_range,
+                header=source.header,
+                schema=source.schema or self.frame.schema,
+                schema_policy=otc.SchemaPolicy.VALIDATE_DECLARED,
+                observed_revision="range-rev-1",
+            ),
+            outcome=otc.Outcome.SUCCEEDED,
+            commit=otc.CommitState.NOT_APPLICABLE,
+            verification=otc.VerificationState.PASSED,
+            receipts=(make_receipt("table.range.bind"),),
+        )
+
+    def read_sheet_range(
+        self, source: otc.SheetRangeSource
+    ) -> otc.OperationResult[ArrowTableCarrier]:
+        del source
+        return otc.OperationResult(
+            value=ArrowTableCarrier(self.frame.to_arrow()),
+            outcome=otc.Outcome.SUCCEEDED,
+            commit=otc.CommitState.NOT_APPLICABLE,
+            verification=otc.VerificationState.PASSED,
+            receipts=(make_receipt("table.range.read", row_count=self.frame.height),),
         )
 
     def _insert(self, frame: pl.DataFrame) -> otc.OperationResult[int]:

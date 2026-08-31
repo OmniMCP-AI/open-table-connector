@@ -194,4 +194,5 @@ def test_protocols_are_runtime_checkable_and_error_codes_are_extension_local() -
         "snapshot_unavailable",
         "idempotency_conflict",
         "visibility_incomplete",
+        "configuration",
     }

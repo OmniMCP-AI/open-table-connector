@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 import polars as pl
+import pyarrow as pa
 from open_table_connector.contract import (
     AdapterOptions,
     ConnectorAdapter,
@@ -28,6 +30,7 @@ from .model import (
     DirectTableAddress,
     SheetModeDestination,
     SheetModeTableAddress,
+    SheetRangeSource,
     TableDestination,
     TableMode,
 )
@@ -103,6 +106,22 @@ def _rejected(message: str, code: ErrorCode, **details: object) -> OperationResu
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ArrowTableCarrier:
+    """Bounded internal Arrow carrier crossing a Connector boundary."""
+
+    table: pa.Table
+    max_rows: int = 1_000_000
+    max_bytes: int = 256 * 1024 * 1024
+
+    def to_polars(self) -> pl.DataFrame:
+        if self.table.num_rows > self.max_rows:
+            raise ValueError("connector read exceeded the configured row limit")
+        if self.table.nbytes > self.max_bytes:
+            raise ValueError("connector read exceeded the configured byte limit")
+        return pl.from_arrow(self.table)
+
+
 @runtime_checkable
 class TableConnector(Protocol):
     identity: object
@@ -125,7 +144,7 @@ class TableConnector(Protocol):
         *,
         limit: int | None = None,
         continuation: str | None = None,
-    ) -> OperationResult[pl.DataFrame]: ...
+    ) -> OperationResult[ArrowTableCarrier]: ...
 
     def insert_rows(self, binding: TableBinding, frame: pl.DataFrame) -> OperationResult[int]: ...
 
@@ -184,10 +203,8 @@ class LegacyConnectorAdapterBridge:
             return _rejected(
                 "legacy adapter returned an invalid inspection", ErrorCode.PROTOCOL_FAILURE
             )
-        read_result = self._adapter.read(
-            parse_adapter_endpoint(endpoint_value), AdapterOptions(limit=1)
-        )
-        frame = pl.from_arrow(read_result.table)
+        read_result = self._adapter.read(parse_adapter_endpoint(endpoint_value), AdapterOptions())
+        frame = ArrowTableCarrier(read_result.table).to_polars()
         return OperationResult(
             value=TableBinding(
                 uri=inspection.safe_uri,
@@ -235,17 +252,33 @@ class LegacyConnectorAdapterBridge:
         *,
         limit: int | None = None,
         continuation: str | None = None,
-    ) -> OperationResult[pl.DataFrame]:
+    ) -> OperationResult[ArrowTableCarrier]:
         del continuation
         result = self._adapter.read(
             parse_adapter_endpoint(binding.uri.value), AdapterOptions(limit=limit)
         )
         return OperationResult(
-            value=pl.from_arrow(result.table),
+            value=ArrowTableCarrier(result.table),
             outcome=Outcome.SUCCEEDED,
             commit=CommitState.NOT_APPLICABLE,
             verification=VerificationState.PASSED,
             receipts=(_receipt_from_legacy(result.receipt),),
+        )
+
+    def bind_sheet_range(self, source: SheetRangeSource) -> OperationResult[SheetRangeSource]:
+        del source
+        return _rejected(
+            "legacy adapters do not expose a typed bounded sheet range",
+            ErrorCode.UNSUPPORTED_CAPABILITY,
+        )
+
+    def read_sheet_range(
+        self, source: SheetRangeSource
+    ) -> OperationResult[ArrowTableCarrier]:
+        del source
+        return _rejected(
+            "legacy adapters do not expose a typed bounded sheet range",
+            ErrorCode.UNSUPPORTED_CAPABILITY,
         )
 
     def insert_rows(self, binding: TableBinding, frame: pl.DataFrame) -> OperationResult[int]:
@@ -327,6 +360,7 @@ class LegacyConnectorAdapterBridge:
 
 
 __all__ = [
+    "ArrowTableCarrier",
     "LegacyConnectorAdapterBridge",
     "TableConnector",
     "_address_uri",

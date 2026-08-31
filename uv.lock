@@ -239,6 +239,7 @@ version = "0.1.0"
 source = { editable = "packages/cli" }
 dependencies = [
     { name = "open-table-connector-contract" },
+    { name = "open-table-connector-sdk" },
     { name = "polars" },
     { name = "pyarrow" },
 ]
@@ -262,6 +263,7 @@ requires-dist = [
     { name = "open-table-connector-local-files", marker = "extra == 'local'", editable = "packages/local_files" },
     { name = "open-table-connector-local-files", marker = "extra == 'providers'", editable = "packages/local_files" },
     { name = "open-table-connector-maybe-sheet", marker = "extra == 'providers'", editable = "packages/maybe_sheet" },
+    { name = "open-table-connector-sdk", editable = "packages/sdk" },
     { name = "polars", specifier = ">=1,<2" },
     { name = "pyarrow", specifier = ">=14,<20" },
 ]

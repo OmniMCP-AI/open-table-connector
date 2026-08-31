@@ -11,6 +11,7 @@ license = { text = "Apache-2.0" }
 readme = "README.md"
 dependencies = [
   "open-table-connector-contract>=0.1,<0.2",
+  "open-table-connector-sdk>=0.1,<0.2",
   "polars>=1,<2",
   "pyarrow>=14,<20",
 ]
@@ -31,6 +32,7 @@ open-connectors = "open_table_connector.cli.__main__:main"
 
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
+open-table-connector-sdk = { workspace = true }
 open-table-connector-google-sheets = { workspace = true }
 open-table-connector-feishu-bitable = { workspace = true }
 open-table-connector-maybe-sheet = { workspace = true }

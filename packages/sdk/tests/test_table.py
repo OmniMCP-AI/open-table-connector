@@ -46,3 +46,20 @@ def test_table_transaction_exposes_insert_update_delete_commit(fake_connector) -
 
     assert committed.outcome is otc.Outcome.SUCCEEDED
     assert ("begin_transaction", "fake://warehouse/orders") in fake_connector.calls
+
+
+def test_table_transaction_is_local_until_commit(fake_connector) -> None:
+    client = otc.Client(registry=otc.ConnectorRegistry([fake_connector]))
+    table = client.open("fake://warehouse/orders").require_value()
+
+    transaction = table.transaction()
+    transaction.insert(pl.DataFrame({"order_id": [3], "status": ["queued"]}))
+    transaction.delete(where=otc.all_rows())
+
+    assert not any(
+        call[0] in {"begin_transaction", "insert", "delete"}
+        for call in fake_connector.calls
+    )
+
+    transaction.abort()
+    assert not any(call[0] == "abort" for call in fake_connector.calls)

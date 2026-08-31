@@ -27,7 +27,12 @@ from .model import (
 )
 from .predicates import PortablePredicate, PredicateKind, all_rows
 from .query import Query, QueryLane, SqlResourceLimits
-from .registry import ConfiguredPlugin, ConnectorRegistry, discover_configured_plugins
+from .registry import (
+    ConfiguredPlugin,
+    ConnectorRegistry,
+    discover_configured_plugins,
+    discover_descriptors,
+)
 from .result import (
     CommitState,
     ErrorCode,
@@ -121,6 +126,7 @@ __all__ = [
     "all_rows",
     "apply_credential_overrides",
     "discover_configured_plugins",
+    "discover_descriptors",
     "load_client_config",
     "parse_credential_overrides",
     "resolve_config_path",

@@ -15,6 +15,7 @@ _ORDER = {
     "open-table-connector-google-sheets": 2,
     "open-table-connector-feishu-bitable": 2,
     "open-table-connector-maybe-sheet": 2,
+    "open-table-connector-sdk": 2,
     "open-table-connector-conformance": 3,
     "open-table-connector-process": 4,
     "open-table-connector-dbt": 4,

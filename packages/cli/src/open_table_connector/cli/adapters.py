@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from typing import Any
 
-from .plugins import _descriptor_entries
+from . import plugins
 
 
 def build_adapters(
@@ -13,7 +13,7 @@ def build_adapters(
     """Preserve the old import without reintroducing CLI adapter ownership."""
 
     del env, transports
-    if not _descriptor_entries():
+    if not plugins._descriptor_entries():
         return ()
     from .registry import build_default_registry
 
@@ -59,4 +59,3 @@ def __getattr__(name: str):
     value = getattr(import_module(module_name), attribute)
     globals()[name] = value
     return value
-

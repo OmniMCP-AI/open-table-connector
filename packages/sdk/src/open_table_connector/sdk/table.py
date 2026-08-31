@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 import polars as pl
 from open_table_connector.contract import TableURI
 
 from .model import TableMode
+from .result import CommitState, OperationResult, OTCError, Outcome, VerificationState
 
 if TYPE_CHECKING:
     from open_table_connector.timeseries import TemporalTableDescriptor
@@ -87,33 +88,109 @@ class TableInspection:
 
 
 class TableTransaction:
-    def __init__(self, table: Table, transaction: object) -> None:
+    def __init__(self, table: Table, *, idempotency_key: str | None = None) -> None:
         self._table = table
-        self._transaction = transaction
+        self._idempotency_key = idempotency_key
+        self._commands: list[tuple[str, object, object]] = []
+        self._state = "open"
+
+    def _ensure_open(self) -> None:
+        if self._state != "open":
+            raise RuntimeError(f"transaction is already {self._state}")
 
     def insert(self, frame: pl.DataFrame):
+        self._ensure_open()
         self._table._client._assert_open()
-        return self._table._client._deliver(self._transaction.insert(frame))
+        if not isinstance(frame, pl.DataFrame):
+            raise TypeError("frame must be a polars DataFrame")
+        self._commands.append(("insert", frame.clone(), None))
+        return self
 
     def update(self, frame: pl.DataFrame, *, keys: tuple[str, ...]):
+        self._ensure_open()
         self._table._client._assert_open()
-        return self._table._client._deliver(self._transaction.update(frame, keys=keys))
+        if not isinstance(frame, pl.DataFrame):
+            raise TypeError("frame must be a polars DataFrame")
+        normalized_keys = tuple(str(key).strip() for key in keys)
+        if not normalized_keys or any(not key for key in normalized_keys):
+            raise ValueError("keys must contain at least one non-empty column name")
+        self._commands.append(("update", frame.clone(), normalized_keys))
+        return self
 
     def delete(self, *, where, parameters: Mapping[str, Any] | None = None):
+        self._ensure_open()
         self._table._client._assert_open()
-        return self._table._client._deliver(
-            self._transaction.delete(
-                where=where, parameters=None if parameters is None else dict(parameters)
-            )
+        if where is None:
+            raise ValueError("where is required")
+        self._commands.append(
+            ("delete", where, None if parameters is None else dict(parameters))
         )
+        return self
 
     def commit(self):
+        self._ensure_open()
         self._table._client._assert_open()
-        return self._table._client._deliver(self._transaction.commit())
+        self._state = "committing"
+        connector = self._table._client._connector_for_binding(self._table._binding)
+        transaction = None
+        receipts = []
+        try:
+            transaction = connector.begin_transaction(self._table._binding)
+            for operation, payload, options in self._commands:
+                if operation == "insert":
+                    result = transaction.insert(payload)
+                elif operation == "update":
+                    result = transaction.update(payload, keys=options)
+                else:
+                    result = transaction.delete(where=payload, parameters=options)
+                delivered = self._table._client._deliver(result)
+                receipts.extend(delivered.receipts)
+            committed = self._table._client._deliver(transaction.commit())
+            receipts.extend(committed.receipts)
+        except OTCError as error:
+            receipts.extend(error.result.receipts)
+            if transaction is not None:
+                try:
+                    aborted = self._table._client._deliver(transaction.abort())
+                except OTCError as abort_error:
+                    receipts.extend(abort_error.result.receipts)
+                else:
+                    receipts.extend(aborted.receipts)
+            self._state = "aborted"
+            failed = replace(error.result, receipts=tuple(receipts))
+            message = failed.error.message if failed.error is not None else str(error)
+            raise OTCError(message, failed) from error
+        except BaseException:
+            if transaction is not None:
+                try:
+                    transaction.abort()
+                finally:
+                    self._state = "aborted"
+            else:
+                self._state = "aborted"
+            raise
+        self._state = "committed"
+        return OperationResult(
+            value=None,
+            outcome=committed.outcome,
+            commit=committed.commit,
+            verification=committed.verification,
+            receipts=tuple(receipts),
+            warnings=committed.warnings,
+        )
 
     def abort(self):
+        self._ensure_open()
         self._table._client._assert_open()
-        return self._table._client._deliver(self._transaction.abort())
+        self._commands.clear()
+        self._state = "aborted"
+        return OperationResult(
+            value=None,
+            outcome=Outcome.SUCCEEDED,
+            commit=CommitState.NOT_APPLICABLE,
+            verification=VerificationState.SKIPPED,
+            receipts=(),
+        )
 
 
 class Table:
@@ -155,13 +232,13 @@ class Table:
 
     def read(self):
         self._client._assert_open()
-        return self._client._deliver(
+        return self._client._normalize_frame_result(
             self._client._connector_for_binding(self._binding).read_table(self._binding)
         )
 
     def read_page(self, *, limit: int, continuation: str | None = None):
         self._client._assert_open()
-        return self._client._deliver(
+        return self._client._normalize_frame_result(
             self._client._connector_for_binding(self._binding).read_table(
                 self._binding,
                 limit=limit,
@@ -201,12 +278,9 @@ class Table:
             self._client._connector_for_binding(self._binding).drop_table(self._binding)
         )
 
-    def transaction(self) -> TableTransaction:
+    def transaction(self, *, idempotency_key: str | None = None) -> TableTransaction:
         self._client._assert_open()
-        transaction = self._client._connector_for_binding(self._binding).begin_transaction(
-            self._binding
-        )
-        return TableTransaction(self, transaction)
+        return TableTransaction(self, idempotency_key=idempotency_key)
 
     def time_series(self, descriptor: TemporalTableDescriptor):
         self._client._assert_open()

@@ -28,6 +28,7 @@ from open_table_connector.contract import (
     TableMode as LegacyTableMode,
 )
 from open_table_connector.contract.fingerprints import arrow_content_fingerprint
+from open_table_connector.sdk.connector import ArrowTableCarrier
 
 
 @dataclass
@@ -207,7 +208,7 @@ class SdkRecordingConnector:
         if limit is not None:
             frame = frame.head(limit)
         return otc.OperationResult(
-            value=frame,
+            value=ArrowTableCarrier(frame.to_arrow()),
             outcome=otc.Outcome.SUCCEEDED,
             commit=otc.CommitState.NOT_APPLICABLE,
             verification=otc.VerificationState.PASSED,

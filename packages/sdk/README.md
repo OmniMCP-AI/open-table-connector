@@ -31,18 +31,21 @@ There is no public logical table type, `TableRef`, `TableHandle`,
 
 ```python
 import polars as pl
-from open_table_connector.sdk import Client
+from open_table_connector import otc
+from open_table_connector.sdk import Client, DirectDestination
 
-client = Client.from_config()
+# Build a registry from ClientConfig and installed provider descriptors.
+client = Client(registry=registry)
 
-orders = client.table("postgres://warehouse", table="orders")
-frame = orders.read().require_value()
-
+orders = client.open("postgres://warehouse/public.orders").require_value()
+frame: pl.DataFrame = orders.read().require_value()
 result = client.materialize(
     frame,
-    to="sqlite:///tmp/analytics.db",
-    table="daily_orders",
+    to=DirectDestination("sqlite:///tmp/analytics.db"),
 )
+
+# The short facade uses the same operations through a lazy default Client.
+result = otc.read("csv:///data/orders.csv")
 ```
 
 `Client.materialize()` is create-only. Existing physical tables are mutated

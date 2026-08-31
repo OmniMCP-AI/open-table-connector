@@ -27,6 +27,7 @@ from .registry import build_default_registry
 
 _FORMATS = (FORMAT_AUTO, PROVIDER_CSV, PROVIDER_EXCEL, PROVIDER_JSON, PROVIDER_JSONL, FORMAT_TABLE)
 _OUTPUT_FORMATS = (PROVIDER_CSV, PROVIDER_JSON, PROVIDER_JSONL, FORMAT_TABLE)
+_DESTINATION_FORMATS = (FORMAT_AUTO, PROVIDER_CSV, PROVIDER_EXCEL, PROVIDER_JSON)
 _PARSER_FLAGS = frozenset(
     {
         "--from",
@@ -59,9 +60,7 @@ class _ArgumentParser(argparse.ArgumentParser):
 
 
 def _safe_parser_details(message: str) -> dict[str, list[str]]:
-    invalid_choice = re.search(
-        r"argument (--[a-z][a-z0-9-]*): invalid choice: '([^']+)'", message
-    )
+    invalid_choice = re.search(r"argument (--[a-z][a-z0-9-]*): invalid choice: '([^']+)'", message)
     if invalid_choice and invalid_choice.group(1) in _PARSER_FLAGS:
         return {
             "option": invalid_choice.group(1).removeprefix("--"),
@@ -72,11 +71,7 @@ def _safe_parser_details(message: str) -> dict[str, list[str]]:
             flag for flag in re.findall(r"--[a-z][a-z0-9-]*", message) if flag in _PARSER_FLAGS
         )
     )
-    values = [
-        value
-        for value in _KNOWN_VALUES
-        if re.search(rf"\b{re.escape(value)}\b", message)
-    ]
+    values = [value for value in _KNOWN_VALUES if re.search(rf"\b{re.escape(value)}\b", message)]
     details: dict[str, list[str]] = {}
     if flags:
         details["flags"] = flags
@@ -113,7 +108,7 @@ def _add_options(
     parser.add_argument("--from-format", choices=_FORMATS, default=None)
     parser.add_argument("--output-format", choices=output_choices, default=output_default)
     if include_to_format:
-        parser.add_argument("--to-format", choices=_FORMATS, default=None)
+        parser.add_argument("--to-format", choices=_DESTINATION_FORMATS, default=None)
     parser.add_argument("--if-exists", choices=("append", "replace", "error"), default="error")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--timeout", type=float)

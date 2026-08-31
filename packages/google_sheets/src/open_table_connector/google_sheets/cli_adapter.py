@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import polars as pl
@@ -52,6 +53,17 @@ class GoogleSheetsCliAdapter(ConnectorAdapter, WritePreflightAdapter):
     capabilities = tuple(CAPABILITY_MANIFEST.capabilities)
     modes = tuple(CAPABILITY_MANIFEST.modes)
 
+    def _connector_for_options(self, options: AdapterOptions) -> GoogleSheetsConnector:
+        token = getattr(options, "token", None)
+        if not token:
+            return self.connector
+        return GoogleSheetsConnector(
+            self.connector._transport,
+            access_token=token,
+            timeout=self.connector._timeout,
+            api_endpoint=self.connector._api_endpoint,
+        )
+
     def read(self, endpoint: AdapterEndpoint, options: AdapterOptions) -> ArrowReadResult:
         if endpoint.uri is None:
             raise ConnectorError(
@@ -64,7 +76,7 @@ class GoogleSheetsCliAdapter(ConnectorAdapter, WritePreflightAdapter):
             resource_limits=_limits(options),
             options=GoogleSheetsReadOptions(range=options.range, sheet=options.sheet),
         )
-        return self.connector.read_arrow(request)
+        return self._connector_for_options(options).read_arrow(request)
 
     def inspect(self, endpoint: AdapterEndpoint, options: AdapterOptions) -> TableInspection:
         if endpoint.uri is None:
@@ -73,7 +85,9 @@ class GoogleSheetsCliAdapter(ConnectorAdapter, WritePreflightAdapter):
                 "Google Sheets requires a URI endpoint",
                 {},
             )
-        return self.connector.inspect(InspectRequest(endpoint.uri, _limits(options)))
+        return self._connector_for_options(options).inspect(
+            InspectRequest(endpoint.uri, _limits(options))
+        )
 
     def preflight_write(self, endpoint: AdapterEndpoint, options: AdapterOptions) -> None:
         del endpoint
@@ -99,7 +113,7 @@ class GoogleSheetsCliAdapter(ConnectorAdapter, WritePreflightAdapter):
                 "Google Sheets requires a URI endpoint",
                 {},
             )
-        return self.connector.write(
+        return self._connector_for_options(options).write(
             TableWriteRequest(
                 endpoint.uri,
                 pl.from_arrow(table),
@@ -112,7 +126,7 @@ class GoogleSheetsCliAdapter(ConnectorAdapter, WritePreflightAdapter):
 def _limits(options: AdapterOptions):
     from open_table_connector.contract import ResourceLimits
 
-    timeout = None if options.timeout is None else int(options.timeout)
+    timeout = None if options.timeout is None else math.ceil(options.timeout)
     return ResourceLimits(max_rows=options.limit, timeout_seconds=timeout)
 
 

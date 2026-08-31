@@ -61,6 +61,24 @@ def test_client_sql_convenience_matches_prepare_plus_collect(fake_connector) -> 
     assert direct.to_dict(as_series=False) == prepared.to_dict(as_series=False)
 
 
+def test_sql_worker_drains_large_results_without_false_timeout() -> None:
+    client = otc.Client(registry=otc.ConnectorRegistry())
+    source = pl.DataFrame(
+        {
+            "id": range(512),
+            "payload": ["x" * 4096] * 512,
+        }
+    )
+
+    result = client.sql(
+        "SELECT id, payload FROM source ORDER BY id",
+        sources={"source": source},
+        limits=otc.SqlResourceLimits(max_duration_ms=5_000),
+    )
+
+    assert result.require_value().height == 512
+
+
 def test_sql_rejects_unbound_sources_and_offset() -> None:
     with pytest.raises(otc.OTCError) as unbound:
         otc.sql("SELECT * FROM missing ORDER BY id", sources={})

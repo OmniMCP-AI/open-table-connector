@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, TypeAlias
 
@@ -341,6 +341,7 @@ class SheetRangeSource:
     schema: pl.Schema | None
     schema_policy: SchemaPolicy
     observed_revision: str | None = None
+    _owner_token: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "grid", _normalize_uri(self.grid, "grid"))
