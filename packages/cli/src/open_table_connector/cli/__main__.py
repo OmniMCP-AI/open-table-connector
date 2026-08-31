@@ -82,11 +82,14 @@ def _add_options(
     require_to: bool,
     output_choices: Sequence[str] = _OUTPUT_FORMATS,
     output_default: str | None = "jsonl",
+    include_to_format: bool = False,
 ) -> None:
     parser.add_argument("--from", dest="from_value", required=require_from, metavar="SOURCE")
     parser.add_argument("--to", dest="to_value", required=require_to, metavar="DESTINATION")
     parser.add_argument("--from-format", choices=_FORMATS, default=None)
     parser.add_argument("--output-format", choices=output_choices, default=output_default)
+    if include_to_format:
+        parser.add_argument("--to-format", choices=_FORMATS, default=None)
     parser.add_argument("--if-exists", choices=("append", "replace", "error"), default="error")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--timeout", type=float)
@@ -114,6 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
         require_to=True,
         output_choices=_FORMATS,
         output_default=None,
+        include_to_format=True,
     )
     import_parser = subparsers.add_parser("import", help="import a table into a connector")
     _add_options(import_parser, require_from=True, require_to=True)

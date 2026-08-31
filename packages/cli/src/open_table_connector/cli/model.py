@@ -82,6 +82,7 @@ def parse_format(value: str | None) -> FormatName:
 class CliOptions:
     from_format: FormatName = FormatName.AUTO
     output_format: FormatName = FormatName.AUTO
+    to_format: FormatName = FormatName.AUTO
     limit: int | None = None
     timeout: float | int | None = None
     sheet: str | None = None
@@ -96,6 +97,8 @@ class CliOptions:
             object.__setattr__(self, "from_format", parse_format(str(self.from_format)))
         if not isinstance(self.output_format, FormatName):
             object.__setattr__(self, "output_format", parse_format(str(self.output_format)))
+        if not isinstance(self.to_format, FormatName):
+            object.__setattr__(self, "to_format", parse_format(str(self.to_format)))
 
         if self.limit is not None and (
             not isinstance(self.limit, int) or isinstance(self.limit, bool) or self.limit <= 0

@@ -64,6 +64,8 @@ class CapabilityIdentity:
                 field_name,
                 _required_text(getattr(self, field_name), field_name),
             )
+        if re.fullmatch(r"\d+", self.capability_version):
+            object.__setattr__(self, "capability_version", f"{self.capability_version}.0")
         if "/" in self.capability_id:
             raise ValueError("capability_id must not contain '/'")
         if re.fullmatch(r"\d+\.\d+", self.capability_version) is None:
@@ -77,6 +79,8 @@ class CapabilityIdentity:
         capability_id, separator, version = value.rpartition("/")
         if not separator:
             raise ValueError("capability reference must contain a final '/'")
+        if re.fullmatch(r"\d+\.\d+", version) is None:
+            raise ValueError("capability reference version must use major.minor form")
         return cls(capability_id, version)
 
     def to_reference(self) -> str:

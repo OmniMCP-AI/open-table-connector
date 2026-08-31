@@ -41,10 +41,10 @@ _LOCAL_FORMAT_SCHEMES = {
 
 
 def infer_format(endpoint: Endpoint, explicit: FormatName) -> FormatName:
-    if endpoint.uri is not None and endpoint.uri.scheme in _LOCAL_FORMAT_SCHEMES:
-        return _LOCAL_FORMAT_SCHEMES[endpoint.uri.scheme]
     if explicit is not FormatName.AUTO:
         return explicit
+    if endpoint.uri is not None and endpoint.uri.scheme in _LOCAL_FORMAT_SCHEMES:
+        return _LOCAL_FORMAT_SCHEMES[endpoint.uri.scheme]
     if endpoint.path is None:
         return explicit
     suffix = endpoint.path.suffix.casefold()

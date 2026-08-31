@@ -44,13 +44,21 @@ def convert_endpoint(
     if not _is_local(destination):
         raise _unsupported(destination, "convert destinations must be local files or stdout")
 
-    destination_format = infer_format(destination, options.output_format)
+    destination_format = infer_format(destination, options.to_format)
+    if (
+        destination_format is FormatName.AUTO
+        and options.to_format is FormatName.AUTO
+        and options.output_format not in {FormatName.AUTO, FormatName.JSONL}
+    ):
+        # Backward-compatible programmatic callers used output_format for an
+        # extensionless destination before --to-format was introduced.
+        destination_format = options.output_format
     if destination.is_stdio and destination_format is FormatName.AUTO:
         destination_format = FormatName.JSONL
     if destination_format.value == "auto":
         raise ConnectorError(
             ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
-            "local destination format could not be inferred; provide --output-format",
+            "local destination format could not be inferred; provide --to-format",
             {"scheme": "file", "format": destination_format.value},
         )
 
@@ -99,7 +107,7 @@ def _is_local(endpoint: Endpoint) -> bool:
     return (
         endpoint.is_stdio
         or endpoint.path is not None
-        or (endpoint.uri is not None and endpoint.uri.scheme in {"csv", "excel", "md"})
+        or (endpoint.uri is not None and endpoint.uri.scheme in {"csv", "excel", "json", "jsonl", "md"})
     )
 
 

@@ -82,6 +82,28 @@ def test_output_format_selects_extensionless_convert_destination(tmp_path) -> No
     assert json.loads(destination.read_text()) == [{"id": "a"}]
 
 
+def test_to_format_selects_destination_while_output_format_controls_summary(tmp_path) -> None:
+    source = tmp_path / "rows.csv"
+    destination = tmp_path / "rows.data"
+    source.write_text("id\na\n")
+
+    result = _run_module(
+        "convert",
+        "--from",
+        str(source),
+        "--to",
+        str(destination),
+        "--to-format",
+        "json",
+        "--output-format",
+        "table",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(destination.read_text()) == [{"id": "a"}]
+    assert "| status" in result.stdout
+
+
 def test_read_defaults_to_jsonl_for_module_and_otc(tmp_path) -> None:
     source = tmp_path / "rows.csv"
     source.write_text("id\na\n")
