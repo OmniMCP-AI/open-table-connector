@@ -20,7 +20,7 @@ from open_table_connector.maybe_sheet import (
     MaybeSheetReadRequest,
     SubprocessProcessClient,
 )
-from open_table_connector.maybe_sheet.process import _credential_environment
+from open_table_connector.maybe_sheet.process import _absolute_executable, _credential_environment
 
 
 class Process:
@@ -119,6 +119,15 @@ def test_credential_environment_rejects_normalized_collision() -> None:
     with pytest.raises(ConnectorError) as raised:
         _credential_environment({"api-key": "one", "api_key": "two"})
     assert raised.value.code is ConnectorErrorCode.CONFLICT
+
+
+def test_maybe_sheet_binary_must_be_absolute_and_executable(tmp_path) -> None:
+    binary = tmp_path / "mbs"
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    binary.chmod(0o700)
+    assert _absolute_executable(str(binary)) == str(binary)
+    with pytest.raises(ValueError, match="absolute"):
+        _absolute_executable("mbs")
 
 
 def test_maybe_sheet_write_sends_jsonl_to_process() -> None:

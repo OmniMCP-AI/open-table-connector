@@ -1,6 +1,6 @@
 from .connector import MaybeSheetConnector, MaybeSheetReadRequest, ProcessClient
 from .identity import CONNECTOR_IDENTITY, TABLE_WRITE_CAPABILITY
-from .process import SubprocessProcessClient
+from .process import SubprocessProcessClient, _absolute_executable
 from .temporal import (
     MaybeSheetManagedTemporalStore,
     MaybeSheetTemporalExecutor,
@@ -16,5 +16,6 @@ __all__ = [
     "MaybeSheetTemporalExecutor",
     "ProcessClient",
     "SubprocessProcessClient",
+    "_absolute_executable",
     "probe_temporal_capabilities",
 ]

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode
@@ -31,6 +33,16 @@ def _credential_environment(credentials: Mapping[str, str]) -> dict[str, str]:
         originals[safe_key] = original
         normalized[safe_key] = str(value)
     return normalized
+
+
+def _absolute_executable(value: str) -> str:
+    if not isinstance(value, str) or not value.strip() or not Path(value).is_absolute():
+        raise ValueError("MaybeSheet binary must be an absolute path")
+    path = Path(value).resolve()
+    metadata = path.stat()
+    if not stat.S_ISREG(metadata.st_mode) or not metadata.st_mode & 0o111:
+        raise ValueError("MaybeSheet binary must be an executable regular file")
+    return str(path)
 
 
 @dataclass(frozen=True)
@@ -95,4 +107,4 @@ class SubprocessProcessClient:
         return payload
 
 
-__all__ = ["SubprocessProcessClient", "_credential_environment"]
+__all__ = ["SubprocessProcessClient", "_absolute_executable", "_credential_environment"]

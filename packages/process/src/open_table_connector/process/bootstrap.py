@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import stat
-from typing import Mapping
+from collections.abc import Mapping
+from pathlib import Path
 
 from open_table_connector.contract import TableURI
 from open_table_connector.local_files import (
@@ -20,6 +20,7 @@ from open_table_connector.local_files import (
 from open_table_connector.maybe_sheet import (
     MaybeSheetTemporalExecutor,
     SubprocessProcessClient,
+    _absolute_executable,
 )
 from open_table_connector.postgres import (
     PostgresManagedTemporalStore,
@@ -36,7 +37,6 @@ from open_table_connector.timeseries import (
 from .credentials import CredentialResolver
 from .registry import ConnectorProcessRegistry
 from .timeseries import TemporalProcessHandler, temporal_registration
-
 
 _COMMON_FIELDS = {"schema_version", "provider", "descriptor", "target", "managed"}
 _PROVIDER_FIELDS = {
@@ -138,7 +138,9 @@ def _provider_binding(
         return PostgresTemporalExecutor(descriptor, table, managed_store=store), store
     if managed:
         raise ValueError("MaybeSheet managed storage requires live capability proof")
-    client = SubprocessProcessClient(binary=_required_text(document, "maybe_sheet_binary"))
+    client = SubprocessProcessClient(
+        binary=_absolute_executable(_required_text(document, "maybe_sheet_binary"))
+    )
     return MaybeSheetTemporalExecutor(client, descriptor), None
 
 
@@ -150,22 +152,38 @@ def _required_text(document: Mapping[str, object], field: str) -> str:
 
 
 def _load_config(path: Path) -> dict[str, object]:
-    if not path.is_absolute():
-        raise ValueError("OTC_PROCESS_CONFIG must be an absolute path")
-    metadata = path.lstat()
-    if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
-        raise ValueError("process bootstrap config must be a regular non-symlink file")
-    if metadata.st_size > 1_048_576:
-        raise ValueError("process bootstrap config exceeds one MiB")
-    if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
-        raise ValueError("process bootstrap config ownership is not trusted")
-    if stat.S_IMODE(metadata.st_mode) & 0o022:
-        raise ValueError("process bootstrap config is group/world writable")
-    with path.open("r", encoding="utf-8") as stream:
+    with _open_config(path) as stream:
         document = json.load(stream, object_pairs_hook=_reject_duplicate_keys)
     if not isinstance(document, dict):
         raise ValueError("process bootstrap config must be an object")
     return document
+
+
+def _open_config(path: Path):
+    if not path.is_absolute():
+        raise ValueError("OTC_PROCESS_CONFIG must be an absolute path")
+    before = path.lstat() if not hasattr(os, "O_NOFOLLOW") else None
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    try:
+        metadata = os.fstat(fd)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("process bootstrap config must be a regular non-symlink file")
+        if metadata.st_size > 1_048_576:
+            raise ValueError("process bootstrap config exceeds one MiB")
+        if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
+            raise ValueError("process bootstrap config ownership is not trusted")
+        if stat.S_IMODE(metadata.st_mode) & 0o022:
+            raise ValueError("process bootstrap config is group/world writable")
+        if before is not None and (before.st_dev, before.st_ino) != (
+            metadata.st_dev,
+            metadata.st_ino,
+        ):
+            raise ValueError("process bootstrap config changed during open")
+        return os.fdopen(fd, "r", encoding="utf-8")
+    except Exception:
+        os.close(fd)
+        raise
 
 
 def _reject_duplicate_keys(pairs):
