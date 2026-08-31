@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Mapping
+from typing import Any
 
 
 class ConnectorErrorCode(StrEnum):
@@ -34,11 +35,12 @@ _SECRET_KEYS = {
     "secret",
     "token",
 }
+_REDACTED = object()
 
 
 def _safe_value(value: Any, *, key: str | None = None) -> Any:
     if key is not None and key.casefold() in _SECRET_KEYS:
-        return None
+        return _REDACTED
     if isinstance(value, BaseException):
         raise ValueError("safe details cannot contain exception objects")
     if isinstance(value, Mapping):
@@ -48,7 +50,8 @@ def _safe_value(value: Any, *, key: str | None = None) -> Any:
             if text_key.casefold() in _SECRET_KEYS:
                 continue
             safe_item = _safe_value(item, key=text_key)
-            result[text_key] = safe_item
+            if safe_item is not _REDACTED:
+                result[text_key] = safe_item
         return result
     if isinstance(value, (list, tuple)):
         return [_safe_value(item) for item in value]
@@ -74,7 +77,9 @@ class ConnectorError(RuntimeError):
         RuntimeError.__init__(self, self.message)
 
     @classmethod
-    def authentication(cls, message: str, *, safe_details: Mapping[str, Any] = ()) -> "ConnectorError":
+    def authentication(
+        cls, message: str, *, safe_details: Mapping[str, Any] | None = None
+    ) -> ConnectorError:
         return cls(ConnectorErrorCode.AUTHENTICATION, message, safe_details)
 
     def to_wire(self) -> dict[str, Any]:

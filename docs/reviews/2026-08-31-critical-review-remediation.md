@@ -45,8 +45,8 @@ that disposition with `verified`, `invalid`, or `superseded`.
 | C11 | Schema misses semantic invariants | P1 | Specification 1, 3 | normative/schema tests | hypothesis | pending |
 | D1 | USER_ENTERED enables formulas | P1 | Correctness 6 | write option test | verified | 37e93dd |
 | D2 | Postgres read gate allows writes | P1 | Correctness 4 | read-only transaction test | verified | pending |
-| D3 | URI scrubbing misses empty/fragments | P1 | Process 3 | URI security tests | hypothesis | pending |
-| D4 | ResolveContext repr leaks credentials | P1 | Process 3 | repr/redaction test | hypothesis | pending |
+| D3 | URI scrubbing misses empty/fragments | P1 | Process 3 | URI security tests | verified | pending |
+| D4 | ResolveContext repr leaks credentials | P1 | Process 3 | repr/redaction test | verified | pending |
 | D5 | maybe_sheet env/cache collisions | P1 | Process 3 | key/cache tests | hypothesis | pending |
 | D6 | Bootstrap TOCTOU/PATH/env leakage | P1 | Process 3 | bootstrap security tests | hypothesis | pending |
 | D7 | Redaction over/under-matches | P1 | Process 6 | structured redaction tests | hypothesis | pending |
@@ -58,7 +58,7 @@ that disposition with `verified`, `invalid`, or `superseded`.
 | E6 | ATOMIC-only conformance | P2 | Specification 2 | visibility cases | hypothesis | pending |
 | E7 | CLI json/jsonl schemes inconsistent | P2 | Packaging 4 | registry tests | hypothesis | pending |
 | E8 | Usage errors lose actionable details | P2 | Packaging 5 | CLI error tests | hypothesis | pending |
-| E9 | ConnectorError unsafe defaults/None loss | P2 | Process 6 | error serialization tests | hypothesis | pending |
+| E9 | ConnectorError unsafe defaults/None loss | P2 | Process 6 | error serialization tests | verified | pending |
 | E10 | Invalid lazy type expression | P2 | Specification 6 | get_type_hints test | hypothesis | pending |
 | E11 | Capability names inconsistent | P2 | Specification 5 | identity tests | verified | pending |
 | E12 | Registry shadows/dead write routes | P2 | Packaging 4 | collision/route tests | hypothesis | pending |

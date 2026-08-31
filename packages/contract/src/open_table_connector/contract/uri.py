@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 from urllib.parse import parse_qsl, urlsplit
-
 
 _SECRET_QUERY_KEYS = {
     "access_token",
@@ -16,6 +16,14 @@ _SECRET_QUERY_KEYS = {
     "secret",
     "token",
 }
+
+
+def _secret_parameter_keys(text: str) -> set[str]:
+    return {
+        key.casefold()
+        for key, _value in parse_qsl(text, keep_blank_values=True)
+        if key.casefold() in _SECRET_QUERY_KEYS
+    }
 
 
 @dataclass(frozen=True)
@@ -33,7 +41,7 @@ class TableURI:
             raise ValueError("TableURI value must be an absolute URI")
         if parsed.username is not None or parsed.password is not None:
             raise ValueError("TableURI cannot contain credentials")
-        if any(key.casefold() in _SECRET_QUERY_KEYS for key, _ in parse_qsl(parsed.query)):
+        if _secret_parameter_keys(parsed.query) or _secret_parameter_keys(parsed.fragment):
             raise ValueError("TableURI cannot contain credential query parameters")
         if parsed.scheme.casefold() == "file" and not parsed.path.startswith("/"):
             raise ValueError("file TableURI must use an absolute path")
@@ -47,7 +55,7 @@ class TableURI:
         return {"value": self.value}
 
     @classmethod
-    def from_wire(cls, payload: Mapping[str, Any]) -> "TableURI":
+    def from_wire(cls, payload: Mapping[str, Any]) -> TableURI:
         if set(payload) != {"value"}:
             raise ValueError("TableURI wire object must contain only value")
         return cls(payload["value"])

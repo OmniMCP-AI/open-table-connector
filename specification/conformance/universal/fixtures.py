@@ -539,6 +539,7 @@ _POSTGRES_SELECT_STATEMENTS = {
     "SELECT * FROM public.orders",
     "SELECT * FROM public.table",
 }
+_POSTGRES_CONTROL_STATEMENTS = {"SET TRANSACTION READ ONLY"}
 _POSTGRES_EXECUTE_STATEMENTS = {
     "UPDATE public.orders SET amount = %s WHERE id = %s",
     'DROP TABLE IF EXISTS "public"."orders"',
@@ -592,10 +593,18 @@ class RecordingPostgresCursor:
         self.calls.append(
             RecordedSqlCall(statement, normalized_parameters, "execute")
         )
-        if statement not in _POSTGRES_SELECT_STATEMENTS | _POSTGRES_EXECUTE_STATEMENTS:
+        if statement not in (
+            _POSTGRES_SELECT_STATEMENTS
+            | _POSTGRES_CONTROL_STATEMENTS
+            | _POSTGRES_EXECUTE_STATEMENTS
+        ):
             raise AssertionError(f"unexpected recorded SQL: {statement!r}")
         if self._execution_failure is not None:
             raise self._execution_failure
+        if statement in _POSTGRES_CONTROL_STATEMENTS:
+            self._remaining = None
+            self._rowcount = -1
+            return
         if statement in _POSTGRES_SELECT_STATEMENTS:
             if statement == "SELECT * FROM public.table":
                 self._description = [("default_id",), ("label",)]

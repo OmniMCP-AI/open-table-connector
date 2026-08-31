@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from open_table_connector.contract.errors import ConnectorError, ConnectorErrorCode
 
 

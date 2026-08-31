@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from .capabilities import TableMode
-from .errors import ConnectorError
 from .uri import TableURI
 
 
@@ -28,7 +27,7 @@ class ResourceLimits:
 @dataclass(frozen=True)
 class ResolveContext:
     resource_limits: ResourceLimits = field(default_factory=ResourceLimits)
-    credentials: Any = None
+    credentials: Any = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -41,4 +40,3 @@ class ResolvedTable:
 @runtime_checkable
 class URIResolver(Protocol):
     def resolve(self, uri: TableURI, context: ResolveContext) -> ResolvedTable: ...
-
