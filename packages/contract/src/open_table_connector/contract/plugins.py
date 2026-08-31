@@ -6,7 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, TypeAlias
 
-from .identity import ConnectorIdentity
+from .capabilities import TableMode
+from .identity import CapabilityIdentity, ConnectorIdentity
 from .names import SCHEME_HTTPS
 
 PluginFactory: TypeAlias = Callable[..., Any]
@@ -30,6 +31,10 @@ class PluginDescriptor:
     schemes: tuple[str, ...]
     factory: PluginFactory = field(repr=False, compare=False)
     hosts: tuple[str, ...] = ()
+    capabilities: tuple[CapabilityIdentity, ...] = ()
+    modes: tuple[TableMode, ...] = ()
+    local: bool = False
+    handles_paths: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -41,6 +46,18 @@ class PluginDescriptor:
         object.__setattr__(self, "name", self.name.strip())
         object.__setattr__(self, "schemes", _normalise_tokens(self.schemes, "plugin schemes"))
         object.__setattr__(self, "hosts", _normalise_tokens(self.hosts, "plugin hosts"))
+        if any(not isinstance(item, CapabilityIdentity) for item in self.capabilities):
+            raise TypeError("plugin capabilities must be CapabilityIdentity values")
+        object.__setattr__(self, "capabilities", tuple(self.capabilities))
+        if any(not isinstance(item, TableMode) for item in self.modes):
+            raise TypeError("plugin modes must be TableMode values")
+        object.__setattr__(self, "modes", tuple(self.modes))
+        if not isinstance(self.local, bool) or not isinstance(self.handles_paths, bool):
+            raise TypeError("plugin local metadata must be bool values")
+        if self.handles_paths and not self.local:
+            raise ValueError("plugin handles_paths requires local=True")
+        if self.identity.connector_id != self.name:
+            raise ValueError("plugin identity connector_id must equal plugin name")
         if not self.schemes:
             raise ValueError("plugin schemes must not be empty")
         if self.hosts and SCHEME_HTTPS not in self.schemes:

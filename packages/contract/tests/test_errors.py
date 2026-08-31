@@ -22,6 +22,7 @@ def test_error_codes_are_closed_and_stable() -> None:
         "snapshot_unavailable",
         "idempotency_conflict",
         "visibility_incomplete",
+        "configuration",
     )
 
 
@@ -57,3 +58,12 @@ def test_error_preserves_safe_none_values() -> None:
 def test_error_wire_code_enum_is_schema_vocabulary() -> None:
     for code in ConnectorErrorCode:
         assert ConnectorError(code, "message").to_wire()["code"] == code.value
+
+
+def test_configuration_error_constructor_uses_configuration_code() -> None:
+    error = ConnectorError.configuration(
+        "configuration failed", safe_details={"field": "providers"}
+    )
+
+    assert error.code is ConnectorErrorCode.CONFIGURATION
+    assert error.to_wire()["safe_details"] == {"field": "providers"}

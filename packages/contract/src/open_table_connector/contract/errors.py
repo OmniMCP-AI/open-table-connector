@@ -23,6 +23,7 @@ class ConnectorErrorCode(StrEnum):
     SNAPSHOT_UNAVAILABLE = "snapshot_unavailable"
     IDEMPOTENCY_CONFLICT = "idempotency_conflict"
     VISIBILITY_INCOMPLETE = "visibility_incomplete"
+    CONFIGURATION = "configuration"
 
 
 _SECRET_KEYS = {
@@ -81,6 +82,12 @@ class ConnectorError(RuntimeError):
         cls, message: str, *, safe_details: Mapping[str, Any] | None = None
     ) -> ConnectorError:
         return cls(ConnectorErrorCode.AUTHENTICATION, message, safe_details)
+
+    @classmethod
+    def configuration(
+        cls, message: str, *, safe_details: Mapping[str, Any] | None = None
+    ) -> ConnectorError:
+        return cls(ConnectorErrorCode.CONFIGURATION, message, safe_details)
 
     def to_wire(self) -> dict[str, Any]:
         return {
