@@ -32,7 +32,10 @@ def check_boundaries(root: Path) -> list[str]:
         if level is None:
             errors.append(f"{pyproject.parent.name}: unknown distribution {name!r}")
             continue
-        for requirement in project.get("dependencies", []):
+        requirements = list(project.get("dependencies", []))
+        for extra_requirements in project.get("optional-dependencies", {}).values():
+            requirements.extend(extra_requirements)
+        for requirement in requirements:
             dependency = str(requirement).split(" ", 1)[0]
             dependency = dependency.split("<", 1)[0].split(">", 1)[0].split("=", 1)[0]
             if dependency in _ORDER and _ORDER[dependency] > level:

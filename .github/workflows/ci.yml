@@ -16,6 +16,7 @@ jobs:
       - run: uv run --frozen mypy scripts
       - run: uv run --frozen python scripts/check_package_metadata.py
       - run: uv run --frozen python scripts/check_package_boundaries.py
+      - run: uv run --frozen python scripts/check_package_independence.py --build
       - run: uv run --frozen python -m pytest specification/conformance/timeseries/test_schema_parity.py -q
       - run: git diff --check
 
