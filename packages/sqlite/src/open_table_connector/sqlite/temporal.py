@@ -302,7 +302,8 @@ class SQLiteManagedTemporalStore:
         self._bind_target(request.physical_target)
         data, table = self._read_artifact(request.artifact, request.resource_bounds)
         _check_operation_bounds(data, table, request.resource_bounds, started, "SQLite stage")
-        if temporal_descriptor_hash(self.descriptor, table.schema) != request.descriptor_hash:
+        descriptor_schema = table.select(list(self.descriptor.declared_fields)).schema
+        if temporal_descriptor_hash(self.descriptor, descriptor_schema) != request.descriptor_hash:
             raise TemporalExtensionError(
                 TemporalErrorCode.PROTOCOL_INVALID,
                 "staged Arrow schema does not match descriptor_hash",
