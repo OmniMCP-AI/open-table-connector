@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Any, Mapping, TypeAlias
 
 from .scalars import Scalar, scalar_to_wire
@@ -29,6 +30,15 @@ class BaseCoordinate:
             raise ValueError("BaseCoordinate key names must be non-empty strings")
         if any(value is None for value in key.values()):
             raise ValueError("BaseCoordinate key values cannot be null")
+        for value in key.values():
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, float):
+                if not math.isfinite(value):
+                    raise ValueError("BaseCoordinate key values must be finite")
+                continue
+            if not isinstance(value, (str, int)):
+                raise ValueError("BaseCoordinate key values must be string, integer, float, or bool")
         object.__setattr__(self, "key", key)
         if self.ordinal is not None:
             if not isinstance(self.ordinal, int) or isinstance(self.ordinal, bool) or self.ordinal < 1:
@@ -37,8 +47,11 @@ class BaseCoordinate:
                 raise ValueError("BaseCoordinate ordinal requires a snapshot")
         elif self.snapshot_id is not None:
             raise ValueError("BaseCoordinate snapshot requires an ordinal")
-        if self.record_id is None and not key and self.ordinal is None:
+        identities = int(self.record_id is not None) + int(bool(key)) + int(self.ordinal is not None)
+        if identities == 0:
             raise ValueError("BaseCoordinate requires record_id, key, or ordinal")
+        if identities > 1:
+            raise ValueError("BaseCoordinate requires exactly one identity")
         if self.snapshot_id is not None:
             object.__setattr__(self, "snapshot_id", _text(self.snapshot_id, "snapshot_id"))
 
@@ -61,6 +74,22 @@ class BaseCoordinate:
                 }
             }
         return {"ordinal": self.ordinal, "snapshot_id": self.snapshot_id}
+
+    @classmethod
+    def from_wire(cls, payload: Mapping[str, Any]) -> "BaseCoordinate":
+        if not isinstance(payload, Mapping):
+            raise ValueError("BaseCoordinate wire value must be an object")
+        keys = set(payload)
+        if keys == {"record_id"}:
+            return cls(record_id=payload["record_id"])
+        if keys == {"key"}:
+            key = payload["key"]
+            if not isinstance(key, Mapping):
+                raise ValueError("BaseCoordinate key must be an object")
+            return cls(key=dict(key))
+        if keys == {"ordinal", "snapshot_id"}:
+            return cls(ordinal=payload["ordinal"], snapshot_id=payload["snapshot_id"])
+        raise ValueError("BaseCoordinate wire object must contain exactly one identity")
 
 
 @dataclass(frozen=True)

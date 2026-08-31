@@ -33,6 +33,21 @@ def test_base_coordinate_requires_record_id_key_or_ordinal() -> None:
         BaseCoordinate()
 
 
+def test_base_coordinate_rejects_conflicting_identities_and_round_trips_wire() -> None:
+    with pytest.raises(ValueError, match="exactly one identity"):
+        BaseCoordinate(record_id="row-1", key={"id": "row-1"})
+
+    coordinate = BaseCoordinate(key={"id": "row-1"})
+    assert BaseCoordinate.from_wire(coordinate.to_wire()) == coordinate
+
+
+def test_base_coordinate_rejects_nonportable_key_scalars() -> None:
+    with pytest.raises(ValueError, match="string, integer"):
+        BaseCoordinate(key={"when": object()})
+    with pytest.raises(ValueError, match="finite"):
+        BaseCoordinate(key={"value": float("nan")})
+
+
 def test_sheet_coordinate_requires_positive_row_and_preserves_column() -> None:
     coordinate = SheetCoordinate(sheet="Orders", row=3, column="B")
 
