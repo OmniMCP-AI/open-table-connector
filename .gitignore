@@ -8,3 +8,7 @@ build/
 __pycache__/
 *.py[cod]
 .worktrees/
+.DS_Store
+/tmp-review-*
+/.superpowers/brainstorm/
+/.superpowers/sdd/

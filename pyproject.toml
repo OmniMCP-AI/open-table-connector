@@ -5,7 +5,19 @@ package = false
 members = ["packages/contract", "packages/conformance", "packages/timeseries", "packages/process", "packages/local_files", "packages/postgres", "packages/sqlite", "packages/dbt", "packages/maybe_sheet", "packages/google_sheets", "packages/feishu_bitable", "packages/cli"]
 
 [dependency-groups]
-dev = ["pytest>=9,<10"]
+dev = ["pytest>=9,<10", "ruff>=0.12,<1", "mypy>=1.17,<2"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+lint.select = ["E", "F", "I", "UP", "B", "SIM"]
+exclude = ["dist", "build"]
+
+[tool.mypy]
+python_version = "3.11"
+check_untyped_defs = true
+no_implicit_optional = true
+exclude = "(^|/)(dist|build)/"
 
 [tool.otc.support]
 python = ">=3.11,<3.15"

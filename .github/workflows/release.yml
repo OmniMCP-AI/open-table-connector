@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*/v*"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      package: ${{ steps.resolve.outputs.package }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - id: resolve
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$TAG" != */v* ]]; then
+            echo "release tags must be <distribution>/v<version>" >&2
+            exit 1
+          fi
+          distribution="${TAG%/v*}"
+          version="${TAG##*/v}"
+          case "$distribution" in
+            open-table-connector) package="." ;;
+            open-table-connector-*) package="packages/${distribution#open-table-connector-}" ;;
+            *) echo "unknown distribution: $distribution" >&2; exit 1 ;;
+          esac
+          if [[ "$package" == "." ]]; then
+            echo "the virtual workspace cannot be released" >&2
+            exit 1
+          fi
+          test -f "$package/pyproject.toml"
+          actual="$(uv run --frozen python -c 'import pathlib,sys,tomllib; print(tomllib.loads(pathlib.Path(sys.argv[1]).read_text())["project"]["version"])' "$package/pyproject.toml")"
+          [[ "$actual" == "$version" ]] || { echo "tag version $version != package version $actual" >&2; exit 1; }
+          uv sync --all-packages --group dev
+          uv run --frozen python scripts/check_package_metadata.py
+          uv run --frozen python scripts/check_package_boundaries.py
+          uv run --frozen python -m pytest -q
+          git diff --check
+          echo "package=$distribution" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --package "${{ needs.verify.outputs.package }}" --out-dir dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-dist
+          path: dist/*
+
+  publish:
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/${{ needs.verify.outputs.package }}
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist

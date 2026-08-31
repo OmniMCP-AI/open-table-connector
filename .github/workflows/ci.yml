@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages --group dev
+      # The legacy tree is not yet Ruff-clean; keep the new CI-owned scripts gated.
+      - run: uv run --frozen ruff check scripts specification/conformance/universal/test_package_boundaries.py
+      - run: uv run --frozen mypy scripts
+      - run: uv run --frozen python scripts/check_package_metadata.py
+      - run: uv run --frozen python scripts/check_package_boundaries.py
+      - run: uv run --frozen python -m pytest specification/conformance/timeseries/test_schema_parity.py -q
+      - run: git diff --check
+
+  tests:
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: uv sync --all-packages --group dev
+      - run: uv run --frozen python -m pytest -q
+
+  packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages --group dev
+      - run: uv run --frozen python scripts/smoke_wheels.py --build
+
+  postgres-live:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: otc
+          POSTGRES_PASSWORD: otc
+          POSTGRES_DB: otc
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U otc -d otc"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages --group dev
+      - name: Run PostgreSQL lifecycle tests
+        env:
+          OTC_TEST_POSTGRES_DSN: postgresql://otc:otc@localhost:5432/otc
+        run: uv run --frozen python -m pytest packages/postgres/tests/test_temporal_storage_live.py -q
