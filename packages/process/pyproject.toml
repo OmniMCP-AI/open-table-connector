@@ -23,15 +23,6 @@ providers = [
   "open-table-connector-sqlite>=0.1,<0.2",
 ]
 
-[project.entry-points."open_table_connector.process_handlers"]
-csv = "open_table_connector.process.plugins:csv_plugin"
-json = "open_table_connector.process.plugins:json_plugin"
-jsonl = "open_table_connector.process.plugins:json_plugin"
-excel = "open_table_connector.process.plugins:excel_plugin"
-sqlite = "open_table_connector.process.plugins:sqlite_plugin"
-postgres = "open_table_connector.process.plugins:postgres_plugin"
-maybe_sheet = "open_table_connector.process.plugins:maybe_sheet_plugin"
-
 [project.scripts]
 otc-process = "open_table_connector.process.__main__:main"
 

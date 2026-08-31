@@ -10,6 +10,9 @@ license = { text = "Apache-2.0" }
 readme = "README.md"
 dependencies = ["open-table-connector-contract>=0.1,<0.2"]
 
+[project.entry-points."open_table_connector.providers"]
+dbt = "open_table_connector.dbt.plugin:provider_plugin"
+
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
 

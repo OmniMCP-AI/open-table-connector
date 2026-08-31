@@ -14,6 +14,9 @@ dependencies = [
   "pyarrow>=14,<20",
 ]
 
+[project.entry-points."open_table_connector.providers"]
+feishu_bitable = "open_table_connector.feishu_bitable.plugin:provider_plugin"
+
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
 

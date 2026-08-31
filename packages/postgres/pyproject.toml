@@ -13,6 +13,12 @@ dependencies = ["open-table-connector-contract>=0.1,<0.2", "open-table-connector
 [project.optional-dependencies]
 live = ["psycopg2-binary>=2.9,<3"]
 
+[project.entry-points."open_table_connector.process_handlers"]
+postgres = "open_table_connector.postgres.plugin:process_plugin"
+
+[project.entry-points."open_table_connector.providers"]
+postgres = "open_table_connector.postgres.plugin:provider_plugin"
+
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
 open-table-connector-timeseries = { workspace = true }

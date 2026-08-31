@@ -17,6 +17,15 @@ dependencies = [
   "pyarrow>=14,<20",
 ]
 
+[project.entry-points."open_table_connector.process_handlers"]
+csv = "open_table_connector.local_files.plugin:csv_process_plugin"
+json = "open_table_connector.local_files.plugin:json_process_plugin"
+jsonl = "open_table_connector.local_files.plugin:json_process_plugin"
+excel = "open_table_connector.local_files.plugin:excel_process_plugin"
+
+[project.entry-points."open_table_connector.providers"]
+local_files = "open_table_connector.local_files.plugin:provider_plugin"
+
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
 open-table-connector-timeseries = { workspace = true }

@@ -14,6 +14,9 @@ dependencies = [
   "pyarrow>=14,<20",
 ]
 
+[project.entry-points."open_table_connector.providers"]
+google_sheets = "open_table_connector.google_sheets.plugin:provider_plugin"
+
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
 

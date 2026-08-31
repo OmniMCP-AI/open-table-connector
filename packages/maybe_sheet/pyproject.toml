@@ -10,6 +10,12 @@ license = { text = "Apache-2.0" }
 readme = "README.md"
 dependencies = ["open-table-connector-contract>=0.1,<0.2", "open-table-connector-timeseries>=0.1,<0.2", "polars>=1,<2", "pyarrow>=14,<20"]
 
+[project.entry-points."open_table_connector.process_handlers"]
+maybe_sheet = "open_table_connector.maybe_sheet.plugin:process_plugin"
+
+[project.entry-points."open_table_connector.providers"]
+maybe_sheet = "open_table_connector.maybe_sheet.plugin:provider_plugin"
+
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
 open-table-connector-timeseries = { workspace = true }
