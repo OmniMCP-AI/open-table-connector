@@ -26,6 +26,7 @@ from .execution import (
 )
 from .identity import CapabilityIdentity, ConnectorIdentity
 from .inspect import InspectRequest, TableInspection, TableInspector
+from .plugins import PluginDescriptor, PluginFactory
 from .read import (
     ArrowReadResult,
     ArrowTableReader,
@@ -63,6 +64,8 @@ __all__ = [
     "ArrowTableReader",
     "PolarsReadResult",
     "PolarsTableReader",
+    "PluginDescriptor",
+    "PluginFactory",
     "ResolvedTable",
     "ResolveContext",
     "ResourceLimits",
