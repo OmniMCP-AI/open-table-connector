@@ -1,7 +1,8 @@
 """Portable temporal contracts for Open Table Connector."""
 
-from .capabilities import ALL_CAPABILITIES
+from .artifacts import VerifiedArtifact, read_verified_artifact
 from .buckets import calendar_bucket_start, fixed_bucket_start
+from .capabilities import ALL_CAPABILITIES
 from .descriptor import (
     DuplicatePolicy,
     TemporalOrdering,
@@ -57,9 +58,9 @@ from .storage import (
     ManagedTemporalStore,
     PortableTemporalExecutor,
     TemporalErrorCode,
-    TemporalExtensionError,
     TemporalExecutionRequest,
     TemporalExecutionResult,
+    TemporalExtensionError,
     validate_stage_retry,
 )
 
@@ -69,6 +70,7 @@ __all__ = [
     "AggregateFunction",
     "AggregateMeasure",
     "ArrowArtifactReference",
+    "VerifiedArtifact",
     "AsOf",
     "BucketAggregate",
     "CalendarBucket",
@@ -118,6 +120,7 @@ __all__ = [
     "temporal_descriptor_hash",
     "validate_plan_for_descriptor",
     "validate_stage_retry",
+    "read_verified_artifact",
     "arrow_time_bounds",
     "storage_to_timestamp",
     "timestamp_to_storage",
