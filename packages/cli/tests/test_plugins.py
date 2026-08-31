@@ -16,7 +16,7 @@ def test_cli_imports_and_builds_without_provider_distributions(monkeypatch) -> N
     )
     for module in tuple(sys.modules):
         if any(module == item or module.startswith(item + ".") for item in blocked):
-            sys.modules.pop(module, None)
+            monkeypatch.delitem(sys.modules, module, raising=False)
     real_import = builtins.__import__
 
     def guarded_import(name, *args, **kwargs):

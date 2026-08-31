@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
@@ -110,11 +111,17 @@ class MaybeSheetCliAdapter(ConnectorAdapter, WritePreflightAdapter):
                 timeout_seconds=(
                     int(self.timeout_seconds)
                     if options.timeout is None
-                    else int(options.timeout)
+                    else math.ceil(options.timeout)
                 ),
             ),
-            self.credentials,
+            self._credentials_for_options(options),
         )
+
+    def _credentials_for_options(self, options: AdapterOptions) -> dict[str, str]:
+        token = getattr(options, "token", None)
+        if not token:
+            return dict(self.credentials)
+        return {CREDENTIAL_ACCESS_TOKEN: token}
 
     def read(self, endpoint: AdapterEndpoint, options: AdapterOptions) -> ArrowReadResult:
         return self.connector.read_arrow(self._request(endpoint, options))
@@ -146,7 +153,7 @@ class MaybeSheetCliAdapter(ConnectorAdapter, WritePreflightAdapter):
             options.if_exists,
             self._target(endpoint, options),
         )
-        return self.connector.write(request, credentials=self.credentials)
+        return self.connector.write(request, credentials=self._credentials_for_options(options))
 
 
 def _factory(context: ProviderFactoryContext) -> MaybeSheetCliAdapter:
@@ -164,11 +171,7 @@ def _factory(context: ProviderFactoryContext) -> MaybeSheetCliAdapter:
     if process is None:
         binary = context.environment.get(SETTING_BINARY, "mbs")
         process = SubprocessProcessClient(
-            binary=(
-                _absolute_executable(binary)
-                if binary != "mbs"
-                else binary
-            ),
+            binary=(_absolute_executable(binary) if binary != "mbs" else binary),
             timeout_seconds=float(timeout),
         )
     return MaybeSheetCliAdapter(

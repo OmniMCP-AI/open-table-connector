@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import polars as pl
@@ -37,6 +38,7 @@ from .connector import (
     FeishuBitableReadOptions,
     FeishuBitableTableReadRequest,
 )
+from .identity import FEISHU_RECORD_ID_FIELD
 
 
 @dataclass
@@ -48,6 +50,18 @@ class FeishuBitableCliAdapter(ConnectorAdapter, WritePreflightAdapter):
     hosts: tuple[str, ...] = ()
     capabilities = tuple(CAPABILITY_MANIFEST.capabilities)
     modes = tuple(CAPABILITY_MANIFEST.modes)
+    provider_owned_fields = (FEISHU_RECORD_ID_FIELD,)
+
+    def _connector_for_options(self, options: AdapterOptions) -> FeishuBitableConnector:
+        token = getattr(options, "token", None)
+        if not token:
+            return self.connector
+        return FeishuBitableConnector(
+            self.connector._transport,
+            tenant_access_token=token,
+            timeout=self.connector._timeout,
+            api_endpoint=self.connector._api_endpoint,
+        )
 
     @classmethod
     def from_context(cls, context: ProviderFactoryContext) -> FeishuBitableCliAdapter:
@@ -60,10 +74,12 @@ class FeishuBitableCliAdapter(ConnectorAdapter, WritePreflightAdapter):
             _limits(options),
             FeishuBitableReadOptions(field_names=options.field_names),
         )
-        return self.connector.read_arrow(request)
+        return self._connector_for_options(options).read_arrow(request)
 
     def inspect(self, endpoint: AdapterEndpoint, options: AdapterOptions) -> TableInspection:
-        return self.connector.inspect(InspectRequest(_uri(endpoint), _limits(options)))
+        return self._connector_for_options(options).inspect(
+            InspectRequest(_uri(endpoint), _limits(options))
+        )
 
     def preflight_write(self, endpoint: AdapterEndpoint, options: AdapterOptions) -> None:
         del endpoint
@@ -83,7 +99,7 @@ class FeishuBitableCliAdapter(ConnectorAdapter, WritePreflightAdapter):
     def write(
         self, endpoint: AdapterEndpoint, table: pa.Table, options: AdapterOptions
     ) -> TableWriteResult:
-        return self.connector.write(
+        return self._connector_for_options(options).write(
             TableWriteRequest(
                 _uri(endpoint), pl.from_arrow(table), options.if_exists, options.target
             )
@@ -103,7 +119,7 @@ def _uri(endpoint: AdapterEndpoint):
 def _limits(options: AdapterOptions):
     from open_table_connector.contract import ResourceLimits
 
-    timeout = None if options.timeout is None else int(options.timeout)
+    timeout = None if options.timeout is None else math.ceil(options.timeout)
     return ResourceLimits(max_rows=options.limit, timeout_seconds=timeout)
 
 

@@ -7,7 +7,9 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
 
-from .names import SCHEME_FILE
+from .names import (
+    SCHEME_FILE,
+)
 
 _SECRET_QUERY_KEYS = {
     "access_token",
@@ -18,8 +20,6 @@ _SECRET_QUERY_KEYS = {
     "secret",
     "token",
 }
-
-
 def _secret_parameter_keys(text: str) -> set[str]:
     return {
         key.casefold()

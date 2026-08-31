@@ -599,12 +599,12 @@ class RecordingPostgresCursor:
             | _POSTGRES_EXECUTE_STATEMENTS
         ):
             raise AssertionError(f"unexpected recorded SQL: {statement!r}")
-        if self._execution_failure is not None:
-            raise self._execution_failure
         if statement in _POSTGRES_CONTROL_STATEMENTS:
             self._remaining = None
             self._rowcount = -1
             return
+        if self._execution_failure is not None:
+            raise self._execution_failure
         if statement in _POSTGRES_SELECT_STATEMENTS:
             if statement == "SELECT * FROM public.table":
                 self._description = [("default_id",), ("label",)]

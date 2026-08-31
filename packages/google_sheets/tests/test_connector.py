@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import polars as pl
 import pytest
+from urllib.error import URLError
 
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode, InspectRequest, ResourceLimits, ResolveContext, TableReadRequest, TableURI, TableWriteRequest
 from open_table_connector.google_sheets import GoogleSheetsConnector, GoogleSheetsReadOptions
@@ -68,6 +69,18 @@ def test_google_sheets_transport_bounds_response_body(monkeypatch: pytest.Monkey
     with pytest.raises(ConnectorError) as raised:
         UrllibSheetsTransport().request("GET", "https://example.test", headers={})
     assert raised.value.code is ConnectorErrorCode.RESOURCE_LIMIT_EXCEEDED
+
+
+def test_google_sheets_transport_classifies_url_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "open_table_connector.google_sheets.connector.urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(URLError(TimeoutError("read timed out"))),
+    )
+
+    with pytest.raises(ConnectorError) as raised:
+        UrllibSheetsTransport().request("GET", "https://example.test", headers={})
+
+    assert raised.value.code is ConnectorErrorCode.TIMEOUT
 
 
 def test_google_sheets_reads_values_and_builds_receipt() -> None:
