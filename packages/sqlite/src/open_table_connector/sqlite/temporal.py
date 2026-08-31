@@ -669,7 +669,8 @@ class SQLiteManagedTemporalStore:
         return data, pa.ipc.open_stream(pa.BufferReader(data)).read_all()
 
     def _bind_target(self, target: TableURI) -> None:
-        if target != self.database_uri:
+        database_target = TableURI(target.value.split("#", 1)[0])
+        if database_target != self.database_uri:
             raise TemporalExtensionError(
                 TemporalErrorCode.PROTOCOL_INVALID,
                 "managed SQLite target does not match the configured database",
