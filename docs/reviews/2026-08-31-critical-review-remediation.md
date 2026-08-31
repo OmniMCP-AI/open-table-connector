@@ -18,12 +18,12 @@ that disposition with `verified`, `invalid`, or `superseded`.
 | A5 | SQL observed range assumes ns | P0 | Correctness 4 | precision receipt tests | verified | dbcabdf |
 | A6 | Hosted if_exists=error overwrites/appends | P0 | Correctness 6–7 | provider write tests | verified | 37e93dd |
 | A7 | CLI CSV uses Markdown escaping | P0 | Packaging 4–5 | delimiter/newline tests | verified | 0c6846c |
-| A8 | IPC fingerprint depends on chunking | P1 | Correctness 5 | chunk invariance test | verified | pending |
-| A9 | Receipt counts/identity fabricated | P1 | Correctness 1 | receipt evidence tests | verified | pending |
+| A8 | IPC fingerprint depends on chunking | P1 | Correctness 5 | chunk invariance test | verified | 7987b86 |
+| A9 | Receipt counts/identity fabricated | P1 | Correctness 1 | receipt evidence tests | verified | 7987b86 |
 | A10 | --from-format ignored for paths | P1 | Packaging 4 | CLI routing tests | verified | 0c6846c |
 | A11 | Qualified SQLite names fail | P0 | Correctness 3 | reader tests | verified | bed6ac9 |
 | A12 | Google gid treated as title | P1 | Correctness 6 | URL parsing tests | verified | 37e93dd |
-| A13 | output_order fields unchecked | P1 | Specification 1 | plan validation tests | verified | pending |
+| A13 | output_order fields unchecked | P1 | Correctness 7 | plan validation tests | verified | 7987b86 |
 | A14 | SQLite in-memory state resets | P0 | Correctness 4 | lifecycle test | verified | bed6ac9 |
 | A15 | SQLite bucket arithmetic truncates | P0 | Correctness 3 | pre-origin tests | verified | dbcabdf |
 | B1 | Frame header short-read unsafe | P0 | Process 4 | framing tests | hypothesis | pending |
