@@ -401,12 +401,9 @@ class LocalAdapter:
         )
 
     def _uses_legacy_reader(self, endpoint: Endpoint, options: CliOptions) -> bool:
-        if endpoint.is_stdio or options.from_format in {FormatName.JSON, FormatName.JSONL}:
+        if endpoint.is_stdio or options.from_format is not FormatName.AUTO:
             return True
-        return (
-            options.from_format is FormatName.AUTO
-            and self._format(endpoint, options) in {FormatName.JSON, FormatName.JSONL}
-        )
+        return self._format(endpoint, options) in {FormatName.JSON, FormatName.JSONL}
 
     def read(self, endpoint: Endpoint, options: CliOptions) -> ArrowReadResult:
         if not self._uses_legacy_reader(endpoint, options):

@@ -1,5 +1,6 @@
 import io
 import json
+import csv
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -9,7 +10,7 @@ import pytest
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode
 from open_table_connector.cli.formats import infer_format, read_local, write_local
 from open_table_connector.cli.model import Endpoint, FormatName, parse_endpoint
-from open_table_connector.cli.output import emit_error
+from open_table_connector.cli.output import emit_csv, emit_error
 
 
 def _strict_json_loads(text: str):
@@ -87,6 +88,12 @@ def test_table_writer_escapes_special_characters_and_keeps_rows_aligned() -> Non
         r"| line1\nline2 |",
     ]
     assert len({len(line) for line in lines}) == 1
+
+
+def test_summary_csv_preserves_pipes_backslashes_and_newlines() -> None:
+    stream = io.StringIO()
+    emit_csv([{"value": "a|b\\c\nnext"}], stream)
+    assert list(csv.DictReader(io.StringIO(stream.getvalue()))) == [{"value": "a|b\\c\nnext"}]
 
 
 @pytest.mark.parametrize("value", ["left|right", r"C:\temp", "line1\nline2"])

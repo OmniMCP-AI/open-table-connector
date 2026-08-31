@@ -81,6 +81,22 @@ def _table_display(value: Any) -> str:
     return str(value)
 
 
+def _csv_cell(value: Any) -> str:
+    """Return a lossless scalar or deterministic JSON for structured cells."""
+    value = _wire(value)
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    return str(value)
+
+
 def emit_table(headers: Sequence[str], rows: Iterable[Sequence[Any]], out: TextIO) -> None:
     """Emit a small deterministic Markdown table for human-readable output."""
     names = [str(header) for header in headers]
@@ -107,7 +123,7 @@ def emit_csv(
     writer = csv.writer(out, lineterminator="\n")
     writer.writerow(columns)
     for record in records:
-        writer.writerow([_display(record.get(column)) for column in columns])
+        writer.writerow([_csv_cell(record.get(column)) for column in columns])
 
 
 def emit_record(

@@ -17,14 +17,14 @@ that disposition with `verified`, `invalid`, or `superseded`.
 | A4 | Postgres isolation after DDL | P0 | Correctness 4 | live/recording SQL test | verified | 47175b9 |
 | A5 | SQL observed range assumes ns | P0 | Correctness 4 | precision receipt tests | verified | dbcabdf |
 | A6 | Hosted if_exists=error overwrites/appends | P0 | Correctness 6–7 | provider write tests | verified | 37e93dd |
-| A7 | CLI CSV uses Markdown escaping | P0 | Packaging 4–5 | delimiter/newline tests | hypothesis | pending |
+| A7 | CLI CSV uses Markdown escaping | P0 | Packaging 4–5 | delimiter/newline tests | verified | pending |
 | A8 | IPC fingerprint depends on chunking | P1 | Correctness 5 | chunk invariance test | hypothesis | pending |
 | A9 | Receipt counts/identity fabricated | P1 | Correctness 1 | receipt evidence tests | hypothesis | pending |
-| A10 | --from-format ignored for paths | P1 | Packaging 4 | CLI routing tests | hypothesis | pending |
-| A11 | Qualified SQLite names fail | P0 | Correctness 3 | reader tests | hypothesis | pending |
+| A10 | --from-format ignored for paths | P1 | Packaging 4 | CLI routing tests | verified | pending |
+| A11 | Qualified SQLite names fail | P0 | Correctness 3 | reader tests | verified | pending |
 | A12 | Google gid treated as title | P1 | Correctness 6 | URL parsing tests | verified | 37e93dd |
 | A13 | output_order fields unchecked | P1 | Specification 1 | plan validation tests | hypothesis | pending |
-| A14 | SQLite in-memory state resets | P0 | Correctness 4 | lifecycle test | hypothesis | pending |
+| A14 | SQLite in-memory state resets | P0 | Correctness 4 | lifecycle test | verified | pending |
 | A15 | SQLite bucket arithmetic truncates | P0 | Correctness 3 | pre-origin tests | verified | dbcabdf |
 | B1 | Frame header short-read unsafe | P0 | Process 4 | framing tests | hypothesis | pending |
 | B2 | Serialization failures disappear/leak | P0 | Process 2–6 | failure envelope tests | hypothesis | pending |
