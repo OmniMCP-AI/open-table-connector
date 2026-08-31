@@ -1,773 +1,1131 @@
-# Polars-First OTC Python SDK
+# Polars-First OTC Python SDK Architecture
 
-**Status:** proposed for review; active scope
+**Status:** proposed architectural design; pending final review before a
+separate implementation-planning gate.
 
-**Date:** 2026-08-31
+**Assumption:** the current CLI refactor is completed before this migration.
+Other unexecuted implementation plans are not assumed complete.
 
-**Assumption:** the config-driven provider-owned CLI adapter plan is completed
-before this refactor begins. This design preserves that plan's behavior while
-moving application orchestration out of the CLI.
+## Decision
 
-## Problem
+Open Table Connector becomes an application-independent Python SDK between
+applications and pluggable physical-medium Connectors:
 
-Open Table Connector already has framework-neutral Connector protocols,
-provider packages, plugin descriptors, receipts, portable time-series
-contracts, and a command-line host. It does not yet have a single Python
-application interface that composes those parts.
+```text
+CLI / FinClaw / Python applications
+                 |
+                 v
+          OTC Python SDK
+                 |
+                 v
+   pluggable physical-medium Connectors
+```
 
-Consequently, Python applications such as FinClaw must repeat discovery,
-routing, provider construction, credential handling, request construction, and
-result conversion. The CLI also owns orchestration that belongs in a reusable
-runtime. Completing the current CLI refactor improves provider ownership, but
-still leaves the CLI as the only integrated application host.
+The public value model is intentionally small:
 
-OTC needs a Python-native SDK whose ordinary table value is a
-`polars.DataFrame`. The SDK must support every current neutral table operation
-and every portable time-series addition. The CLI must become a thin reference
-application over that SDK.
+- `polars.DataFrame` is the concrete in-memory table value;
+- `Query` is one immutable deferred table-producing plan;
+- `Table` is one physical, Connector-backed table; and
+- `TableSource` is the accepted source union, not a wrapper callers construct.
 
-The approved but unexecuted FinClaw design also defines a portable SQL Lite
-language, while the OTS design defines a separate Timescale Core SQL slice.
-Leaving the relational compiler in FinClaw would create two table runtimes and
-deny other OTC applications the same facility. This design moves the generic
-relational and portable temporal SQL frontends into OTC while leaving FinClaw
-governance and OTS-specific semantics in their owning applications.
+There is no public logical `Table`, `TableRef`, `TableHandle`, or
+`MaterializedTable`. There is no `Table.frame()` escape hatch. Callers
+manipulate a DataFrame with Polars directly and cross into physical I/O only
+through `Client`, `Table`, or a descriptor-bound time-series view.
+
+Materialization is create-only. Existing Tables are mutated only through
+explicit `insert`, strict keyed `update`, predicate-required `delete`, and
+`drop` operations. There is no generic `write(if_exists=...)`, `replace`,
+`clear`, implicit upsert, or `copy_to` operation.
+
+All evaluated or physical operations use one normalized
+`OperationResult[T]`. Physical evidence remains in plural Receipts and never
+becomes hidden mutable client state or DataFrame metadata.
+
+OTS integration is not part of this implementation. Its future Rust adapter
+is specified separately in
+`2026-08-31-rust-client-ots-bridge-design.md`.
 
 ## Goals
 
-- Provide a small, easy Python interface for reading, inspecting, writing, and
-  copying tables.
-- Use `polars.DataFrame` as the application-facing table type.
-- Support every current table capability: discovery, inspection, ordinary and
-  bounded reads, writes, copy, native SQL execution, and transactions.
-- Add OTC SQL Lite, a read-only SQL:2016-derived relational profile that
-  compiles to a typed portable plan and runs across Connector tables and
-  in-memory Polars frames.
-- Add an OTC SQL Lite temporal profile with TimescaleDB-familiar syntax that
-  compiles to the existing `PortableTemporalPlan`.
-- Support every current portable temporal capability: describe, range scan,
-  latest, as-of, window aggregation, gap fill, append, upsert, and the managed
-  stage/commit/readback/abort lifecycle.
-- Preserve neutral and temporal receipts through explicit evidence-bearing
-  variants.
-- Centralize provider discovery, routing, configuration, credentials,
-  capability preflight, lifecycle, and error normalization in the SDK.
-- Keep physical-medium implementations independently installable and
-  discoverable.
-- Make the CLI a thin demonstration of the same public SDK used by other
-  applications.
-- Preserve an eventual language-neutral bridge without making the deferred OTS
-  integration part of this implementation.
+1. Make OTC straightforward to use from ordinary Python and Polars code.
+2. Normalize table-shaped operations without erasing meaningful base-mode and
+   sheet-mode differences.
+3. Support every current normalized Table operation and the declared portable
+   time-series operations through one SDK.
+4. Keep the CLI a thin parser/renderer that demonstrates SDK usage.
+5. Provide portable relational and temporal SQL with one semantic contract
+   across DataFrames, files, databases, base-mode Tables, and sheet-mode
+   Tables.
+6. Keep provider discovery, routing, credentials, bounds, retries,
+   reconciliation, receipts, and Arrow conversion out of applications.
+7. Let independently distributed Connectors extend physical media without
+   changing the SDK interface.
+8. Preserve a stable internal host port for a future Rust adapter without
+   exposing Arrow or process mechanics to Python callers.
 
 ## Non-goals
 
-- This design does not rewrite OTS or integrate it during the Python SDK
-  refactor.
-- It does not become a general dataframe transformation or SQL database
-  framework. SQL Lite is a bounded, read-only query surface with a closed
-  grammar and typed plan.
-- The temporal SQL profile does not add joins, arbitrary expressions,
-  unbounded temporal queries, or operations excluded by the portable temporal
-  contract.
-- SQL Lite does not claim full SQL:2016 compliance, accept executable UDFs,
-  perform network/file discovery from SQL text, or emulate native provider
-  extensions.
-- It does not require every Connector to support every operation. Availability
-  remains capability-based.
-- It does not expose provider secrets through config documents, objects,
-  receipts, logs, or errors.
-- It does not make PyArrow part of the normal application interface. Arrow may
-  remain an internal Connector and artifact carrier.
-- It does not preserve CLI-shaped adapter options as the SDK's public request
-  model.
+- Rewriting OTS in Python or integrating OTS in this phase.
+- Treating a worksheet or arbitrary cell range as a Table.
+- Exposing workbook grids, formulas, arbitrary coordinates, or provider UI
+  features through the normalized Table interface.
+- General SQL:2016 conformance or arbitrary provider SQL portability.
+- Executing SQLGlot ASTs, Polars SQLContext statements, or caller-provided
+  DuckDB SQL.
+- Making an arbitrary `polars.LazyFrame` a Connector input. A LazyFrame may
+  hide external scans, Python UDFs, or unbounded work outside OTC policy.
+- Attaching lineage, credentials, receipts, themes, or provider identity to a
+  Polars DataFrame.
+- Claiming atomicity, snapshot stability, pushdown, or presentation fidelity
+  that a Connector cannot prove.
+- Adding an async facade before there are genuine async Connector interfaces.
 
-## Domain Model
+## Domain and Value Model
 
-The design uses these terms consistently:
+### Public values
 
-- **Application**: a caller such as the OTC CLI, FinClaw, a notebook, or a
-  service.
-- **SDK**: the Python application interface and runtime composition layer.
-- **Client**: one configured, reusable SDK runtime with explicit lifecycle.
-- **Table handle**: an application view of one routed physical table target.
-- **Time-series handle**: a descriptor-bound temporal view of one table target.
-- **SQL Lite**: OTC's closed, versioned, read-only SQL application language.
-- **Portable relational plan**: the typed, provider-neutral plan compiled from
-  the SQL Lite relational profile.
-- **Native SQL**: explicitly provider-dialect SQL passed only to a Connector
-  that advertises the physical SQL capability.
-- **Connector**: a framework-neutral physical-medium implementation.
-- **Provider plugin**: zero-I/O route metadata plus lazy factories for one
-  Connector and its optional extensions.
-- **Extension**: a capability family that requires types outside the base
-  contract, initially SQL/query and time-series families.
-- **Receipt**: immutable evidence about an observed or performed physical
-  operation.
-- **Binding**: framework-specific translation. No Binding belongs in the
-  Python SDK; the future OTS Binding remains in OTS.
+| Value | Meaning | Contains | Does not contain |
+| --- | --- | --- | --- |
+| `pl.DataFrame` | Concrete in-memory table value | schema and rows | URI, credentials, lineage, receipts, theme, provider identity |
+| `Query` | Deferred table-producing computation | Portable Plan, explicit sources, schema, limits, policy, plan identity | SQLGlot AST, provider objects, credential values |
+| `Table` | Physical table handle | canonical Table URI, Table Mode, observed schema/identity, client dispatch binding | row payload, credentials, Connector instance |
+| `TableTheme` | Portable presentation intent | semantic table regions and portable properties | grid coordinates or provider style IDs |
+| `TableStyle` | Concrete presentation observation or realization | capability-scoped physical properties | portable data semantics |
 
-`Adapter` is not used for physical implementations or for the Rust transport
-client. The existing CLI adapter layer is transitional and is removed from the
-application architecture by this refactor.
+`Table` always means the physical type. A DataFrame is the in-memory table
+value. A `Query` is deferred work that evaluates to a DataFrame. These names
+must not be overloaded by compatibility aliases.
 
-## Architecture
+### Table Source
 
-```text
-CLI / FinClaw / notebooks / Python services
-                    |
-                    v
-        open_table_connector.sdk
-          Client and resource handles
-                    |
-          SQL Lite compile/execute
-          relational | temporal
-                    |
-        discovery, routing, credentials,
-        preflight, lifecycle, receipts
-                    |
-                    v
-       provider-owned Connector plugins
-                    |
-                    v
- CSV / Excel / SQLite / PostgreSQL / Sheets / Maybe / ...
+`TableSource` is a closed accepted-source union:
+
+```python
+TableSource = (
+    pl.DataFrame
+    | Query
+    | Table
+    | SheetRangeSource
+)
 ```
 
-The dependency direction is strict:
+It is a typing and normalization concept, not a metadata-bearing wrapper.
 
-```text
-cli --------> sdk --------> sql --------> timeseries
-                 \          \-----------> contract
-                  \----------------------> contract
-                  \----------------------> timeseries
+- A DataFrame is snapshotted into a canonical bounded carrier when an
+  operation begins.
+- A Query binds only explicitly supplied sources and is evaluated under its
+  recorded limits and consistency policy.
+- A Table source is read completely from one pinned or stability-proven
+  snapshot.
+- A `SheetRangeSource` names an exact grid, fixed range, exact declared schema,
+  header/data policy, and value/formula rendering policy. It is a source, not
+  a Table. Collection verifies the observed schema against the declaration.
 
-provider -----------------> contract
-provider SQL lowering ----> sql ----------> contract
-provider temporal code ---> timeseries ---> contract
+Callers that do not yet know the range schema use the physical binding
+operation:
+
+```python
+source = client.bind_sheet_range(
+    grid=grid_address,
+    cell_range="A1:D500",
+    header=True,
+    schema=None,
+    schema_policy="infer_complete",
+).require_value()
 ```
 
-The SDK may depend on the contract, SQL, and time-series distributions.
-Providers must not depend on the SDK or CLI; a provider with portable-plan
-pushdown may depend on SQL. The SQL package may depend on contract, time-series,
-and Polars but not on SDK or providers. The contract must not import SDK, SQL,
-providers, CLI, process host, or time-series. The time-series package may
-depend on contract but not on SDK or SQL.
+`bind_sheet_range()` returns `OperationResult[SheetRangeSource]`. It inspects
+or reads the complete bounded range under finite limits, records a physical
+Receipt, and returns an exact schema/header/rendering contract. Its two closed
+schema policies are `validate_declared`, which requires `schema=` and validates
+it against an exact provider schema or complete observation, and
+`infer_complete`, which requires `schema=None` and infers from the complete
+range. Neither policy samples rows or treats the whole worksheet as the range
+schema. `SheetRangeSource` has no public free constructor; Client binding is
+the only public creation path and attaches its dispatch affinity. The returned
+source carries the observed revision/snapshot constraint; later collection
+fails if it changed unless the caller explicitly rebinds.
 
-## Package Boundaries
+Every Client operation that accepts a Table Source enforces physical-source
+affinity before I/O. A `Table` or `SheetRangeSource` may be collected,
+materialized, or captured in a Query only by the Client that opened or bound
+it. Module-level convenience operations accept physical handles from the
+default Client only. Moving work to another Client requires reopening the
+canonical Table address or rebinding the range there; OTC never imports a
+foreign dispatch binding or credential lease implicitly.
 
-### `open-table-connector-sdk`
+Schema-only materialization uses an ordinary zero-row DataFrame with an exact
+Polars schema:
 
-A new `packages/sdk` distribution exposes `open_table_connector.sdk` and owns:
+```python
+empty = pl.DataFrame(
+    schema={
+        "order_id": pl.Int64,
+        "amount": pl.Decimal(18, 2),
+    }
+)
+```
 
-- `Client` and the module-level convenience functions;
-- immutable SDK configuration models and loading;
-- credential resolver interfaces and scoped credential leases;
-- provider and extension discovery;
-- deterministic URI and path routing;
-- lazy provider activation and provider lifecycle;
-- capability preflight and protocol selection;
-- application-facing request options and result types;
-- SQL source binding, execution-policy selection, and composite receipts;
-- table copy orchestration;
-- Arrow-to-Polars conversion at the application boundary;
-- stable error normalization; and
-- default-client lifecycle for one-shot convenience calls.
+There is no separate schema-only Table proposal type.
 
-It does not own physical codecs, provider-specific transports, CLI rendering,
-or OTS semantics.
+### Base-mode and sheet-mode
 
-### `open-table-connector-contract`
+`TableMode` has exactly two public values:
 
-The contract distribution remains the provider-facing SPI. Its small neutral
-protocols continue to describe URI resolution, inspection, Arrow and Polars
-reads, bounded reads, writes, provider-native SQL execution, and transactions.
+```python
+TableMode.BASE_MODE   # wire value: "base-mode"
+TableMode.SHEET_MODE  # wire value: "sheet-mode"
+```
 
-Operation requests are upgraded to carry a complete `TableRef`, rather than
-only a URI, wherever a physical relation or sheet selection affects the
-operation. The contract adds a Polars counterpart to the bounded Arrow result
-and corrects transaction begin to return a real transaction handle.
+These are the new normalized public/wire values. Current contract v1 schemas
+encode `"base"` and `"sheet"`; adapters decode those legacy values during
+migration, but existing v1 capability and Receipt schemas are never rewritten
+in place. Emitting `"base-mode"`/`"sheet-mode"` requires a versioned successor
+schema and updated compatibility fixtures.
 
-`TableInspection` is upgraded to carry an exact canonical Arrow schema and
-declared unique-key metadata, not only column names and a schema fingerprint.
-The SDK exposes the application view as a Polars schema. A provider may report
-a schema obtained from authoritative metadata or a complete bounded
-observation, never from an unlabelled sample. SQL preparation depends on this
-exact typed description.
+- A base-mode Table consists of typed fields and records, with provider-owned
+  field and record identity.
+- A sheet-mode Table is one bounded, header-aware region within a sheet-mode
+  grid.
 
-Provider-native row queries gain a `NativeSqlQueryExecutor` protocol beside
-the existing status-oriented `SqlExecutor`. Its request remains
-database-target and dialect-specific; its result carries canonical Arrow table
-data and native query evidence. This physical capability has no dependency on
-the portable SQL package.
+A worksheet contains a grid and may contain Tables; it is not itself a Table.
+An arbitrary A1 range is not a Table. `SheetTable` remains the Maybe base-mode
+package/engine name. Excelize remains the Maybe sheet-mode engine name.
 
-The current CLI-shaped `AdapterEndpoint`, `AdapterOptions`,
-`ConnectorAdapter`, and `WritePreflightAdapter` are not promoted to SDK types.
-They become migration-only compatibility types and are removed after the CLI
-cutover. SDK calls route to the existing capability-specific Connector
-protocols.
+### Alignment with the Maybe execution seam
 
-The contract gains only generic plugin-extension registration primitives. It
-does not import SQL or temporal types.
+OTC adopts the resource honesty and deep execution-seam rules from the Maybe
+designs while placing them behind a Connector rather than in applications:
 
-### `open-table-connector-sql`
+| Maybe design role | OTC role |
+| --- | --- |
+| Base table backed by SheetTable | `Table(mode="base-mode")` |
+| bounded header-aware table backed by Excelize | `Table(mode="sheet-mode")` |
+| worksheet or cell grid | physical container, explicit range source, or sheet-grid extension; never a Table |
+| local frame file | CLI-only codec that yields or consumes a Polars DataFrame |
+| query create source | deferred Query supplied to `Client.materialize()` |
+| range create source | explicit `SheetRangeSource` supplied to `Client.materialize()` |
+| unified backend table creation | one Connector `create_table` seam |
+| execution/result envelope | `OperationResult` plus ordered Receipts |
+| provider OpenLineage run | provider evidence that may be referenced by a Receipt; not DataFrame metadata |
 
-A new `packages/sql` distribution exposes `open_table_connector.sql` and owns
-both OTC SQL Lite profiles:
+The Maybe provider may place both modes behind one deployment, but its
+base-mode adapter delegates to the SheetTable engine and its sheet-mode
+adapter delegates to Excelize. It must derive mode from the resolved physical
+identity and never fall back across engines.
 
-- `otc.sql-lite.relational/v1`, derived from a closed SQL:2016 subset;
-- `otc.sql-lite.temporal/v1`, source-compatible with the portable slice of
-  Timescale Core SQL;
-- a pinned lexer/parser dependency used only to obtain a syntax tree;
-- immediate validation and lowering into OTC-owned typed plan nodes;
-- `PortableRelationalPlan`, typed parameters, schema binding, canonical plan
-  serialization, and plan hashing;
-- compilation of the temporal profile into the existing
-  `PortableTemporalPlan` rather than a second temporal plan;
-- bounded Polars expression/operator lowering for local relational execution;
-- provider-lowering protocols and language conformance fixtures.
+The older Maybe CLI's source-specific create operations and frame paths are
+compatibility inputs, not OTC SDK concepts. Its CLI decodes a frame into a
+DataFrame and lowers query/range creation to `Client.materialize()`. It does
+not pass a local path, raw create-from-query request chain, `if_exists=adopt`,
+or verification orchestration through the SDK.
 
-The broad third-party parser AST is never an API, wire format, authorization
-result, or execution plan. Successful parsing does not imply acceptance. The
-package converts only whitelisted nodes into its closed typed algebra and then
-discards the parser AST.
+Provider-specific identity-preserving refresh and table replacement remain
+outside the OTC SDK; they do not reappear as normalized extensions. Formula,
+grid, and workbook operations may use typed extensions, while OpenLineage
+publication remains provider-owned evidence. A Maybe Connector may use private
+engine workflows only when they satisfy the exact normalized operation it
+advertises. OTC retains create-only materialization, explicit source binding,
+snapshot evidence, no cross-engine fallback, and read-only reconciliation.
 
-The relational algebra is deliberately closed and deep: scan, join, filter,
-aggregate, project, sort, window, slice, and `UNION ALL` nodes plus nested
-subplans and a closed typed expression union. Nonrecursive CTEs are named DAG
-subplans rather than a provider feature. Providers consume the typed algebra
-when they implement optional pushdown; they never receive portable SQL text.
+Alignment references:
 
-The SQL package does not discover providers, resolve credentials, or know
-FinClaw stages and OTS Add-ons. The SDK supplies already-authorized logical
-relation bindings.
+- [SheetTable Unified Execution Seam Design](https://github.com/OmniMCP-AI/SheetTable/blob/main/docs/superpowers/specs/2026-08-20-sheettable-execution-seam-design.md)
+- [Critical Review of SheetTable Unified Execution Seam Design](https://github.com/OmniMCP-AI/SheetTable/blob/main/docs/superpowers/specs/Critical%20Review%20of%20SheetTable%20Unified%20Execution%20Seam%20Design%20-%20grok.md)
+- [Maybe CLI Table Frame I/O and Unified Create Sources](https://github.com/OmniMCP-AI/maybeai-sheet-cli/blob/main/docs/superpowers/specs/2026-08-24-table-frame-and-create-source-design.md)
 
-It also owns `SqlCompileError` and a stable closed `SqlErrorCode` set covering
-invalid syntax, unsupported features, name resolution, type mismatch,
-parameter binding, unavailable exact schema, nondeterministic query shape,
-unknown resource estimate, and required-pushdown failure. Physical access and
-runtime-limit failures retain the existing `ConnectorError` codes.
+### Evidence and lineage
 
-### `open-table-connector-timeseries`
+A DataFrame contains data only. A Receipt records one physical interaction.
+An `OperationResult` records one normalized operation outcome and its ordered
+Receipts. Neither is FinClaw `FrameMeta`, `Run`, `RunResult`, or `RunState`.
 
-The existing distribution continues to own descriptors, portable plan models,
-temporal protocols, resource bounds, capability identities, receipts, and
-conformance semantics. The SQL package may compile its temporal language
-profile into these types. The SDK adapts the neutral seam into Polars-first
-resource handles; it does not duplicate the temporal plan language.
+FinClaw may construct its own lineage or FrameMeta from OTC Receipts, source
+identities, Query identity, and application context. OTC does not own the
+application lineage graph.
 
-The extension adds a typed temporal provider factory context and binding so
-provider-owned temporal executors and managed stores can be opened without the
-process host's configuration document.
+## Architecture and Package Direction
 
-### Provider packages
+### Dependency graph
 
-Each provider owns its Connector, temporal executor/store when applicable,
-optional native transport dependencies, validation, and plugin declaration.
-There is one application-independent provider registration. Provider-specific
-CLI and process adapter registrations are no longer authoritative runtime
-seams.
+```text
+open-table-connector-cli
+            |
+            v
+open-table-connector-sdk
+      |        |        |
+      v        v        v
+  contract     sql   timeseries
+      ^        |        |
+      |        v        |
+      +----- Polars <----+
+      ^
+      |
+provider Connector packages
+```
 
-### `open-table-connector-cli`
+Normative dependency rules:
 
-The CLI owns only:
+- `sdk` depends on `contract`, `sql`, `timeseries`, and Polars.
+- `sql` depends on `contract`, `timeseries`, Polars, and a pinned SQLGlot
+  parser version. It never depends on `sdk` or provider packages.
+- `timeseries` depends on `contract`; it never depends on `sdk`, `sql`, or
+  provider packages.
+- provider packages depend on `contract` and optional plan/time-series
+  interfaces; they never depend on `sdk` or `cli`.
+- `cli` depends on `sdk` and rendering libraries only.
 
-- argument parsing and usage errors;
-- translation of CLI syntax into SDK calls;
-- stdout/stderr rendering;
-- destination presentation formats for stdout; and
-- process exit-code policy.
+The `sdk` package alone owns the public `Client`, `Table`, `Query`,
+`SheetRangeSource`, and `TableSource` types. The `sql` package returns an
+internal prepared relational-plan value; `timeseries` returns descriptors and
+Portable Temporal Plans. SDK factories wrap those neutral outputs in Query,
+so neither lower package imports SDK or constructs a public Query. This
+ownership rule prevents a Query/Table source-binding dependency cycle.
 
-It does not discover providers, resolve credentials, route endpoints,
-construct Connectors, enforce capability semantics, convert Connector result
-types, or orchestrate copies.
+Arrow is the verified internal carrier at Connector and future host-port
+seams. A Connector may return a bounded, snapshot-bound Arrow batch stream,
+but never a Polars LazyFrame, executable scan object, or caller-visible path.
+The stream contract carries its exact schema, extent status, snapshot lease,
+and limits; the SDK validates every batch before use. Polars is the application
+value. A public Polars result is converted once from the verified carrier; a
+future Rust adapter uses the internal carrier-preserving host port rather than
+converting Polars back to Arrow.
+
+### Deep modules and seams
+
+`Client` is the deep orchestration module. It hides:
+
+- target normalization and routing;
+- Connector discovery and lazy activation;
+- credential resolution and leases;
+- capability preflight and effective-capability probing;
+- source binding, complete reads, snapshots, and resource admission;
+- SQL and temporal preparation;
+- local Polars evaluation and certified pushdown selection;
+- materialization, idempotency, verification, and reconciliation;
+- Arrow validation and Polars conversion; and
+- receipt and error normalization.
+
+`Table` is the deep physical-operation facade. Provider packages supply
+Connector adapters at the contract seam. Local file/database implementations
+are locally substitutable in conformance tests. Maybe engines are remote-owned
+adapters. Google Sheets and Feishu are true external adapters and retain their
+real paging, revision, batching, and uncertainty behavior.
 
 ## Public Python Interface
 
-### One-shot convenience API
+### Imports and client lifecycle
 
-The common path is deliberately direct:
+The application surface lives under `open_table_connector.sdk`, re-exported
+through a short documented namespace:
 
 ```python
-from open_table_connector import sdk as otc
-
-frame = otc.read("csv:///data/orders.csv")
-write_result = otc.write(
-    "postgres://warehouse",
-    frame,
-    relation="orders",
-)
-inspection = otc.inspect("postgres://warehouse", relation="orders")
-
-with otc.Client() as client:
-    copy_result = client.table("csv:///data/orders.csv").copy_to(
-        client.table("postgres://warehouse", relation="orders")
-    )
+from open_table_connector import otc
 ```
 
-`read()` always returns a `polars.DataFrame`. `write()` returns a
-`TableWriteResult`; `copy()` returns a `CopyResult` containing both receipts
-and row counts. There is no mutable `last_receipt` state.
-
-The module functions use one lazily constructed, process-local default
-`Client`. Construction is thread-safe, provider activation remains lazy, and
-an explicit `close_default_client()` is available to test runners and hosts
-that reload configuration. Applications that need deterministic injection,
-multiple configurations, or explicit lifetime use `Client`.
-
-### Configured client
+Configured applications own a Client lifetime:
 
 ```python
-from open_table_connector.sdk import Client
-
-with Client.from_config("/etc/open-table-connector/config.toml") as client:
-    table = client.table("feishu://APP_TOKEN/TABLE_ID")
-    result = table.read_with_receipt(columns=("symbol", "price"))
-
-    frame = result.frame
-    receipt = result.receipt
+with otc.Client.from_config("/etc/otc/config.toml") as client:
+    table = client.open("feishu://APP_TOKEN/TABLE_ID").require_value()
+    frame = table.read().require_value()
 ```
 
-`Client` accepts string targets, `os.PathLike` values, and validated
-`TableURI` values. Bare paths are normalized by the SDK before routing.
-Provider credentials are never encoded into a `TableURI`.
-
-### Table references and handles
-
-`client.table(...)` normalizes its arguments into an immutable `TableRef` and
-returns an immutable `TableHandle`:
+Module-level convenience functions delegate to one lazily created,
+thread-safe default Client:
 
 ```python
-orders = client.table("postgres://warehouse", relation="orders")
-worksheet = client.table(
-    "gsheets://SPREADSHEET_ID",
-    sheet="Orders",
-    cell_range="A1:D500",
-)
-local = client.table("orders.data", format_hint="csv")
+result = otc.read("csv:///data/orders.csv")
+created = otc.materialize(frame, to="parquet:///data/orders.parquet")
 ```
 
-`TableRef` is the canonical answer to the current ambiguity between a database
-URI and a table, or a spreadsheet URI and a worksheet/range. Its closed model
-is:
+A credential-free URI string in a `to=` position is documented shorthand for
+`DirectDestination(uri=...)`; the SDK normalizes it before planning. Container
+destinations always require their typed BaseModeDestination or
+SheetModeDestination form.
+
+Every module-level physical/evaluated operation returns the same
+`OperationResult` as the Client path. Convenience functions do not define a
+second semantic path.
+
+The synchronous interface is authoritative in v1. `Client.close()` is
+idempotent and closes providers, transports, credential leases, and artifact
+workspaces in reverse construction order. Tables bound to a closed Client fail
+with `CLIENT_CLOSED`.
+
+### Addressing existing Tables and new destinations
+
+`client.open(...)` accepts a canonical credential-free Table URI or one member
+of a closed `ExistingTableAddress` union:
 
 ```python
-TableRef(
-    uri=TableURI("postgres://warehouse"),
-    selection=BaseSelection(relation="public.orders"),
+ExistingTableAddress = (
+    DirectTableAddress
+    | DatabaseTableAddress
+    | BaseModeTableAddress
+    | SheetModeTableAddress
 )
 
-TableRef(
-    uri=TableURI("gsheets://SPREADSHEET_ID"),
-    selection=SheetSelection(sheet="Orders", range="A1:D500", header_row=1),
+DatabaseTableAddress(
+    database=database_target,
+    name=QualifiedTableName(catalog=None, schema="public", table="orders"),
+)
+
+BaseModeTableAddress(container=workbook, table_id="orders")
+SheetModeTableAddress(grid=sheet_grid, table_id="orders_region")
+```
+
+`DirectTableAddress` wraps a URI that already identifies exactly one Table.
+`DatabaseTableAddress` separates the database execution domain from a typed,
+qualified table name. `BaseModeTableAddress` and `SheetModeTableAddress`
+select one existing stable table identity within their physical containers.
+Names, when supported, must resolve unambiguously; stable IDs are preferred.
+An arbitrary sheet/range selector uses SheetRangeSource instead.
+
+Open returns `OperationResult[Table]`:
+
+```python
+orders = client.open(existing_table_uri).require_value()
+```
+
+It resolves and inspects enough physical state to establish a canonical URI,
+Table Mode, schema, and observed identity. It never treats a database URI, a
+workbook, a worksheet, or an unbounded grid as a Table.
+
+This requires an exact, typed, Receipt-bearing inspect/describe contract. The
+current `TableInspection` contains column names and a schema fingerprint but
+not full field types or revision evidence, so it is a migration input rather
+than a conforming implementation. Connectors must implement
+`table.inspect/2.0` (or a semantically equivalent versioned adapter) before
+`client.open()` can expose a fully typed Table; the SDK never guesses types
+from names or samples.
+
+New destinations use a closed `TableDestination` union:
+
+```python
+DirectDestination(uri=...)
+
+BaseModeDestination(
+    container=...,
+    table_name="orders",
+)
+
+SheetModeDestination(
+    grid=...,
+    anchor="A1",
+    header=True,
 )
 ```
 
-The values mean:
+- `DirectDestination` is for a URI that completely and deterministically
+  identifies a not-yet-existing Table, such as a new local file.
+- `BaseModeDestination` names a new record Table within a physical container.
+- `SheetModeDestination` selects a grid and placement for a new bounded,
+  header-aware Table; the grid or worksheet does not become the Table.
 
-- `TableURI`: the credential-free provider address used for routing;
-- `BaseSelection`: an optional database or logical relation within it;
-- `SheetSelection`: worksheet, optional range, and header-row convention; and
-- `TableRef`: the complete physical table reference passed to every operation.
+The public vocabulary never uses `relation` as a generic synonym for Table.
+Provider-specific creation details require versioned typed destination
+extensions, not an unvalidated options mapping. Credentials never appear in a
+Table URI or destination value.
 
-Convenience keyword arguments construct these values; ordinary callers do not
-need to instantiate them. A cell range requires a sheet selection. An explicit
-local format hint selects a provider-owned codec before reference construction
-and is not retained as a universal stdout format field. If a URI and typed
-selection both identify the same property, they must agree or fail with
-`INVALID_URI`.
+### Table interface
 
-Read projection, key/record identity hints, limits, timeout, conflict policy,
-and idempotency remain in typed operation-specific options. Feishu field
-projection, for example, is read projection rather than part of its physical
-address. Provider-owned codec options such as delimiter or encoding use a
-provider-owned typed option object. Provider-specific needs that cannot be
-expressed by the closed reference require a versioned typed extension, not an
-unvalidated mapping. CLI presentation choices never enter a table reference or
-Connector request. Existing URI spellings that already contain a table or
-sheet normalize to the same reference.
-
-The table surface is:
+`Table` is immutable as a handle. Mutations change its physical target, not
+the Python handle's identity.
 
 ```python
-table.inspect(*, limits: ResourceLimits | None = None) -> TableInspection
-table.read(*, columns=None, limits: ResourceLimits | None = None) -> pl.DataFrame
-table.read_with_receipt(
-    *, columns=None, limits: ResourceLimits | None = None
-) -> PolarsReadResult
-table.read_bounded(
-    *,
-    max_rows,
-    continuation=None,
-    columns=None,
-    limits: ResourceLimits | None = None,
-) -> BoundedPolarsReadResult
-table.write(frame, *, if_exists="error") -> TableWriteResult
-table.copy_to(destination, *, if_exists="error", ...) -> CopyResult
-table.capabilities() -> CapabilityManifest
-table.transaction() -> Transaction
-table.sql(
-    statement,
-    *,
-    relations=None,
-    parameters=None,
-    limits: SqlResourceLimits | None = None,
-    pushdown="allow",
+class Table:
+    uri: TableURI
+    mode: TableMode
+    schema: pl.Schema
+    observed_revision: Revision | None
+
+    def inspect(...) -> OperationResult[TableInspection]: ...
+    def capabilities(...) -> OperationResult[CapabilitySet]: ...
+
+    def read(...) -> OperationResult[pl.DataFrame]: ...
+    def read_page(...) -> OperationResult[pl.DataFrame]: ...
+
+    def insert(frame, ...) -> OperationResult[int]: ...
+    def update(frame, *, keys, ...) -> OperationResult[int]: ...
+    def delete(*, where, parameters=None, ...) -> OperationResult[int]: ...
+    def drop(...) -> OperationResult[None]: ...
+
+    def transaction(...) -> TableTransaction: ...
+    def time_series(descriptor) -> TimeSeriesView: ...
+    def extension(extension_type) -> Extension: ...
+```
+
+There are no `*_with_receipt` variants. Receipts are always present on the
+normal OperationResult. There is no public raw Connector object.
+
+`observed_revision` is open-time evidence, not live mutable state. A mutation
+never rewrites an immutable Table handle. Its Receipt supplies
+`revision_after` when observable; callers obtain a refreshed handle with
+`client.open(table.uri)` or a new observation through `table.inspect()` before
+using optimistic concurrency again.
+
+### Complete and page reads
+
+`read()` is a Complete Read:
+
+```python
+result = table.read(
+    columns=("order_id", "amount"),
+    limits=ResourceLimits(...),
+)
+frame = result.require_value()
+```
+
+It follows provider pages internally and returns the complete bounded Table.
+If the Table cannot be read completely under finite limits or a stable
+snapshot, it fails. It never labels a truncated result complete.
+
+The read Receipt declares the observed row-order contract. Base-mode storage
+does not acquire a meaningful order merely because one provider happened to
+emit rows in that sequence. Page Read requires a stable order bound into its
+continuation token. A materialization whose destination makes row sequence
+observable, including sheet-mode, rejects an unordered Table source; callers
+use a totally ordered Query or collect an explicitly ordered DataFrame first.
+
+`read_page()` is the only page-shaped read:
+
+```python
+page = table.read_page(
+    max_rows=500,
+    continuation=previous.continuation,
+    columns=("order_id", "amount"),
+)
+```
+
+The DataFrame is `page.require_value()`; opaque continuation state is
+`page.continuation`. Although carried as a string, callers must treat it as an
+opaque value. The SDK rejects a token that is malformed or not authenticated
+and bound to the same Table identity, snapshot, schema, projection, and
+Connector. A successful page is not a partial mutation outcome.
+
+### Row insertion
+
+```python
+result = table.insert(frame, idempotency_key="load-42")
+```
+
+Insertion adds new rows only:
+
+- it does not update, delete, upsert, replace, or recreate existing rows;
+- it validates the input against the Table schema before mutation;
+- it has no portable positional guarantee in base-mode;
+- in sheet-mode, v1 inserts at the logical data-region tail; and
+- target uniqueness or provider constraints may reject the whole insertion.
+
+The normalized capability is `table.insert/1.0`. Existing provider-specific
+"append" implementations may satisfy it only after conformance proves these
+semantics. `table.append()` is not a public alias.
+
+### Strict keyed update
+
+```python
+result = table.update(
+    changes,
+    keys=("order_id",),
+    expected_revision=observed_revision,
+    idempotency_key="update-42",
+)
+```
+
+Update is update-only:
+
+- at least one key column is required;
+- every key exists in both input and target schema;
+- input keys are non-null and unique;
+- every input key matches exactly one target row;
+- missing or multiply matching keys reject the whole operation;
+- key fields are immutable;
+- only supplied non-key columns are changed; and
+- no unmatched input becomes an insertion.
+
+The normalized capability is `table.update.keyed/1.0`. A Connector that
+cannot provide all-or-fail submitted-key semantics must not advertise it.
+
+### Predicate-required row deletion
+
+```python
+result = table.delete(
+    where="status = :status AND created_at < :cutoff",
+    parameters={"status": "cancelled", "cutoff": cutoff},
+    expected_revision=observed_revision,
+    idempotency_key="cleanup-42",
+)
+```
+
+`where` is a required keyword-only argument. `table.delete()` is a Python type
+error and can never accidentally remove every row. Intentional all-row
+deletion uses an explicit portable predicate:
+
+```python
+table.delete(where=otc.all_rows())
+```
+
+The predicate may be a typed `PortablePredicate` or a SQL-like predicate
+string with named parameters. SQLGlot parses string syntax, then OTC discards
+the parser AST and lowers immediately to an owned `DeleteRows` plan. The v1
+mutation-predicate grammar contains:
+
+- field references and typed named parameters;
+- `AND`, `OR`, and `NOT`;
+- `=`, `<>`, `<`, `<=`, `>`, and `>=`;
+- `IS NULL`, `IS NOT NULL`, `IN`, `BETWEEN`, and case-sensitive `LIKE`; and
+- the closed deterministic scalar expressions shared with SQL Lite.
+
+It rejects subqueries, aggregates, windows, arbitrary functions, external
+references, provider syntax, and nondeterministic expressions. SQL
+three-valued logic applies: only rows for which the predicate evaluates to
+`TRUE` are deleted.
+
+Base-mode deletes matching records. Sheet-mode deletes matching logical data
+rows and compacts the bounded data region while preserving its header and
+Table identity. A Connector must not approximate the operation with an unsafe
+read/rewrite race. Unsupported Connectors fail capability preflight.
+
+The normalized capability is `table.delete.where/1.0`. There is no `clear()`
+method. `drop()` is the separate physical-resource operation.
+
+### Drop
+
+```python
+result = table.drop(idempotency_key="retire-orders")
+```
+
+Drop removes the physical Table identified by the canonical Table URI. It does
+not mean row deletion. The Receipt states the exact physical scope; dropping a
+sheet-mode Table never implicitly drops its parent workbook or spreadsheet.
+After a confirmed drop, operations through that handle fail `TABLE_NOT_FOUND`
+or `STALE_TABLE_IDENTITY`.
+
+The normalized capability is `table.drop/1.0`.
+
+### Transactions
+
+A new normalized transaction capability is exposed without giving callers a
+Connector-wide mutable transaction. Existing low-level `TransactionalStore`
+implementations are migration inputs, not proof of this stronger contract:
+
+```python
+tx = table.transaction(idempotency_key="refresh-42")
+tx.delete(where=otc.all_rows())
+tx.insert(frame)
+result = tx.commit()
+```
+
+`TableTransaction` is a local builder bound to exactly one Table, expected
+revision, finite limits, and idempotency identity. Its
+`insert`/`update`/`delete` methods validate and accumulate normalized mutations
+and bounded input snapshots without calling a Connector. Only `commit()`
+performs capability preflight, acquires the credential lease, opens one
+provider transaction, and returns `OperationResult[None]`. `abort()` is
+idempotent, cleans local snapshots, and returns `OperationResult[None]` with no
+physical Receipt when commit never began.
+
+Nesting and use after commit/abort are rejected. An abandoned uncommitted
+builder owns no provider transaction; Client close cleans its local snapshots.
+A Connector without `table.transaction/1.0` fails at commit before data-bearing
+I/O. Once commit dispatch begins, its unknown outcomes follow the normal
+read-only reconciliation rule.
+
+This permits an explicit atomic delete-all-plus-insert workflow when a caller
+truly needs it; it does not create a `replace` API. Identity-changing
+recreation is `drop()` followed by a separate `materialize()` operation and
+therefore cannot masquerade as one transaction.
+
+## Query and Evaluation Interface
+
+### One deferred Query type
+
+Portable relational and temporal queries use the same immutable public
+`Query` type:
+
+```python
+@dataclass(frozen=True)
+class Query:
+    plan: PortablePlan
+    sources: FrozenSourceBindings
+    parameters: FrozenTypedParameters
+    snapshot_constraints: FrozenSnapshotConstraints
+    schema: pl.Schema
+    limits: QueryResourceLimits
+    consistency: ConsistencyPolicy
+    pushdown: PushdownPolicy
+    plan_hash: str
+    definition_hash: str
+```
+
+The actual representation remains private. `Query` does not expose SQLGlot,
+Polars LazyFrame, provider plan, credential, or mutable authorization objects.
+Relational and temporal plan families remain distinguishable inside the
+versioned Portable Plan union.
+
+Source bindings are defensively copied into an immutable, ordered mapping.
+Nested Query sources form a finite directed acyclic graph; construction
+rejects direct or indirect cycles and duplicate aliases. `plan_hash` covers
+only canonical Portable Plan meaning. `definition_hash` additionally covers
+ordered aliases, source definitions and schemas, parameter names/types,
+requested snapshot constraints, limits, consistency, and pushdown policy.
+Runtime parameter values, DataFrame content, and physical snapshots are
+deliberately bound at evaluation, revalidated against the declared schema, and
+recorded in the ExecutionReceipt rather than pretending to be frozen at Query
+construction.
+
+Physical source bindings also preserve Client affinity. Every `Table` and
+`SheetRangeSource` in one Query graph must belong to one Client, and that same
+Client must evaluate the Query. DataFrames add no affinity; nested Queries
+inherit the union of their physical-source affinities. Construction or
+evaluation rejects a mixed-client graph with `CLIENT_AFFINITY_MISMATCH` before
+physical I/O. The module-level convenience API may therefore evaluate only
+queries whose physical handles came from its default Client. To move a query
+definition to another Client, the caller reopens each canonical Table address
+and rebinds each range with that Client, then constructs a new Query. OTC never
+copies dispatch bindings, routes, authorization state, or credential leases
+between Clients implicitly.
+
+Parameter mappings are likewise defensively copied and typed. Query reprs and
+diagnostics redact values classified as sensitive. At evaluation, Client
+computes a private domain-separated binding fingerprint over their canonical
+values, evaluated source content/snapshots, and the definition hash. That
+fingerprint, not Query construction, protects idempotency against changed
+bindings. The portable cross-implementation identity remains `plan_hash`.
+
+### Preparing and collecting relational SQL
+
+The pure preparation path is:
+
+```python
+query = otc.sql(
+    """
+    SELECT customer_id, SUM(amount) AS total
+    FROM orders
+    GROUP BY customer_id
+    ORDER BY customer_id
+    """,
+    sources={"orders": orders_frame},
+    parameters={},
+    limits=SqlResourceLimits(...),
+)
+```
+
+It parses, binds, types, validates, lowers, and returns a Query without
+physical execution. Evaluation is explicit:
+
+```python
+result = client.collect(query)
+frame = result.require_value()
+```
+
+Preparation is pure because every accepted source already exposes an exact
+schema: a DataFrame and Query carry one, an opened Table carries its observed
+schema, and a SheetRangeSource requires one in its declaration. Discovering a
+range schema is a separate Client inspection operation, not hidden I/O inside
+`otc.sql()`.
+
+The convenience path performs those same two steps:
+
+```python
+result = client.sql(statement, sources=..., parameters=..., limits=...)
+```
+
+`client.sql()` returns `OperationResult[pl.DataFrame]`; it does not define a
+different parser or executor.
+
+`client.collect(source)` accepts any Table Source. Collecting a DataFrame
+returns a bounded snapshot value with no physical Receipt. Collecting a Table
+performs a Complete Read. Collecting a Query evaluates its Portable Plan.
+Collecting an explicit sheet range performs one stable bounded grid
+observation.
+
+For exact multi-target fan-out from live sources, collect once and reuse the
+resulting DataFrame:
+
+```python
+frozen = client.collect(query).require_value()
+client.materialize(frozen, to=postgres_destination)
+client.materialize(frozen, to=sheet_destination)
+```
+
+Re-executing a Query may observe new source snapshots and is not falsely
+described as the same row set.
+
+## Create-Only Materialization
+
+### Interface
+
+```python
+result = client.materialize(
+    source,
+    to=destination,
+    theme=None,
+    theme_policy="require",
+    limits=MaterializationLimits(...),
     consistency="recorded",
-) -> pl.DataFrame
-table.sql_with_receipt(
-    statement,
-    *,
-    relations=None,
-    parameters=None,
-    limits: SqlResourceLimits | None = None,
-    pushdown="allow",
-    consistency="recorded",
-) -> SqlQueryResult
+    verification="required",
+    idempotency_key="create-orders-42",
+)
+
+table = result.require_value()
 ```
 
-Evidence-bearing complete reads reuse the existing `PolarsReadResult`, which
-contains `frame: polars.DataFrame` and `receipt: NeutralReceipt`; the SDK does
-not create a parallel result model. The contract adds
-`BoundedPolarsReadResult(frame, receipt)` alongside the existing bounded Arrow
-result.
+`source` is one Table Source and `result` is
+`OperationResult[Table]`. Materialization always creates exactly one new
+Table. After checking for an idempotent replay, an already-existing
+destination is `rejected/not_started` with `DESTINATION_EXISTS`. It never
+adopts, appends, updates, clears, replaces, or refreshes an existing Table.
 
-`read()` represents an ordinary complete read. `read_bounded()` is the
-complete current bounded-read operation. Its result contains a Polars frame
-and the existing
-`BoundedReadReceipt`, including `complete`/`truncated` extent and any opaque
-next token. The contract gains an optional continuation token so a provider
-that emits one can resume it; callers must not inspect or synthesize tokens.
+There is no public `Table.create(schema)` method because `Table` already means
+an existing physical resource. Schema-only creation is the same materialize
+operation with a zero-row DataFrame source.
 
-`limits=ResourceLimits` sets broader provider work bounds. An ordinary read may
-be used only when the requested safety contract can still be guaranteed. The
-SDK must never truncate after unbounded materialization and label that a
-bounded read, or attach a normal receipt implying completeness to a truncated
-result. If the selected Connector cannot meet the bound, it fails with
-`UNSUPPORTED_CAPABILITY` before I/O. CLI `--limit` maps to
-`read_bounded(max_rows=...)` and renders only its frame when row output is
-requested.
-
-`copy_to()` is the SDK operation behind both CLI `convert` and `import`. It
-reads once and writes once, preserves source and destination receipts, applies
-only destination-owned field policy, and preflights the destination before
-source I/O. Whether a destination is local is a Connector fact, not an SDK
-restriction.
-
-### Native SQL and transactions
-
-Provider-dialect SQL is opened from an explicit provider execution target so it
-cannot be confused with portable `table.sql()` or imply relation-level
-sandboxing:
+Copy and conversion are not separate SDK operations:
 
 ```python
-native = client.native_sql("postgres://warehouse")
-native.query(
-    statement,
-    parameters=(),
-    *,
-    limits: ResourceLimits | None = None,
-) -> pl.DataFrame
-native.query_with_receipt(
-    statement,
-    parameters=(),
-    *,
-    limits: ResourceLimits | None = None,
-) -> NativeSqlQueryResult
-native.execute(
-    statement,
-    parameters=(),
-    *,
-    limits: ResourceLimits | None = None,
-) -> ExecutionResult
+source_table = client.open(source_uri).require_value()
+created = client.materialize(source_table, to=destination)
 ```
 
-`client.native_sql()` accepts only a database/engine target with no relation,
-sheet, or range selection. The resulting `NativeSqlHandle` is scoped to the
-provider execution domain, not one table, and documentation must state that
-its SQL may address any object authorized by those credentials. Ordinary
-tabular-file providers, sheets, and in-memory targets reject native SQL;
-database targets such as SQLite remain eligible. Native `query()` is
-row-producing; native `execute()` returns status, affected rows, and artifacts.
-This distinction replaces provider-specific `read(query=...)` options.
+The OperationResult contains ordered source and destination Receipts from the
+one orchestration. There is no `CopyResult`.
 
-Native statements and parameters remain caller-prepared and dialect-specific
-and are available only when the Connector advertises its provider-native SQL
-capability. They are not portable, are not a fallback for SQL Lite, and never
-enter a portable relational or temporal plan. `NativeSqlQueryResult` contains
-a `NativeSqlReceipt` with safe statement/parameter hashes, provider dialect and
-capability identity, provider evidence, and output schema/content identity; it
-never claims a portable plan identity.
+### One Connector creation seam
 
-Transactions are context-managed:
+Every destination Connector implements the same normalized internal operation:
 
 ```python
-with client.table("postgres://warehouse", relation="orders").transaction() as transaction:
-    transaction.write(first_frame, if_exists="append")
+Connector.create_table(CreateTableRequest(...))
 ```
 
-The v1 table transaction surface contains table operations only. Native SQL
-transactions require a future database-scoped transaction handle rather than
-smuggling database-wide authority through a relation-scoped transaction.
+`CreateTableRequest` contains a resolved typed destination, Table Mode, exact
+schema, one SDK-prepared bounded source carrier or certified complete provider
+plan, materialization limits, idempotency binding, presentation policy, and
+verification policy. It never contains caller SQL, a SQLGlot tree, a Polars
+object, a local CLI frame path, or an untyped provider-options mapping.
 
-Successful context exit commits. An exception aborts. Explicit
-`commit()`/`abort()` remain available, are idempotency-checked, and close the
-transaction. Operations on a closed transaction fail with a stable conflict
-error. Connectors without transactional capability fail before data I/O.
+The same seam handles zero-row schema creation and source-backed row creation.
+It returns the created canonical physical identity, schema, mode, extent, and
+Receipt evidence from which the SDK constructs `OperationResult[Table]`.
+There are no Connector peers named `create_from_query`, `create_from_range`,
+`copy`, `convert`, or `adopt`.
 
-This requires correcting the provider contract to match the transactional
-implementations: `begin(reference)` returns a transaction handle; write and
-table operations are invoked on that handle; and the handle owns commit, abort,
-and close. A hidden mutable Connector-wide transaction is not the SDK
-seam. A transaction pins its provider instance and credential lease until it
-ends. Nested transactions are unsupported in version 1.
+- A `BaseModeDestination` lowers to `create_table` on the SheetTable-backed
+  base-mode adapter.
+- A `SheetModeDestination` lowers to `create_table` on the Excelize-backed
+  sheet-mode adapter and must create or register one bounded, header-aware
+  Table rather than treating the worksheet as the Table.
 
-URI resolution is SDK infrastructure, not a separate common application
-operation. Advanced tooling may inspect safe route and capability metadata but
-does not receive provider credentials or raw resolved resources.
+Mode-specific placement and physical facts remain typed destination fields or
+capability details. They do not create separate public creation APIs. A
+Connector that cannot atomically establish the promised Table identity or
+verify its bounds rejects preflight.
 
-## Complete Current Table-Operation Mapping
+### Internal lifecycle
 
-| Current surface | SDK surface | Notes |
+The public interface exposes one invocation. Internal phases are owned by the
+SDK and destination Connector:
+
+```text
+validate source/schema/policy
+  -> resolve/authorize destination
+  -> preflight effective capabilities and limits
+  -> reserve preliminary operation/key/destination identity
+  -> bind schema and select exactly one physical strategy
+  -> pin or capture every source snapshot
+  -> atomically finalize payload identity and resolve replay/conflict
+  -> check destination absence
+  -> create/stage and commit through one destination Connector
+  -> verify through a fresh observation
+  -> assemble OperationResult[Table]
+```
+
+Source Connectors may provide snapshots, but exactly one destination
+Connector owns target creation. Strategy selection occurs before data-bearing
+execution. OTC never silently falls back to a different executor or mutation
+strategy after data-bearing I/O begins.
+
+A DataFrame source contributes a canonical schema/content identity but no
+physical Receipt. A Table or sheet-range source contributes physical snapshot
+evidence. A Query contributes its Portable Plan identity, complete per-input
+snapshot evidence, and execution Receipt.
+
+### Idempotency and destination existence
+
+Every materialization has an idempotency key. The SDK generates one when
+omitted for a single process attempt. Applications requiring restart-safe
+replay or reconciliation supply a stable key.
+
+The key binds at least:
+
+```text
+principal/tenant
+operation and contract version
+resolved deterministic destination key
+source definition and evaluated snapshot/content identity
+schema and materialization policy
+```
+
+Binding is a two-phase durable protocol because evaluated source identity is
+not known at the initial reservation. Phase one reserves the caller key with
+principal, operation/version, and deterministic destination and yields one
+operation identity; concurrent users of that preliminary identity join or
+wait. After source snapshots are captured, phase two atomically finalizes the
+record with the complete payload fingerprint. An already-finalized identical
+fingerprint joins or replays its recorded effect; a different fingerprint is
+`IDEMPOTENCY_CONFLICT`. A phase-one record abandoned before target dispatch is
+closed as `not_started` and may be reconciled or safely resumed under the same
+key. It is never evidence that a target mutation occurred.
+
+Same key and same payload joins or replays the same logical effect. Same key
+with any changed bound field is `IDEMPOTENCY_CONFLICT`. One source materialized
+to two destinations uses two physical idempotency identities.
+
+The finalized durable idempotency lookup precedes the ordinary
+destination-existence check and all target mutation. A same-key, same-payload
+replay returns the original operation result even though its successfully
+created destination now exists. A different key at that destination yields
+`DESTINATION_EXISTS`; the same key with changed payload yields
+`IDEMPOTENCY_CONFLICT`. Source observation may therefore occur before a
+conflict is known, but target mutation never does.
+
+Create-if-absent strength is capability-specific. A Connector must report
+whether destination absence is atomically enforced, reserved through a durable
+ledger, or protected by a compensating workflow. It must not advertise an
+atomic guarantee for a check-then-create race.
+
+### Source snapshots
+
+All physical Query and materialization sources are resolved before target
+mutation. Each source supplies a canonical URI when physical, exact schema,
+revision or snapshot reference, content/schema identity, and one of:
+
+- an immutable held snapshot;
+- an immutable copied snapshot; or
+- a stability proof validated again at commit.
+
+A source that cannot remain stable for the operation is rejected before target
+mutation. An explicit unavailable snapshot fails rather than silently reading
+latest. Cross-provider `require_atomic` is unsupported unless all inputs share
+a compatible snapshot domain; `recorded` records each stable snapshot without
+upgrading it to cross-provider atomicity.
+
+### Theme and style extension
+
+`TableTheme` is future portable presentation intent passed to materialization;
+it is not DataFrame metadata. `TableStyle` is future concrete presentation on
+a physical Table.
+
+The extension capability family is reserved as:
+
+```text
+table.theme.apply/1.0
+table.style.inspect/1.0
+table.style.apply/1.0
+```
+
+Capability details are property-specific: supported semantic regions,
+properties, coercions, preservation guarantees, and verification behavior.
+They are not booleans.
+
+If a theme is supplied, the default `theme_policy="require"` rejects before
+mutation unless the destination can realize and verify it. An explicit
+`theme_policy="omit"` permits data materialization, emits a warning, and does
+not claim presentation evidence. No current Connector may advertise these
+capabilities until it passes the extension conformance suite.
+
+Coordinate-level worksheet, row, column, range, formula, and workbook styling
+remain a separate sheet-grid extension, not Table core.
+
+## Operation Results, Errors, and Recovery
+
+### One result envelope
+
+```python
+@dataclass(frozen=True)
+class OperationResult(Generic[T]):
+    value: T | None
+    outcome: Outcome
+    commit: CommitState
+    verification: VerificationState
+    receipts: tuple[Receipt, ...]
+    continuation: str | None
+    warnings: tuple[OperationWarning, ...]
+    error: ErrorInfo | None
+
+    def require_value(self) -> T: ...
+```
+
+`value` remains available for generic result inspection and may legitimately
+be `None`, for example after `drop()`. Value-bearing examples use
+`require_value()`, which returns `T` for static typing and raises a normalized
+result-contract error if an outcome that should carry a value does not. It
+does not create a result subclass or hide Receipts.
+
+Outcome dimensions are independent:
+
+```text
+outcome:
+  succeeded | planned | rejected | failed | partial | unknown
+
+commit:
+  not_applicable | not_started | not_committed | committed | partial | unknown
+
+verification:
+  not_applicable | passed | failed | skipped | unavailable
+```
+
+The state space is constrained, not an arbitrary cross-product:
+
+| Outcome | Required commit state | Required evidence invariants |
 | --- | --- | --- |
-| provider/CLI `list` | `client.connectors()` | `ConnectorInfo` only; zero-I/O |
-| `CapabilityManifest` | `table.capabilities()` | Static versus live is explicit |
-| `URIResolver.resolve` | internal routing/activation | Provider resource never leaks by default |
-| `TableInspector.inspect` | `table.inspect()` | Request upgraded from URI to `TableRef` |
-| `PolarsTableReader.read_polars` | `table.read*()` | Preferred path; existing result reused |
-| `ArrowTableReader.read_arrow` | `table.read*()` | Provider SPI; converted once by SDK |
-| `BoundedArrowTableReader` | `table.read_bounded()` | Adds Polars result; preserves extent/token |
-| `TableWriter.write` | `table.write()` | Input is Polars |
-| CLI `convert`/`import` | `table.copy_to()` / `client.copy()` | One SDK orchestration path |
-| planned FinClaw SQL Lite | `client.sql*()` / `table.sql*()` | Shared portable relational path |
-| provider SQL query reads | `client.native_sql(target).query*()` | Database-scoped provider SQL |
-| `SqlExecutor.execute` | `client.native_sql(target).execute()` | Native statement/status path |
-| `TransactionalStore` | `table.transaction()` | Context-managed begin/commit/abort |
+| `succeeded` | read/evaluation: `not_applicable`; mutation: `committed` | `error=None`; verification matches the operation policy |
+| `planned` | nonmutation: `not_applicable`; mutation: `not_started` | no mutation Receipt; verification `not_applicable` or `skipped` |
+| `rejected` | nonmutation: `not_applicable`; mutation: `not_started` | typed error; verification `skipped`; no effect Receipt |
+| `failed` | nonmutation: `not_applicable`; mutation: `not_committed` or `committed` | typed error; committed failure retains effect and verification evidence |
+| `partial` | `partial` | typed error and exact known partial-effect Receipts |
+| `unknown` | `unknown` | typed error, verification `unavailable`, and reconciliation reference |
 
-Prepared external processing remains available through capability extensions,
-not `TableHandle`. The generic `StepExecutor` seam has no current table
-provider implementation, and dbt compile/run/cancel/readback is a processing
-extension rather than a table operation. The SDK plugin model can host it
-without pretending it is SQL or dataframe I/O.
+`continuation` is non-null only on a succeeded Page Read. An error is required
+for every rejected/failed/partial/unknown result and absent for succeeded or
+planned results. Each operation contract defines whether a successful value is
+required; the SDK validates that invariant before exposing the result.
 
-No currently implemented or declared table operation is dropped. The SDK may
-deprecate duplicate CLI vocabulary after compatibility tests prove equivalent
-behavior.
+The generic envelope can represent provider operations that honestly permit
+partial effects. An operation advertising all-or-nothing atomicity must never
+emit `partial`.
+
+Successful and explicitly planned operations return their OperationResult.
+`rejected`, `failed`, `partial`, and `unknown` outcomes raise `OTCError`; its
+`.result` preserves the complete envelope. A known physical Table may appear
+as `error.result.value` when commit succeeded but verification failed. No
+error path discards Receipts.
+
+Typical materialization states are:
+
+| Condition | Outcome | Commit | Verification |
+| --- | --- | --- | --- |
+| Invalid schema, unsupported capability, destination exists | `rejected` | `not_started` | `skipped` |
+| Confirmed rollback | `failed` | `not_committed` | `skipped` |
+| Committed target fails fresh verification | `failed` | `committed` | `failed` |
+| Lost commit acknowledgement | `unknown` | `unknown` | `unavailable` |
+| Fully verified | `succeeded` | `committed` | `passed` |
+
+`commit=committed` does not imply success. A committed verification failure is
+not retryable and must not repeat the mutation.
+
+### Receipts
+
+Receipts are immutable, credential-safe evidence variants. Common facts
+include:
+
+- operation, contract, Connector, and capability identities;
+- safe physical Table URI and Table Mode;
+- revision/snapshot before and after where available;
+- source schema/content identity and emitted schema/content identity;
+- affected rows and physical extent when observable;
+- requested and observed resource bounds;
+- execution location and certified pushdown facts;
+- idempotency outcome and replay status; and
+- verification observations.
+
+Managed temporal stage, commit, readback, and abort Receipts remain distinct
+receipt variants inside OperationResult; they do not create parallel public
+result families.
+
+### Reconciliation
+
+An unsafe post-dispatch outcome supplies a typed reconciliation reference in
+`ErrorInfo`. The ergonomic path is:
+
+```python
+try:
+    client.materialize(source, to=destination, idempotency_key="run-42")
+except otc.OTCError as exc:
+    resolved = client.reconcile(exc.result)
+```
+
+Reconciliation is read-only. It uses the original destination, operation
+version, idempotency key, operation identity, and Connector evidence. It may
+resolve to committed, not committed, in progress, unknown, or expired.
+Expired evidence is not proof of no commit.
+
+Its public return is
+`OperationResult[ReconciliationDisposition]`; it never returns an unstructured
+provider status or performs a compensating mutation.
+
+After an adapter invocation, OTC never retransmits a mutation until
+reconciliation proves it did not commit. A timeout or missing response never
+means rollback.
+
+### Stable error families
+
+The SDK normalizes at least:
+
+- invalid target/URI, schema, predicate, SQL, descriptor, or configuration;
+- unsupported capability or mode;
+- authentication and authorization;
+- destination exists, target not found, stale revision, and key conflict;
+- duplicate/missing update key and idempotency conflict;
+- resource limit, timeout, cancellation, and snapshot unavailable;
+- execution failure, partial effect, uncertain mutation, and reconciliation
+  unavailable; and
+- readback/verification mismatch, protocol failure, and artifact integrity.
+
+Messages and safe details never expose credential values, unrestricted SQL
+literals, provider response bodies, secret-bearing URIs, or unrestricted
+filesystem paths.
 
 ## OTC SQL Lite
 
-### One portable language over named table values
+### Three explicit SQL lanes
 
-`otc.sql-lite.relational/v1` is the application-facing relational language.
-It is a deliberately closed, read-only subset derived from SQL:2016; the name
-does not claim general SQL:2016 conformance. Its semantics do not vary by
-physical medium.
+OTC exposes three non-interchangeable lanes:
 
-The query is client-level because one statement may join several named inputs:
+1. relational OTC SQL Lite over explicitly named Table Sources;
+2. temporal OTC SQL Lite over one descriptor-bound Time-Series View; and
+3. explicit provider-native SQL against a database execution domain.
 
-```python
-import polars as pl
+There is no automatic fallback between them. Portable SQL never discovers a
+physical resource from text. Provider-native SQL never claims portable
+semantics.
 
-result = client.sql(
-    """
-    SELECT o.customer_id,
-           SUM((o.amount + COALESCE(a.amount, 0)) * r.multiplier)
-               AS reporting_amount
-    FROM orders AS o
-    LEFT JOIN rates AS r ON o.currency = r.currency
-    LEFT JOIN adjustments AS a ON o.order_id = a.order_id
-    WHERE o.booked_at >= :start
-    GROUP BY o.customer_id
-    ORDER BY reporting_amount DESC, customer_id
-    """,
-    relations={
-        "orders": client.table("/data/orders.csv"),
-        "rates": client.table("/data/rates.xlsx", sheet="FX"),
-        "adjustments": pl.DataFrame(...),
-    },
-    parameters={"start": start},
-)
+### SQLGlot ownership
+
+SQLGlot is the parser, syntax-normalization, and policy-front-end only:
+
+```text
+SQL text
+  -> exactly pinned SQLGlot parser
+  -> OTC validation, binding, and type checking
+  -> OTC-owned Portable Plan
+  -> PolarsPlanMapper or certified full provider lowering
+  -> OperationResult[DataFrame]
 ```
 
-The public `SqlSource` union is `str | os.PathLike | TableRef | TableHandle |
-polars.DataFrame | SqlRelationBinding`. Strings, paths, and references
-normalize through the calling client. A handle must belong to that same client.
-A dataframe is already materialized and receives a canonical in-memory
-identity. `SqlRelationBinding` wraps one of those values with an optional exact
-schema, declared unique key, immutable snapshot identity, and provider-owned
-typed read options. Arbitrary `polars.LazyFrame` values are rejected in v1
-because they can hide external scans or executable UDFs outside OTC bounds;
-the evaluator may still use lazy operations internally.
+The SQLGlot AST is discarded immediately after lowering. It is never:
 
-SQL identifiers resolve only through the explicit `relations` mapping. SQL
-text cannot contain a URI, open a file, discover a database table, resolve
-credentials, or access the network. This also makes module-level
-`otc.sql(..., relations={"orders": "/data/orders.csv"})` a real one-shot call.
-FinClaw can resolve and authorize governed Artifacts first and expose only
-their logical names to OTC.
+- public Python state;
+- a wire or Connector request;
+- the authorized or hashed Portable Plan;
+- a production executor input; or
+- a compatibility contract.
 
-The complete client surface is:
-
-```python
-client.sql(
-    statement,
-    *,
-    relations,
-    parameters=None,
-    limits: SqlResourceLimits | None = None,
-    pushdown="allow",
-    consistency="recorded",
-) -> pl.DataFrame
-client.sql_with_receipt(
-    statement,
-    *,
-    relations,
-    parameters=None,
-    limits: SqlResourceLimits | None = None,
-    pushdown="allow",
-    consistency="recorded",
-) -> SqlQueryResult
-client.prepare_sql(
-    statement,
-    *,
-    relations,
-    parameters=None,
-    preparation_limits: ResourceLimits | None = None,
-    pushdown="allow",
-    consistency="recorded",
-) -> PreparedRelationalQuery
-
-prepared.estimate -> SqlResourceEstimate
-prepared.admission -> SqlAdmissionStatus
-prepared.plan -> PortableRelationalPlan
-prepared.authorize(
-    *,
-    limits: SqlResourceLimits | None = None,
-) -> AuthorizedRelationalQuery
-AuthorizedRelationalQuery.execute() -> pl.DataFrame
-AuthorizedRelationalQuery.execute_with_receipt() -> SqlQueryResult
-```
-
-Module-level `otc.sql()` and `otc.sql_with_receipt()` delegate to the default
-client. `table.sql()` is sugar for the same client call with that handle bound
-as the reserved relation `this`; SQL uses `FROM this`. An optional `relations`
-mapping can add other explicitly named inputs but may not redefine `this`.
-There is one compiler and evaluator behind all three entry points.
-
-Relational parameters use named placeholders such as `:start` and a mapping of
-typed scalar values. Text interpolation is never an API. SQL Lite is
-read-only: its result is an ephemeral Polars dataframe. Persisting a result is
-an explicit `write()` or `copy_to()` operation with its own receipt.
-
-`prepare_sql()` binds source schemas, parameter values and types, source
-identities, pushdown intent, and consistency intent into an immutable
-`PreparedRelationalQuery`. `preparation_limits` bound only schema discovery and
-materialization needed to prepare sources; they are not an execution
-authorization. An explicit preparation envelope must contain positive finite
-row, byte, and duration bounds. A direct `prepare_sql(...,
-preparation_limits=None)` derives those bounds from the client's configured
-`DEFAULT_SQL_LIMITS_V1` replacement. A one-shot `sql()` or
-`sql_with_receipt()` first resolves its exact selected `SqlResourceLimits` and
-derives preparation bounds from that same profile. If no complete bounded
-preparation envelope can be formed, preparation fails before source I/O. The
-object contains the typed plan, required logical inputs, expected schema
-fingerprints, parameter schema, conservative resource estimate, admission
-status, exact statement hash, and canonical plan hash.
-
-Pushdown and consistency are preparation-time safety inputs because
-preparation may need to read and retain a complete source. With
-`pushdown="require"`, OTC must compile from authoritative schema metadata and
-preflight one certified provider execution domain before opening any source
-data stream; a source that requires row materialization merely to discover its
-schema is therefore ineligible. With `consistency="require_atomic"`, OTC must
-prove all inputs immutable or acquire one compatible provider's shared
-snapshot before any such materialization. Independently materialized mutable
-sources can never be upgraded to atomic later. `consistency="recorded"`
-materialization retains the exact pinned or stability-proven source described
-below. The prepared object owns any retained frame, snapshot lease, and
-confined spill until it is closed; it is a context manager. Choosing a
-different pushdown or consistency policy requires a new preparation.
-
-`authorize()` binds only the approved execution envelope, without recompiling
-or changing the semantic plan hash or preparation-time policies. It returns an
-`AuthorizedRelationalQuery` only when the estimate and required evidence fit
-that envelope. The authorized handle retains its normalized bindings and
-calling client, so execution rejects a closed client, missing or changed
-source, schema drift, or required pinned-identity mismatch before physical
-work. This gives governed hosts a real plan-estimate-authorize-execute seam.
-One-shot methods perform the same preparation and authorization internally,
-using their resolved policies and limits, and execute once.
-
-`SqlResourceEstimate` records each source and operator's conservative row/byte
-upper bound, duration/memory/spill assumptions, eligible execution domains, and
-the evidence behind each bound. `SqlAdmissionStatus` carries bounded fields,
-unknown reasons, and the minimum additional constraint or provider evidence
-needed. Syntax, typing, and unauthorized schema-preparation failures still
-raise immediately; an unknown or over-default execution estimate remains
-inspectable so a governed host can request a different envelope. Authorization
-fails with `SqlErrorCode.RESOURCE_ESTIMATE_UNKNOWN` while any expanding node
-lacks a finite enforceable bound.
-
-### Exact source binding and portable types
-
-Every logical input becomes an immutable `RelationBinding` containing its
-normalized source, exact canonical `SqlSchema`, schema fingerprint, declared
-unique constraints, read options, and any pinned snapshot identity. A
-DataFrame supplies its schema directly. A table supplies it through the typed
-inspection contract or an explicit caller schema that the provider validates
-against every row it reads.
-
-Sampled CSV or worksheet inference is never authoritative. When no declared
-schema exists, preparation may perform one complete bounded, receipted read to
-infer and materialize the input, then retain that exact frame in the prepared
-query. If complete preparation is not authorized, schema binding fails before
-query execution. A later execution never silently re-infers a different type.
-
-`otc.sql-lite.relational/v1` includes a normative, machine-readable semantic
-matrix at `specification/sql-lite/relational-v1-semantics.yaml`. The matrix is
-part of the language version and defines source coercion, implicit promotion,
-explicit casts, expression and aggregate result types, overflow, rounding,
-nulls, identifiers, timestamps, intervals, comparison, and ordering. The core
-v1 rules are:
-
-| Family | Portable rule |
-| --- | --- |
-| null/boolean | SQL three-valued logic; empty text is not null |
-| integer | signed/unsigned inputs are range-checked; arithmetic widens before overflow |
-| decimal | precision is at most 38; overflow fails; rounding is half-even |
-| floating | operations use finite IEEE-754 `Float64`; NaN and infinity are rejected at binding |
-| text/binary | UTF-8 text uses Unicode code-point comparison; binary has no implicit text cast |
-| temporal | dates are calendar values; timestamps require a timezone and normalize to UTC |
-| nested/object | list, struct, object, and opaque provider values are unsupported in v1 |
-
-There is no implicit text-to-number, text-to-date, or timezone guess. Provider
-blanks become null only when the bound source schema says they are missing;
-the empty string remains a value. `COUNT(*)`, `COUNT(expr)`, and
-`COUNT(DISTINCT expr)` return `Int64`; count expressions ignore nulls.
-`SUM(integer)` returns `Decimal(38, 0)` and `SUM(Decimal(p, s))` returns
-`Decimal(38, s)`. `AVG(integer)` returns `Decimal(38, 6)` and
-`AVG(Decimal(p, s))` returns `Decimal(38, max(s, 6))`; overflow fails rather
-than changing type. Floating sums and averages return `Float64`. Float
-reduction uses an exact binary superaccumulator;
-`AVG` divides that exact sum by the count, and each operation rounds only its
-final result to nearest with ties to even. Input order therefore cannot change
-the answer. Built-in provider float aggregation is ineligible for pushdown
-unless its conformance evidence proves that same result. `MIN` and `MAX` retain
-the input logical type.
-
-Portability means equal canonical input tables produce the same schema and
-relational result. It does not claim that an untyped CSV cell, Excel serial,
-SQLite dynamic value, and PostgreSQL column are equal before their providers
-decode and validate them into the same `SqlSchema`. Pushdown certification is
-against this semantic matrix, not against similar syntax or plan-node names.
+The exact SQLGlot version is pinned only after the normative SQL corpus passes.
+Parser upgrades require the same corpus plus a reviewed canonical-plan diff.
 
 ### Relational profile v1
 
-Version 1 accepts exactly one deterministic `SELECT`, optionally introduced by
-`WITH`, and this closed feature set:
+`otc.sql-lite.relational/v1` accepts exactly one deterministic `SELECT`,
+optionally introduced by nonrecursive `WITH`, and this closed set:
 
-- explicitly bound named relations and compile-time `*` expansion;
-- projection, aliases, `DISTINCT`, and closed scalar expressions;
-- `WHERE` and `HAVING` with three-valued boolean logic, comparisons, `IS NULL`,
-  `IN`, `BETWEEN`, and case-sensitive SQL `LIKE`;
+- explicitly bound named sources and compile-time `*` expansion;
+- projection, aliases, and `DISTINCT`;
+- `WHERE` and `HAVING` with SQL three-valued logic, comparisons, `IS NULL`,
+  `IN`, `BETWEEN`, and case-sensitive `LIKE`;
 - `INNER` and `LEFT` equijoins whose condition is a conjunction of typed
   equality predicates;
 - `GROUP BY` with `COUNT(*)`, `COUNT(expr)`, `COUNT(DISTINCT expr)`, `SUM`,
@@ -775,129 +1133,93 @@ Version 1 accepts exactly one deterministic `SELECT`, optionally introduced by
 - `CASE`, `COALESCE`, `NULLIF`, checked casts, numeric arithmetic, date/time
   literals, interval arithmetic, `ABS`, `ROUND`, `LOWER`, `UPPER`, `LENGTH`,
   `TRIM`, and `EXTRACT`;
-- nonrecursive CTEs, derived tables, and uncorrelated scalar, `IN`, and
-  `EXISTS` subqueries;
-- `UNION ALL` between schema-compatible subplans;
-- `ROW_NUMBER`, `RANK`, `DENSE_RANK`, `LAG`, `LEAD`, and the declared
-  aggregates as window functions with `PARTITION BY` and `ORDER BY`; and
-- `ORDER BY`, `LIMIT`, `OFFSET`, and SQL `FETCH` under independent SDK
-  resource limits.
+- derived tables and uncorrelated scalar, `IN`, and `EXISTS` subqueries;
+- `UNION ALL` between schema-compatible branches;
+- `ROW_NUMBER`, `RANK`, `DENSE_RANK`, `LAG`, `LEAD`, and declared aggregates
+  as window functions with `PARTITION BY` and `ORDER BY`; and
+- a top-level `ORDER BY` whose keys prove a total output order, plus optional
+  `LIMIT` or SQL `FETCH` under that order.
 
-Aggregate windows accept only the whole-partition frame or
-`ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` in v1. Ranking and offset
-windows use their SQL-defined frames. `RANGE`, `GROUPS`, frame exclusion, and
-provider-named windows are not in v1.
+Aggregate windows accept only a whole-partition frame or
+`ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`.
 
-The profile rejects every other form, including DDL, DML, multiple statements,
-recursive CTEs, cross/right/full/lateral joins, correlated subqueries,
-`UNION DISTINCT`, `INTERSECT`, `EXCEPT`, arbitrary functions, executable UDFs,
-stored procedures, table functions, external readers, provider settings,
-provider-specific casts, and nondeterministic functions.
+Every accepted v1 query must have that top-level total `ORDER BY`, except a
+query statically proven to return at most one row. SQL without `ORDER BY` does
+not inherit file, database, DataFrame, or encounter order. `LIMIT`, `FETCH`,
+window ordering, and final output ordering all require snapshot-valid enforced
+or validated uniqueness sufficient to break ties.
 
-Null behavior, numeric promotion, decimal overflow, casts, timestamp units,
-timezones, collations, and ordering follow the OTC semantic matrix rather than
-host-engine defaults. Ascending order defaults to `NULLS LAST` and descending
-order to `NULLS FIRST`; either may be written explicitly.
+The profile rejects everything else, including:
 
-Any operation whose result depends on row position requires a proven total
-order. `LIMIT`, `OFFSET`, `FETCH`, `ROW_NUMBER`, `LAG`, `LEAD`, and an ordered
-`ROWS` frame compile only when the ordering expressions contain a declared
-unique key within the result or window partition. Grouping keys and declared
-source unique constraints participate in that proof; a caller may supply the
-latter through `SqlRelationBinding`. `RANK` and `DENSE_RANK` may retain ties
-because their values are tie-stable. Failure is
-`SqlErrorCode.NONDETERMINISTIC_QUERY`; receipt canonicalization is evidence,
-not a repair for an ambiguous query.
+- DDL, DML, multiple statements, and comments carrying directives;
+- recursive CTEs and correlated subqueries;
+- cross, right, full, lateral, and non-equality joins;
+- `UNION DISTINCT`, `INTERSECT`, and `EXCEPT`;
+- `OFFSET`;
+- arbitrary functions, executable UDFs, procedures, and table functions;
+- external readers, provider settings, provider casts, and extensions; and
+- nondeterministic functions or output ordering.
 
-A uniqueness declaration participates in order or cardinality proofs only when
-the provider enforces it for the bound snapshot or OTC validates it against the
-same complete pinned/materialized input. A caller declaration is only a hint
-until that validation succeeds. The prepared query and receipt retain the
-constraint identity, validation method, snapshot, and evidence.
+Only named relational parameters are accepted:
 
-The feature registry is versioned. Adding syntax or a scalar, aggregate, or
-window function requires a new conformance entry and cannot silently change
-`v1` semantics.
-
-### Compilation and execution
-
-The execution path is:
-
-```text
-SQL text + typed parameters + explicit relations
-  -> pinned parser syntax tree
-  -> OTC whitelist and name resolution
-  -> typed PortableRelationalPlan
-  -> resource and capability planning
-  -> bounded Polars operator evaluation and/or certified provider lowering
-  -> Polars DataFrame + optional SqlReceipt
+```sql
+WHERE booked_at >= :start AND booked_at < :end
 ```
 
-The parser is a replaceable implementation detail, initially using the
-FinClaw migration's pinned SQLGlot baseline. SQLGlot is used only for lexing and
-parsing. OTC immediately translates accepted syntax into its own closed plan;
-the third-party AST is never serialized, authorized, hashed as the portable
-plan, exposed to providers, or executed.
+Runtime values are typed separately and never interpolated into SQL text.
 
-The authoritative local evaluator lowers the typed plan to bounded Polars
-expressions and operator stages. A `LazyFrame` is scheduled only after its node
-has an enforceable upper bound. Polars `SQLContext` may be used only as a
-private optimization after the same conformance corpus proves equivalence; its
-accepted grammar does not define OTC SQL Lite. DuckDB is not a required
-runtime.
+### Portable type and value semantics
 
-`pushdown` has the same three values on relational and temporal SQL:
+The normative machine-readable semantic matrix is part of the profile. Core
+v1 rules are:
 
-- `"allow"` chooses certified full pushdown when available and otherwise uses
-  bounded source reads plus the local evaluator;
-- `"forbid"` forbids portable-plan execution by a provider while retaining
-  ordinary bounded table reads; and
-- `"require"` fails before any data-bearing source read unless the complete
-  typed plan can execute as one certified provider operation. Bounded,
-  metadata-only schema discovery during preparation is permitted.
+| Family | Portable rule |
+| --- | --- |
+| null/boolean | SQL three-valued logic; empty text is not null |
+| integer | checked range and widening before overflow |
+| decimal | precision at most 38; overflow fails; half-even rounding |
+| floating | finite `Float64`; NaN and infinity rejected at binding |
+| text | UTF-8 Unicode code-point comparison; case-sensitive unless function says otherwise |
+| binary | no implicit text coercion |
+| temporal | dates are calendar values; timestamps require timezone and normalize to UTC |
+| nested/object | list, struct, object, and opaque provider values unsupported in v1 |
 
-`consistency="recorded"` is the v1 default. Each input is read from one
-recorded provider snapshot or retained in-memory value, but different providers
-may represent different observation times; the receipt says so explicitly.
-Each provider must pin a revision or prove stability across the complete read,
-for example with revision-token pagination or pre/post mutation detection. An
-observation timestamp or final content hash alone does not prove that paginated
-input was untorn. A provider unable to prove stability fails with
-`UNSUPPORTED_CAPABILITY` and never labels the read a recorded snapshot.
-`consistency="require_atomic"` succeeds only when all inputs are immutable or
-one compatible provider execution domain guarantees a shared statement
-snapshot. Cross-provider atomic snapshots are unsupported. FinClaw normally
-binds immutable Artifact identities, so it does not rely on coincident live
-reads.
+There is no implicit text-to-number, text-to-date, or timezone guess.
+`COUNT` returns `Int64`. Integer `SUM` returns `Decimal(38, 0)`.
+`AVG(integer)` returns `Decimal(38, 6)`. Decimal SUM/AVG follow the declared
+scale rules. Float reductions use the normative exact binary-superaccumulator
+rule and round once to nearest-even so input order cannot change the result.
 
-A provider may expose the optional `portable-sql/1` extension-family ABI and
-advertise the executable capability `portable-sql.execute/1.0`. Its
-`PortableSqlExecutor` receives a closed request containing the typed plan,
-typed parameters, `PortableSqlRelationBinding` values, consistency policy, and
-SQL resource limits—never portable SQL text. Each provider binding contains
-the logical name, `TableRef`, exact expected schema/fingerprint, validated
-constraints, typed read options, and pinned snapshot identity; credentials
-remain in provider context. Its result contains canonical Arrow data or an
-artifact plus a `PortableSqlExecutionReceipt` identifying the exact plan hash,
-output schema/order, bound source snapshots, enforced limits, and provider
-evidence. The executor rejects any binding it cannot reproduce exactly.
+Ascending ordering defaults to `NULLS LAST`; descending defaults to
+`NULLS FIRST`. Receipt or result canonicalization cannot repair ambiguous
+query meaning.
 
-Full pushdown is eligible only when every physical input belongs to one
-compatible provider execution domain and the provider's conformance profile
-covers every plan node, logical type, semantic rule, and requested bound. The
-provider executes the exact supplied plan and may not rewrite it into a
-self-declared residual. Mixed CSV, Excel, database, sheet, and in-memory
-queries execute through the same local semantics. Version 1 permits ordinary
-source column projection on the local path but defers partial relational-plan
-pushdown until a proof-bearing cut/residual protocol is specified.
+### Source binding and consistency
 
-The SQL package defines `SqlResourceLimits`, distinct from the smaller
-single-operation `ResourceLimits`. It bounds each source's rows and bytes,
-total input rows and bytes, every intermediate's rows and bytes, output rows
-and bytes, duration, local memory, and spill bytes. The SDK derives a
-`ResourceLimits` value for each physical read. A SQL `LIMIT` changes query
-meaning and bounds only final output; it does not authorize an unbounded join
-or aggregate.
+SQL source names bind explicitly to Table Sources:
+
+```python
+query = otc.sql(
+    statement,
+    sources={
+        "orders": orders_table,
+        "rates": rates_frame,
+    },
+)
+```
+
+Text cannot name an unbound database object, file, worksheet, URL, or
+provider object. Bindings capture exact schemas and safe source definitions;
+execution captures physical snapshots and receipts.
+
+`consistency="recorded"` requires one stable recorded snapshot per physical
+source. `consistency="require_atomic"` requires immutable sources or one
+compatible shared snapshot domain. It never claims atomicity across unrelated
+providers.
+
+### Bounds
+
+Every query is fully bounded independently of SQL `LIMIT`:
 
 ```python
 SqlResourceLimits(
@@ -915,845 +1237,754 @@ SqlResourceLimits(
 )
 ```
 
-Local execution must obtain each source completely within its authorized
-bounds. A truncated bounded read makes the query fail with
-`RESOURCE_LIMIT_EXCEEDED`; OTC never computes a plausible but incorrect partial
-aggregate or join. Before scheduling an operator, the planner must prove a
-conservative upper bound inside the authorized envelope using exact source
-extents or the enclosing read bounds. Unknown or excessive joins, windows, and
-unions fail closed. The local executor uses bounded operator stages and runtime
-counters in an isolated, cancellable worker with a confined spill directory;
-it must not call an unrestricted `LazyFrame.collect()` and inspect the result
-only after memory has already exceeded the contract.
+`limits=None` selects a configured finite profile, never unbounded execution.
+The v1 default is one million rows/256 MiB per source, two million rows/512
+MiB total input and per intermediate, 100,000 rows/128 MiB output, 30 seconds,
+512 MiB local memory, and 2 GiB confined spill.
 
-For a one-shot call or `prepared.authorize()`, `limits=None` selects the
-client's configured SQL limit profile; it never means unbounded execution. A
-plain `Client()` and the module default install `DEFAULT_SQL_LIMITS_V1`: one
-million rows/256 MiB per source, two million rows/512 MiB total input and per
-intermediate, 100,000 rows/128 MiB output, 30 seconds, 512 MiB local memory,
-and 2 GiB confined spill. Configuration may replace the whole profile but may
-not create an unbounded one. Authorization rejects work whose bound is already
-known to exceed the profile, and execution aborts if an observed intermediate
-or output crosses it.
-A provider is eligible for full pushdown only when it can enforce every
-requested bound or prove a tighter one; a statement timeout alone does not
-prove row, byte, memory, or scan bounds.
+A truncated source fails; OTC never computes an aggregate or join over an
+unlabeled partial input. Unknown or excessive expansion fails closed before
+the operator. V1 derives a conservative upper bound for every relational or
+temporal intermediate from source bounds, uniqueness evidence, and operator
+semantics. A join or other expanding operator whose worst-case rows or bytes
+exceed the declared intermediate limits is rejected even when typical data
+would be smaller. Runtime counters supplement this admission check at every
+observable batch boundary; they are not used to excuse an unbounded opaque
+operator.
 
-### SQL evidence and application ownership
+### PolarsPlanMapper
 
-`SqlQueryResult` contains `frame: polars.DataFrame` and
-`receipt: SqlReceipt`. The receipt records:
+`PolarsPlanMapper` is the normative local evaluator:
 
-- the exact UTF-8 statement hash and canonical typed-parameter hash;
-- the canonical portable-plan identity and SQL Lite profile version;
-- every logical input, its bound schema fingerprint, and its read receipt,
-  full-pushdown source observation, or canonical in-memory dataframe identity;
-- the requested consistency and actual per-source or shared snapshot facts;
-- the requested limits and observed resource usage;
-- provider-pushed and locally evaluated plan-node identities; and
-- output schema and canonical content identities.
+```text
+OTC Portable Plan
+  -> validated bounded operator graph
+  -> confined Polars worker and LazyFrame implementation
+  -> bounded worker collect
+  -> verified Arrow carrier
+  -> public Polars DataFrame
+```
 
-The exact statement hash preserves authored provenance; the canonical plan
-hash identifies equivalent portable execution. A provider-native query receipt
-does not claim either identity.
+Local evaluation runs in a disposable, killable SDK worker rather than the
+application process. Before collection, the SDK serializes already-authorized
+and bounded inputs to SDK-owned Arrow IPC artifacts. The worker receives only
+those artifacts and the validated plan: it has no Connector, credential,
+network authority, or ambient file access. Its platform confinement profile
+enforces the memory ceiling, private temporary-storage quota, CPU/thread
+budget, and deadline outside Polars; the supervisor cancels and then kills a
+worker that exceeds them, validates its bounded Arrow output, and cleans its
+workspace. A platform that cannot demonstrate those controls in conformance
+must reject SDK-local evaluation rather than advertise weakened limits.
 
-OTC owns SQL parsing, validation, type checking, portable plan semantics,
-Polars execution, optional pushdown, and generic query evidence. FinClaw retains
-stage and company scope, governed Artifact resolution, Accepted Silver
-selection, budget authorization and Action Requests, and Analysis Result/Gold
-identity. It maps `SqlAdmissionStatus` and authorization failures to its Action
-Request workflow. Its current run-local SQLite SQL path migrates to this SDK
-surface rather than becoming a second portable compiler.
+Every Query evaluation emits one `ExecutionReceipt` containing the Portable
+Plan/profile identity, enforced limits, observed work, output schema/order, and
+`execution_location="sdk-local"` for a local mapper. Physical source Receipts,
+when any, precede it. A DataFrame-only query therefore has no physical Receipt
+but still has local execution evidence; collecting an unchanged DataFrame has
+neither physical I/O nor a Query execution Receipt.
+
+DataFrame sources are snapshotted into the same bounded Arrow input form.
+Every physical Table or sheet range enters after one Complete Read, certified
+full provider pushdown, or a Connector-supplied bounded snapshot-bound Arrow
+batch stream. A local-file Connector may read CSV or Parquet internally and
+supply that verified Arrow stream plus its physical Receipt; only the SDK
+worker may lower SDK-owned Arrow IPC artifacts to Polars scans. Neither the
+mapper nor worker opens a Connector path or receives a Connector-supplied
+LazyFrame. Polars SQLContext is not the parser or semantic authority.
+
+The planner selects exactly one execution strategy:
+
+- `pushdown="allow"`: certified full provider lowering or local execution;
+- `pushdown="forbid"`: local execution only; or
+- `pushdown="require"`: one certified provider must execute the complete plan
+  under every requested semantic and resource guarantee before source I/O.
+
+Partial relational pushdown is deferred from v1 because cross-boundary
+intermediate semantics, bounds, and evidence are not yet closed.
+
+### DuckDB future seam
+
+DuckDB is not a v1 dependency, capability, public engine option, SQL lane, or
+fallback. The future reference is
+`docs/reviews/2026-08-31-duckdb-local-executor-reference.md`.
+
+Admission requires separate relational and temporal parity corpora, resource
+enforcement, security/artifact review, packaging review, and benchmarks. A
+future DuckDB mapper would accept only OTC Portable Plans and return the normal
+OperationResult; it would not accept caller SQL or claim provider pushdown.
+
+### Provider-native SQL
+
+Native SQL is explicitly database-scoped:
+
+```python
+native = client.native_sql(database_target)
+rows = native.query(
+    statement,
+    parameters=...,
+    limits=NativeSqlResourceLimits(...),
+).require_value()
+affected = native.execute(
+    statement,
+    parameters=...,
+    limits=NativeSqlResourceLimits(...),
+    idempotency_key="native-load-42",
+    verification="required",
+).require_value()
+```
+
+It may address any object authorized within that database execution domain.
+It is not a Table method, portable Query, or fallback. Parameters, dialect,
+effects, and evidence remain provider-specific and use the normal
+OperationResult envelope.
+
+`native.query()` is a read-only capability, not merely a row-returning call.
+It accepts exactly one statement and runs under provider-enforced read-only
+authorization or transaction state. The dialect policy rejects DDL, DML,
+procedures, multi-statements, locking clauses, external-I/O functions, and any
+volatile or user-defined function the Connector cannot prove side-effect-free.
+Its successful result therefore uses `commit=not_applicable`. If the Connector
+cannot prove the statement and execution context read-only, it rejects before
+dispatch; callers must use `native.execute()` and its mutation lifecycle.
+
+Every native query or execution has finite effective limits, supplied either
+explicitly or by a configured Client policy; an unbounded request is rejected
+before dispatch. Before a statement that may mutate is dispatched, the
+Connector must classify its effect, bind a stable operation identity and
+idempotency key to the statement, typed parameter values, database target,
+and limits, and declare its verification policy. The result uses the same
+commit and verification states as every other physical mutation. A lost or
+ambiguous acknowledgement produces `commit=unknown` with a durable
+reconciliation reference and is never retried blindly. If a provider cannot
+meet those effect, idempotency, evidence, and reconciliation requirements, it
+must not advertise native mutation execution; read-only native query support
+may still be advertised separately.
+
+The capabilities are independently versioned as `native.sql.query/1.0`,
+`native.sql.execute/1.0`, and, when supported,
+`native.sql.transaction/1.0`. Advertising query never implies execute or
+transaction support.
+
+An optional `native.transaction()` extension owns database-scoped raw-SQL
+transactions. Today's `TransactionalStore` implementations and concrete
+SQLite/PostgreSQL transaction handles are migration inputs because they are
+bound to a database target and can execute provider SQL. They must first gain
+normalized lifecycle state, OperationResult/Receipt evidence, idempotency, and
+unknown-outcome reconciliation; they do not already prove this extension or
+the new one-Table `Table.transaction/1.0` contract.
 
 ## Time-Series Interface
 
-### Binding a temporal table
+### Orthogonal view
+
+A Time-Series View binds one Table Source to an exact Temporal Descriptor:
 
 ```python
-ticks = client.table("postgres://market", relation="market_data.ticks")
-series = client.timeseries(
-    ticks,
-    descriptor=descriptor,
-    logical_name="ticks",
+series = otc.time_series(source, descriptor)
+```
+
+It is not a third Table Mode. The descriptor declares disjoint event-time,
+series-key, tag, value, and optional ingestion-time roles; timezone; precision;
+ordering; and duplicate policy. The descriptor hash includes its canonical
+schema contract.
+
+Physical mutation methods require a physical Table source. Query helpers may
+use a DataFrame, Query, Table, or explicit range when the descriptor can be
+validated.
+
+`series.describe()` returns `OperationResult[TimeSeriesDescription]`. The
+description binds the exact descriptor and schema identities, canonical
+physical target and observed revision when present, declared uniqueness
+requirements, and effective temporal capabilities. It does not mint an
+execution snapshot or prove an order-sensitive query against one; execution
+binds those facts in its Receipts. A DataFrame-backed description has no
+physical Receipt; a physical observation does.
+
+### Typed temporal helpers
+
+The following helpers build the existing Portable Temporal Plan operations
+and return a deferred Query:
+
+```python
+series.scan_range(
+    start, end, *, columns=None, tag_predicates=(),
+    snapshot_reference=None, limits=None,
+)
+series.latest(
+    *, at_or_before=None, columns=None, tag_predicates=(),
+    snapshot_reference=None, limits=None,
+)
+series.as_of(
+    at, *, columns=None, tag_predicates=(),
+    snapshot_reference=None, limits=None,
+)
+series.aggregate(
+    start, end, *, bucket, group_by=(), measures, tag_predicates=(),
+    snapshot_reference=None, limits=None,
+)
+series.gap_fill(
+    start, end, *, bucket, group_by=(), measures, tag_predicates=(), fills,
+    snapshot_reference=None, limits=None,
+)
+series.sql(
+    statement, *, parameters, snapshot_reference=None, limits=None,
 )
 ```
 
-A `TimeSeriesHandle` is bound to one physical `TableRef`, one distinct logical
-name used by portable plans and SQL, and an optional expected
-`TemporalTableDescriptor`. Convenience construction may accept the target and
-physical selection separately, but `logical_name` is never inferred from or
-sent as a physical identifier. Its first operation invokes a real
-provider-facing `TemporalDescriber` protocol. That protocol returns a
-`TemporalDescription` containing:
+`columns` lowers to the existing nonempty `projection`; `None` expands to the
+descriptor's documented default projection during pure Query construction.
+`group_by`, `measures`, `tag_predicates`, and `fills` lower without semantic
+renaming to their current Portable Temporal Plan fields. A supplied
+`snapshot_reference` becomes the Query's one-source snapshot constraint and
+fails if unavailable; omission applies the Query consistency policy rather
+than silently pinning an old observation.
 
-- the bound physical table reference and logical name;
-- the effective temporal descriptor;
-- the exact canonical Arrow schema;
-- the descriptor hash over that schema;
-- validated unique constraints with their enforcement or snapshot-validation
-  evidence;
-- the authoritative typed capability identities; and
-- safe physical execution facts.
-
-The SDK exposes the schema as a Polars schema in its public
-`TimeSeriesDescription`; the canonical Arrow schema remains internal for hash
-and artifact verification. If the caller supplies a descriptor, describe
-validates it. If no descriptor is supplied, the provider must have a configured
-descriptor and return it; schema alone cannot infer semantic roles such as
-series keys, tags, or ingestion time. Otherwise binding fails with a
-configuration error.
-
-A temporal uniqueness claim is usable only when the provider enforces it for
-the target or OTC validates it against the same complete pinned/materialized
-snapshot used by the query. The evidence names the ordered field tuple,
-validation method, and snapshot or provider constraint identity. Caller hints
-are not evidence. A snapshot-scoped claim cannot be reused against another
-revision.
-
-This deliberately strengthens the current process `DESCRIBE`, which reports
-only that portable temporal behavior exists and cannot verify descriptor
-identity. A temporal query is not dispatched until description binds target,
-relation, descriptor, schema, and capabilities.
-
-The canonical low-level operation remains the typed portable plan:
+Callers evaluate or materialize the returned Query through Client:
 
 ```python
-frame = series.execute(plan, pushdown="allow")
-result = series.execute_with_receipt(plan, pushdown="allow")
+latest = series.latest(at_or_before=cutoff)
+frame = client.collect(latest).require_value()
+created = client.materialize(latest, to=destination).require_value()
 ```
 
-`execute()` returns `polars.DataFrame`. `execute_with_receipt()` returns
-`TemporalReadResult(frame, receipt)`. If an executor returns an Arrow artifact,
-the SDK verifies and materializes it before producing the Polars result.
+The plan family remains:
 
-The handle rejects a plan whose logical `relation` or `descriptor_hash` differs
-from its description. It also binds execution to the handle's physical table
-reference; a plan cannot redirect the provider or reveal its physical relation
-name. Querying a committed snapshot is explicit:
+- `ScanRange`;
+- `Latest`;
+- `AsOf`;
+- `BucketAggregate`; and
+- `GapFill`.
 
-```python
-snapshot = series.at_snapshot(commit_result)
-frame = snapshot.execute(plan)
-```
+Ranges are increasing half-open `[start, end)` intervals at exact descriptor
+precision. Gap fill is aggregate-then-gap-fill with only null, constant,
+LOCF, and linear interpolation rules over aggregate outputs. It is not generic
+DataFrame null filling.
 
-`at_snapshot()` returns another immutable handle carrying the verified
-snapshot reference. The detailed execution methods also accept an explicit
-`snapshot_reference` for framework bindings. Snapshot selection remains
-transport metadata outside the portable plan.
+Series-key and tag filters remain the closed typed `eq`/`in` forms, and
+aggregates may target only descriptor value fields. Fixed and calendar bucket
+origin, offset, timezone, precision, and daylight-saving behavior remain
+defined by the existing Portable Temporal Plan corpus; SQL syntax cannot
+override them with provider-specific defaults.
 
-The time-series contract adds an `ExecutionLocationPolicy` to
-`TemporalExecutionRequest`, outside `PortableTemporalPlan`: SDK `"allow"` maps
-to `ALLOW`, `"forbid"` to `REQUIRE_CONNECTOR`, and `"require"` to
-`REQUIRE_PROVIDER`. The binding selects the connector evaluator or provider
-lowerer before I/O and fails if the requested location is unavailable. The
-receipt's execution location must satisfy the request. Keeping this policy out
-of the plan preserves one portable plan hash across execution locations.
+Plan and execution preserve the current temporal invariants: descriptor and
+plan hashes, required capability IDs, positive finite row/byte/duration bounds,
+requested and observed ranges, snapshot reference, and truthful provider,
+Connector, or SDK-local execution location. Output order is exact:
+
+- ScanRange and AsOf use the complete observation key;
+- Latest uses every series-key field;
+- BucketAggregate uses every group key followed by bucket; and
+- GapFill uses the corresponding aggregate group keys followed by bucket.
+
+Duplicate policy `preserve` requires snapshot-valid unique observation
+evidence whenever stored duplicates would otherwise tie. `replace-latest`
+requires ingestion time plus a validated unique full replacement key of series
+keys, event time, and ingestion time. Encounter order is never a tie-breaker.
+An executor unable to prove the required order rejects rather than returning a
+nondeterministic DataFrame.
 
 ### Temporal SQL profile
 
-`otc.sql-lite.temporal/v1` gives Python callers a familiar TimescaleDB-shaped
-surface without making SQL text a provider or process protocol:
+`otc.sql-lite.temporal/v1` is intentionally narrower than relational SQL. It
+accepts one deterministic SELECT over exactly one descriptor-bound source and
+maps exactly:
 
-```python
-frame = series.sql(
-    """
-    SELECT symbol,
-           time_bucket($1, observed_at) AS bucket,
-           avg(price) AS avg_price
-    FROM ticks
-    WHERE observed_at >= $2 AND observed_at < $3
-    GROUP BY symbol, bucket
-    ORDER BY symbol, bucket
-    LIMIT $4
-    """,
-    parameters=("5 minutes", start, end, 500),
-)
-
-result = series.sql_with_receipt(...)
-prepared = series.prepare_sql(...)
-program = prepared.program
-plan = program.portable_plan
-```
-
-The complete temporal SQL surface is:
-
-```python
-series.sql(
-    statement,
-    parameters=(),
-    *,
-    limits: ResourceBounds | None = None,
-    pushdown="allow",
-) -> pl.DataFrame
-series.sql_with_receipt(
-    statement,
-    parameters=(),
-    *,
-    limits: ResourceBounds | None = None,
-    pushdown="allow",
-) -> TemporalSqlResult
-series.prepare_sql(
-    statement,
-    parameters=(),
-    *,
-    limits: ResourceBounds | None = None,
-    pushdown="allow",
-) -> PreparedTemporalQuery
-
-prepared.program -> TemporalSqlProgram
-program.portable_plan -> PortableTemporalPlan
-program.result_shape -> TemporalResultShape
-prepared.execute() -> pl.DataFrame
-prepared.execute_with_receipt() -> TemporalSqlResult
-```
-
-`TemporalSqlResult` has exactly `frame: polars.DataFrame` and
-`receipt: TemporalSqlReceipt`. The SQL receipt contains the profile version,
-exact statement hash, canonical typed-parameter hash, emitted-plan hash,
-result-shape hash, requested pushdown policy, and the underlying
-`TemporalReceipt` as its `temporal` field. Its top-level final schema, order,
-row count, and canonical content identity are computed after the result-shape
-projection and correspond exactly to `TemporalSqlResult.frame`; the nested
-temporal receipt continues to describe the raw portable-plan carrier.
-
-Temporal parameters use PostgreSQL-style numbered placeholders and a typed
-sequence. This intentional difference from relational named parameters keeps
-the temporal profile source-compatible with the existing OTS/Timescale Core
-corpus. Provider-native placeholders remain entirely dialect-specific. Runtime
-values must be parameters; only a positive `LIMIT` may be a literal.
-
-Temporal `limits=None` resolves the client's mandatory configured
-`ResourceBounds` profile and never means unbounded execution. Plain `Client()`
-and the module default use `DEFAULT_TEMPORAL_BOUNDS_V1`: 100,000 rows,
-128 MiB, and 30 seconds. Configuration may replace it only with another fully
-bounded profile. Absence of a usable profile fails before describe or provider
-I/O.
-
-`prepare_sql()` first describes the handle and binds the logical name,
-descriptor, exact schema, parameters, limits, result shape, and pushdown policy.
-The immutable `PreparedTemporalQuery` retains an atomic `TemporalSqlProgram`
-containing both the portable plan and the visible column order/aliases plus any
-hidden fields required for ordering. It also retains every determinism
-requirement and the exact validated constraint evidence used to discharge it.
-When the description lacks required evidence, preparation may validate the
-constraint only by a complete read of the query's bounded input under the same
-pinned snapshot and must retain that carrier for local execution. With
-`pushdown="require"`, the provider must instead enforce and receipt the
-constraint. Otherwise preparation rejects the query before execution. `sql()`
-executes that program's plan through the same path as `series.execute()`, then
-applies only its deterministic final projection. `program.portable_plan` is
-exposed for diagnostics and transport, but executing that raw plan alone
-promises plan output rather than the complete SQL result shape. The plan sent
-to providers never contains SQL text or physical identifiers.
-
-The v1 statement is one deterministic `SELECT` over the handle's single
-logical relation. It accepts:
-
-- projection of descriptor-declared fields;
-- exactly one `time >= $n AND time < $m` event-time range for scans and bucket
-  queries;
-- `time <= $n` only in the `last(value, time)` latest shape described below;
-- equality and `IN` predicates on declared series keys and tags;
-- grouping whose projected dimensions exactly match the declared grouping
-  dimensions and the unique `bucket` alias;
-- `count(*)`, `min(value)`, `max(value)`, `sum(value)`, `avg(value)`,
-  `first(value, event_time)`, and `last(value, event_time)`, each with a unique
-  explicit output alias;
-- `time_bucket` with the portable fixed/calendar interval, origin, offset, and
-  timezone forms;
-- `time_bucket_gapfill`, plus `locf` and `interpolate` wrapping exactly one
-  supported aggregate and only with gapfill;
-- mandatory deterministic `ORDER BY` over declared output fields; and
-- a positive `LIMIT` under independent plan row and byte bounds.
-
-The latest shape contains one or more `last(value, event_time)` expressions,
-uses `time <= $n`, and groups by the complete declared series key and nothing
-else. Plain projection with a one-sided predicate is rejected; `series.as_of()`
-remains the explicit programmatic `AsOf` interface.
-
-SQL `first` and `last`, including the latest shape, are rejected when the
-descriptor uses `duplicate_policy="preserve"`, because the existing portable
-operations have no single-row tie-break field. Bucketed `first`/`last` also
-require the complete series key in `GROUP BY`. Under `reject`, duplicate logical
-keys fail. Under `replace-latest`, SQL v1 additionally requires a validated
-unique constraint over the full replacement key: series-key fields, event-time
-field, and ingestion-time field. The descriptor's greatest-ingestion-time rule
-then resolves duplicate logical keys without an equal-ingestion tie. Although
-the low-level portable-plan v1 contract can resolve an exact tie by source
-encounter order, the SQL frontend does not treat an undeclared physical row
-order as portable evidence. A future portable-plan version may add an explicit
-validated tie-breaker, but v1 never invents one in the SQL frontend.
-
-`time_bucket` and `time_bucket_gapfill` take two through five positional
-arguments. Width is the first parameter and the descriptor's event-time field
-is second. Optional arguments are at most one typed timezone string, origin
-timestamp, and fixed offset interval. Defaults are UTC, the profile's canonical
-epoch for the timestamp precision, zero offset, and ISO Monday for calendar
-weeks. Calendar buckets require a day-or-larger unit. The canonical corpus owns
-the interval grammar.
-
-Comments, relation aliases, every quoted identifier, physical names, and more
-than one relation are rejected in v1. Unquoted logical relation and field
-identifiers bind through the handle description. Scan order must contain the
-descriptor's observation key;
-aggregate order must contain every group key and bucket; latest order must
-contain the complete series key. When duplicate preservation makes an
-observation key nonunique, the order expressions must contain a validated
-unique constraint from the bound `TemporalDescription`; merely naming a
-source-declared field is insufficient. For `replace-latest`, deterministic
-duplicate resolution separately requires the validated full replacement key
-described above. `PreparedTemporalQuery` and `TemporalSqlReceipt` retain the
-constraint identities, validation methods, and matching snapshot evidence.
-Otherwise an order-sensitive query is rejected as nondeterministic.
-
-It rejects joins, CTEs, subqueries, set operations, window functions, `HAVING`,
-`DISTINCT`, `OFFSET`, arbitrary functions or expressions, DDL, DML, physical
-relation names, provider settings, unbound runtime literals, unbounded
-scan/aggregate time,
-and nondeterministic output. These restrictions are intentionally narrower
-than the relational profile because they preserve the existing portable
-temporal semantics.
-
-“Unbounded time” here means a scan, aggregate, gapfill, or plain projection
-without the exact half-open range. The declared latest shape is the sole
-one-sided exception and remains constrained by independent row, byte, and
-duration bounds.
-
-Compilation has an exact semantic mapping:
-
-| SQL shape | Existing portable operation |
+| SQL shape | Portable operation |
 | --- | --- |
-| bounded field projection | `ScanRange` |
-| `last(...)`, `time <=`, full series-key grouping | `Latest` |
+| bounded descriptor-field projection | `ScanRange` |
+| documented `last(value, event_time)` latest shape | `Latest` |
 | `time_bucket(...)` aggregates | `BucketAggregate` |
-| `time_bucket_gapfill(...)` or fill wrapper | `GapFill` |
+| `time_bucket_gapfill(...)` plus supported fill wrapper | `GapFill` |
 
-`pushdown="allow"` permits either certified provider lowering or bounded
-connector-side residual evaluation. `pushdown="forbid"` requires the latter.
-`pushdown="require"` fails before I/O unless the complete emitted plan has a
-proven pushdown claim. A nonempty residual plan is reported as Connector
-execution, not provider pushdown. No new SQL-text provider capability is
-introduced; required capabilities are derived from the emitted portable
-operation.
+`AsOf` remains a typed helper rather than a SQL shape.
 
-This application-facing compiler amends the earlier OTC statement that only
-OTS parses temporal SQL. The lower provider and connector-process seams remain
-plan-only. OTS still owns Add-on resolution, its wider Timescale Core/native
-identity, `TimescaleNativePlan`, and OTS acceptance. When the deferred Rust
-integration resumes, the Rust and Python compilers must consume one neutral,
-versioned corpus and emit the same canonical `PortableTemporalPlan` wire JSON,
-plan hash, and result shape for shared cases. This supersedes earlier hash
-parity wording for portable plan identity only; result Arrow bytes and provider
-receipts require normalized logical parity, not byte identity.
+Temporal SQL requires:
 
-### Ergonomic temporal operations
+- PostgreSQL-style numbered typed parameters;
+- exact `event_time >= $n AND event_time < $m` for scans and buckets;
+- the documented one-sided `event_time <= $n` latest shape only;
+- equality or `IN` filters on series keys and tags;
+- explicitly and uniquely aliased `count`, `min`, `max`, `sum`, `avg`,
+  `first`, and `last` aggregates;
+- `time_bucket` or `time_bucket_gapfill`, with `locf`/`interpolate` only as
+  supported wrappers over one gap-fill aggregate;
+- mandatory deterministic output ordering; and
+- a positive literal `LIMIT` within the independent resource profile.
 
-The SDK provides typed helpers that construct the same plan operations as the
-temporal SQL compiler; neither creates a second execution model:
+It rejects `BETWEEN` for event-time bounds, comments, physical names, multiple
+sources, joins, CTEs, subqueries, set operations, windows, HAVING, DISTINCT,
+OFFSET, arbitrary functions or expressions, DDL, DML, provider settings,
+unbounded range scans/aggregates/fills, and nondeterministic output. The only
+bounded-result exception is Latest: the typed helper may omit
+`at_or_before` under finite source/work limits, while temporal SQL requires its
+documented one-sided cutoff predicate.
 
-```python
-series.describe()
-series.scan_range(
-    start,
-    end,
-    *,
-    columns=None,
-    tags=(),
-    limits: ResourceBounds | None = None,
-    pushdown="allow",
-)
-series.latest(
-    *,
-    at_or_before=None,
-    tags=(),
-    limits: ResourceBounds | None = None,
-    pushdown="allow",
-)
-series.as_of(
-    at,
-    *,
-    tags=(),
-    limits: ResourceBounds | None = None,
-    pushdown="allow",
-)
-series.aggregate(
-    start,
-    end,
-    *,
-    bucket,
-    measures,
-    tags=(),
-    limits: ResourceBounds | None = None,
-    pushdown="allow",
-)
-series.gap_fill(
-    start,
-    end,
-    *,
-    bucket,
-    measures,
-    rules,
-    tags=(),
-    limits: ResourceBounds | None = None,
-    pushdown="allow",
-)
-```
-
-Each query has a corresponding `*_with_receipt` form with the same arguments.
-Every helper forwards `pushdown` unchanged to `series.execute`. Timestamp,
-half-open range, ordering, descriptor, bound, aggregation, and fill semantics
-continue to come exclusively from `open_table_connector.timeseries`.
-
-`columns=None` means every descriptor-declared field in canonical descriptor
-order; an empty projection is invalid. Helper-generated plans use deterministic
-output order and sorted, unique typed capability identities. They require
-exactly scan, latest, as-of, or aggregate as appropriate; `gap_fill()` requires
-both aggregate and fill. Pushdown is required only when the caller explicitly
-requests that guarantee. A result row limit may not exceed the plan's maximum
-row bound. `gap_fill()` is aggregate-then-gap-fill, not arbitrary dataframe
-null filling; `fill()` may exist only as a deprecated alias.
+Latest groups by the complete series key. `first`/`last` are rejected under
+duplicate policy `preserve`. `replace-latest` requires ingestion time and a
+validated full replacement key. Ambient source encounter order is never
+uniqueness evidence.
 
 ### Temporal writes
 
-The currently declared `timeseries.write.append/1.0` and
-`timeseries.write.upsert/1.0` identities become real SDK operations:
+The existing time-series write vocabulary remains descriptor-specific:
 
 ```python
-series.append(frame, *, idempotency_key=None) -> TemporalWriteResult
-series.upsert(frame, *, idempotency_key) -> TemporalWriteResult
+series = table.time_series(descriptor)
+series.append(frame, idempotency_key="batch-42")
+series.upsert(frame, idempotency_key="batch-43")
 ```
 
-The time-series package defines the currently missing `TemporalWriter`,
-`TemporalWriteRequest`, `TemporalWriteResult`, and `TemporalWriteReceipt`.
-Append and upsert validate the dataframe against the exact canonical schema and
-bound descriptor before provider I/O. Each request carries operation identity,
-resource bounds, relation, descriptor hash, input content identity, and an
-idempotency key when required. The receipt records affected rows, observed
-input time range, descriptor/content identities, provider revision, and
-idempotency outcome.
+`series.append()` is intentionally not renamed to `insert()` because it
+expresses temporal duplicate and observation semantics, not generic row
+insertion.
 
-The logical observation key is `series_key_fields + time_field`. Duplicate and
-ordering behavior follows the descriptor:
+- `preserve` retains observations;
+- `reject` fails a duplicate logical observation key; and
+- `replace-latest` requires ingestion time and makes the greatest-ingestion
+  observation visible for a logical key.
 
-- `preserve` retains duplicate observations;
-- `reject` fails the whole operation on a duplicate logical key; and
-- `replace-latest` requires ingestion time and makes the greatest ingestion
-  time observable for a logical key.
+Append never deletes or updates a stored observation. Upsert is unsupported
+under `preserve`; under `reject` or `replace-latest` it must implement the
+descriptor's full submitted-key behavior atomically. Input schema, descriptor,
+content identity, bounds, and idempotency are validated before I/O.
 
-Append never deletes or updates a stored row. Under `replace-latest`, it may
-retain history while descriptor-governed reads expose the greatest ingestion
-time. Upsert is unsupported for `preserve`; for `reject` or `replace-latest` it
-must provide the descriptor's observable replacement behavior atomically for
-every submitted key. All rows are accepted or the operation fails; partial
-success requires a future versioned capability. Reusing an idempotency key
-with different content is a stable conflict. A provider must not advertise
-either identity merely because ordinary `table.write(if_exists="append")`
-exists.
+Both operations return the normal OperationResult, with affected rows as the
+value when known and temporal write evidence in Receipts. There is no public
+`TemporalWriteResult` peer type.
 
-Completion requires executable reference implementations, not methods that
-always return unsupported: SQLite implements append and upsert offline;
-PostgreSQL claims them only after configured-live conformance; MaybeSheet may
-claim append only after its live process receipt proves it. Other providers
-remain unsupported until they pass the same writer suite.
+### Managed temporal storage
 
-### Managed storage lifecycle
-
-Managed operations are grouped under `series.storage`:
+Framework-facing managed storage remains available as a capability extension:
 
 ```python
-stage = series.storage.stage(frame, idempotency_key="batch-42")
-commit = series.storage.commit(stage)
-readback = series.storage.readback(commit)
-series.storage.abort(stage)
+stage: ManagedStage = series.storage.stage(
+    frame,
+    idempotency_key="batch-42",
+).require_value()
+snapshot: ManagedSnapshot = series.storage.commit(stage).require_value()
+readback: OperationResult[pl.DataFrame] = series.storage.readback(snapshot)
+aborted: OperationResult[AbortDisposition] = series.storage.abort(stage)
 ```
 
-The detailed request-object forms remain available for framework bindings and
-tests. The ergonomic SDK form fills operation IDs, descriptor hashes,
-credentials, artifact creation, and configured resource bounds. It does not
-weaken existing lifecycle semantics:
+The value contracts are distinct from evidence:
 
-- stage remains invisible;
-- commit remains idempotent on target, stage, and key;
+```python
+stage(...) -> OperationResult[ManagedStage]
+commit(stage) -> OperationResult[ManagedSnapshot]
+readback(snapshot) -> OperationResult[pl.DataFrame]
+abort(stage) -> OperationResult[AbortDisposition]
+```
+
+`ManagedStage` is an immutable, credential-free, Client-affine handle bound to
+one opaque stage reference, target, descriptor/schema/content identities,
+operation/idempotency identity, and lease expiry. `ManagedSnapshot` is an
+immutable handle bound to the committed target, descriptor/schema/content
+identities, exact snapshot reference, and its independent retention contract
+or deadline when finite. `AbortDisposition` is a closed enum: `aborted`,
+`already_aborted`, `already_committed`, or `expired`. The extension
+authenticates each opaque reference and rejects a foreign Client, target,
+descriptor, schema, or content binding before dispatch. Commit rejects an
+expired stage lease. Readback ignores the former stage lease and validates the
+snapshot's own reference and retention contract; an unavailable retained
+snapshot is a typed `SNAPSHOT_EXPIRED` or `SNAPSHOT_NOT_FOUND` failure. Abort
+is the exception for stage expiry: when the durable stage ledger proves that
+an authenticated stage lease expired without commit, it returns succeeded
+with `AbortDisposition.expired` and performs no provider mutation. These
+handles coordinate later calls; they are not Receipts and contain no claim
+that an operation occurred.
+
+Normative semantics remain:
+
+- stage is invisible and content-bound;
+- commit is idempotent on target, stage, and key;
 - readback independently observes and verifies the committed snapshot; and
-- abort remains idempotent and reports its disposition.
+- abort is idempotent and reports a closed disposition.
 
-`readback.frame` is a Polars dataframe. The readback receipt remains mandatory
-because snapshot verification is the purpose of the operation.
+Each call returns OperationResult. Existing managed stage/commit/readback/abort
+receipt schemas remain the evidence variants that prove what occurred.
+Commit's value identifies the snapshot that readback must observe; readback's
+value is a DataFrame and its independent verification evidence is mandatory.
+An abort after commit returns `already_committed` and never undoes the visible
+snapshot.
 
-### Complete temporal-operation mapping
+`limits=None` selects the finite default temporal profile: 100,000 rows,
+128 MiB, and 30 seconds. A configuration may replace it only with another
+fully bounded profile.
 
-| Capability | SDK surface |
-| --- | --- |
-| `otc.sql-lite.temporal/v1` | `series.sql*()` / `series.prepare_sql()` |
-| `timeseries.describe/1.0` | `series.describe()` |
-| `timeseries.scan.range/1.0` | `series.scan_range()` / plan execution |
-| `timeseries.scan.range.pushdown/1.0` | execution fact, not a different call |
-| `timeseries.lookup.latest/1.0` | `series.latest()` / plan execution |
-| `timeseries.lookup.asof/1.0` | `series.as_of()` / plan execution |
-| `timeseries.aggregate.window/1.0` | `series.aggregate()` / plan execution |
-| `timeseries.aggregate.window.pushdown/1.0` | execution fact, not a different call |
-| `timeseries.fill/1.0` | `series.gap_fill()` / plan execution |
-| `timeseries.write.append/1.0` | `series.append()` |
-| `timeseries.write.upsert/1.0` | `series.upsert()` |
-| `storage.stage/1.0` | `series.storage.stage()` |
-| `storage.commit.idempotent/1.0` | `series.storage.commit()` |
-| `storage.snapshot.read/1.0` | `series.storage.readback()` |
-| `storage.readback.verify/1.0` | mandatory readback receipt evidence |
-| `storage.visibility.atomic/1.0` | commit guarantee, not a different call |
-| `storage.abort/1.0` | `series.storage.abort()` |
+## Capabilities and Extensions
 
-Pushdown and visibility capabilities describe observable execution guarantees;
-they do not create duplicate methods.
+### Static and effective capabilities
 
-## Provider Plugin and Extension Model
+`client.connectors()` returns zero-I/O installed Connector metadata and static
+capabilities. `table.capabilities()` returns effective capabilities for one
+physical Table and may perform an authorized live probe. Results distinguish
+static, probe-required, and observed claims.
 
-### One application-independent registration
+Capability compatibility matches ID and supported version. Full wire strings,
+process maps, provider registration, and receipts derive from one authoritative
+`CapabilityIdentity`; providers do not maintain competing capability lists.
 
-`open_table_connector.providers` becomes the authoritative provider discovery
-group. Each entry point returns a zero-I/O `PluginDescriptor`. The descriptor
-contains immutable route and capability metadata plus one factory ABI. The
-factory accepts `ProviderFactoryContext` and returns a `ProviderInstance` with
-an optional table Connector and zero or more lazy capability-extension
-factories.
+### Core capability family
 
-Conceptually:
+The normalized application capabilities are semantic, not carrier-specific:
 
-```python
-PluginDescriptor(
-    name="postgres",
-    identity=CONNECTOR_IDENTITY,
-    schemes=("postgres", "postgresql"),
-    capabilities=(...),
-    factory=create_provider_instance,
-)
-
-ProviderInstance(
-    table=postgres_connector,
-    extensions={
-        "portable-sql/1": create_sql_binding,
-        "timeseries/1": create_temporal_binding,
-    },
-)
+```text
+table.inspect/2.0
+table.read.complete/1.0
+table.read.page/1.0
+table.snapshot.read/1.0
+table.materialize.schema/1.0
+table.materialize.rows/1.0
+table.insert/1.0
+table.update.keyed/1.0
+table.delete.where/1.0
+table.drop/1.0
+table.transaction/1.0
 ```
 
-`ProviderInstance` and its generic extension mapping live in the base contract
-and do not import SQL or temporal types. The SQL package owns
-`SqlFactoryContext` and `SqlBinding`; the binding exposes a
-`PortableSqlExecutor` plus its exact conformance profile. The time-series
-package owns `TemporalFactoryContext` and `TemporalBinding`:
+`table.read.polars`, `table.read.arrow`, `table.read.arrow.bounded/2.0`,
+`base.read/1.0`, `sheet.read/1.0`, `base.inspect/1.0`, `sheet.inspect/1.0`, and
+the old `table.inspect/1.0` are current compatibility identities, not final
+application semantics. Adapters map them only after the normalized contract's
+complete/page, exact-schema, Receipt, mode, and continuation conformance
+passes. The current bounded read proves truthful `complete` versus `truncated`
+extent but has no continuation request, so it is not yet Page Read.
 
-```python
-TemporalBinding(
-    describer=temporal_describer,
-    executor=portable_executor,
-    writer=optional_temporal_writer,
-    store=optional_managed_store,
-    capabilities=typed_capability_identities,
-)
+Current `uri.resolve/1.0` becomes internal Client routing.
+`table.write/1.0` is not carried forward as one semantic identity: after
+conformance its create-if-absent behavior maps to materialization and its
+append behavior maps to insertion, while replace is removed.
+`table.execute/1.0` maps only to the explicit provider-native SQL extension.
+Versioned adapters preserve old manifests and Receipts during migration rather
+than changing these identities in place.
+
+Capability details are typed and operation-specific. They include applicable
+Table Modes, finite limits, snapshot support, key kinds, atomicity, visibility,
+idempotency, continuation behavior, verification, and property subsets. A
+boolean method-presence check is insufficient.
+
+Pushdown and visibility are guarantees recorded on execution; they do not
+create duplicate public methods.
+
+The existing temporal capability identities remain versioned extension
+contracts:
+
+```text
+timeseries.describe/1.0
+timeseries.scan.range/1.0
+timeseries.scan.range.pushdown/1.0
+timeseries.lookup.latest/1.0
+timeseries.lookup.asof/1.0
+timeseries.aggregate.window/1.0
+timeseries.aggregate.window.pushdown/1.0
+timeseries.fill/1.0
+timeseries.write.append/1.0
+timeseries.write.upsert/1.0
+storage.stage/1.0
+storage.commit.idempotent/1.0
+storage.visibility.atomic/1.0
+storage.snapshot.read/1.0
+storage.readback.verify/1.0
+storage.abort/1.0
 ```
 
-The context contains only downward-safe structural values: table reference,
-relation, optional expected descriptor, safe provider configuration, a
-protected credential-value mapping excluded from representation, injected
-transports, validated extension options, and a confined artifact-root path or
-neutral artifact port. It never imports an SDK credential-lease or workspace
-class. The SDK retains ownership of lease and workspace lifetimes outside the
-context. This replaces process-document-shaped temporal factories for
-in-process use without reversing package dependencies.
+The read/query and managed-storage protocols exist today. The two temporal
+write identities are declared but have no current normalized writer protocol
+or conforming provider implementation; the SDK migration must add that
+contract before any Connector advertises them. Ordinary `table.write` or
+`Table.insert()` does not prove descriptor-aware append/upsert semantics.
 
-A distribution may publish multiple descriptors when it owns independently
-routed Connectors, as `local_files` does for CSV, Excel, Markdown, and its
-compatibility route. The SDK does not collapse those identities into one
-CLI-specific adapter.
+The two current `.pushdown/1.0` identities migrate to typed execution-guarantee
+details and Receipt facts under their parent temporal operations. Compatibility
+adapters may decode them, but they are retired rather than retained as separate
+public methods or permanent boolean capabilities.
 
-### Capability integrity
+### Optional extensions
 
-Static descriptor capabilities allow listing and route preflight without
-constructing providers. A capability that depends on a remote service may be
-marked probe-required. The SDK performs that probe only when the route is used
-or the caller explicitly requests live capabilities.
+Orthogonal surfaces use versioned typed extensions rather than widening every
+Table:
 
-`client.connectors()` returns immutable `ConnectorInfo` metadata, never raw
-`PluginDescriptor` objects containing factories. Static installed capabilities
-and live effective capabilities are distinguishable. Compatibility checks
-match capability ID and supported version, not ID alone. Table modes carry
-base-versus-sheet behavior; providers do not invent inconsistent read
-capability names for each mode.
+- TableTheme/TableStyle presentation;
+- sheet-grid coordinates, formulas, and workbook operations;
+- provider-native SQL;
+- managed temporal storage; and
+- external processing such as dbt compile/run/cancel/artifact-read/readback.
 
-After construction, advertised capabilities must correspond to implemented
-runtime protocols. `CapabilityIdentity` is the one authoritative in-memory
-representation; full wire strings and process `name -> version` maps are
-derived from it. Provider class constants, process registration, and extension
-bindings must not maintain competing capability lists. A mismatch is a
-provider configuration error, not an attribute error or fallback. Unsupported
-operations fail before source or destination I/O whenever preflight can
-determine the result.
+External processing preserves current prepared-operation and artifact outputs
+without creating another result envelope. Typed prepared handles, processing
+summaries, and bounded artifact references or values occupy
+`OperationResult.value`; Receipts carry their digests, producer identity,
+bounds, and execution evidence. Compatibility adapters convert today's
+`ExecutionResult.artifacts`, dbt compiled artifacts, manifests, run-results,
+and artifact references into those typed values rather than dropping them or
+mistaking payloads for Receipts.
 
-Transactions have an advertised capability. Write capability metadata also
-describes supported conflict policies; `table.write` does not imply that
-`error`, `append`, and `replace` are all available. Destination providers retain
-an internal preflight seam so `copy_to()` validates the exact policy before
-reading its source.
+An extension factory receives only the authorized Table/client context and
+typed configuration needed for that capability. An unavailable extension
+fails predictably; it never appears as a half-implemented object.
 
-Route collision checks remain deterministic and occur before provider
-factories or credential resolution. Removing a provider wheel removes its
-routes without preventing the SDK from importing.
+## Connector Discovery, Configuration, and Credentials
 
-## Configuration and Credentials
+`open_table_connector.providers` is the authoritative entry-point group. Each
+entry returns a zero-I/O immutable descriptor containing routes, modes,
+capability identities, and one lazy factory ABI. Importing the SDK does not
+import every provider or establish network connections.
 
-Configuration moves from CLI ownership to the SDK because every application
-needs identical discovery and credential semantics.
+Route collisions are deterministic configuration errors before provider
+construction or credential resolution. Removing a provider distribution
+removes its routes without preventing SDK import.
 
-The canonical schema becomes `otc.config/v1`. `Client.from_config(path)` uses
-an explicitly supplied file. `Client.from_default_config()` and the one-shot
-API use the existing precedence:
+Configuration is application-independent under `otc.config/v1` and contains:
 
-1. explicit injected path;
-2. `OTC_CONFIG`;
-3. `$XDG_CONFIG_HOME/open-table-connector/config.toml`;
-4. `~/.config/open-table-connector/config.toml`; and
-5. installed providers with safe defaults.
+- enabled Connectors and safe typed provider configuration;
+- credential references, never credential values;
+- finite SQL, temporal, read, and materialization limit profiles;
+- artifact workspace policy; and
+- explicit capability/pushdown/verification policy defaults.
 
-The schema includes complete SQL and temporal limit profiles. Omission selects
-the documented `DEFAULT_SQL_LIMITS_V1` and `DEFAULT_TEMPORAL_BOUNDS_V1`; a
-profile with an absent or unbounded required field is invalid. Thus the
-one-shot API is usable without a config file but never silently unbounded.
+Configuration cannot invent provider import paths or executable commands.
+Secrets are resolved through injected credential resolvers and excluded from
+representation, equality, serialization, diagnostics, hashes, environment
+inheritance, arguments, and Receipts. Credentials are leased for the shortest
+operation scope; a live transaction pins its lease until commit or abort.
 
-The completed CLI plan's `otc.cli-config/v1` document is accepted as a
-deprecated, structurally equivalent alias for one compatibility window. It is
-never silently rewritten. New documentation emits only `otc.config/v1`.
+Applications may inject discovery, credentials, transports, clocks,
+environment, and artifact workspaces through immutable Client configuration.
+These are internal/test seams, not provider-shaped public options.
 
-The closed provider and credential-reference rules from the CLI plan remain:
+## Thin CLI Cutover
 
-- configuration can enable, disable, and safely configure installed canonical
-  providers but cannot invent routes or import paths;
-- secret values are resolved through injected credential resolvers;
-- the default resolver may use declared environment bindings;
-- credential values are excluded from representation, equality,
-  serialization, diagnostics, and hashes; and
-- credential leases are scoped to provider activation and closed with the
-  client or operation as appropriate.
+The new CLI parses arguments, calls the SDK, renders values/results, and maps
+stable errors to exit status. It does not own provider discovery, credentials,
+Arrow conversion, SQL parsing, copy orchestration, retries, or capability
+policy.
 
-Applications may bypass file loading with immutable `ClientConfig` objects and
-injected discovery, credential, environment, transport, clock, and artifact
-workspace dependencies. These injection points are first-class test seams.
+Representative mappings are:
 
-`TableHandle` and `TimeSeriesHandle` construction is cheap, immutable, and
-does not resolve secrets. Credentials are leased for the shortest practical
-operation scope. A transaction is the exception: it pins its provider instance
-and lease until commit or abort. Secretless reusable transports may be cached
-by the client and are closed with it.
+```python
+# otc read SOURCE
+table = client.open(source).require_value()
+result = table.read()
+render(result.require_value())
 
-## Errors, Results, and Lifecycle
+# otc read-range GRID --range A1:D100 --schema SCHEMA
+source = client.bind_sheet_range(
+    grid=grid,
+    cell_range="A1:D100",
+    header=True,
+    schema=schema,
+    schema_policy="validate_declared",
+).require_value()
+render(client.collect(source).require_value())
 
-Physical SDK operations raise the existing stable `ConnectorError` family.
-Portable SQL parse, binding, typing, determinism, and admission failures raise
-`SqlCompileError`; temporal execution errors retain their temporal code and
-safe details. Error messages never include raw credentials, secret-bearing
-URIs, provider response bodies, unrestricted SQL literals, or unrestricted
-filesystem paths.
+# otc import --from SOURCE --to DESTINATION
+source_table = client.open(source).require_value()
+result = client.materialize(source_table, to=destination)
+render(result)
 
-All result and metadata objects are immutable. Reads do not mutate client
-state to expose evidence. The common direct-dataframe methods and explicit
-receipt-bearing methods call one internal operation; they cannot diverge in
-routing or semantics. Receipt schema/content fingerprints describe the
-internally verified canonical Arrow carrier. They do not claim that Polars
-serialization bytes or hashes are identical after conversion.
+# otc insert TARGET --frame INPUT
+table = client.open(target).require_value()
+result = table.insert(read_polars_input(input_path))
 
-The SDK runtime also has a non-public, carrier-preserving host port returning a
-`VerifiedArrowResult` or verified Arrow artifact together with that same
-receipt. A future bridge host uses this port instead of converting the public
-Polars result back to Arrow. The port shares all routing, authorization, and
-execution code with the public operation and is not a second application API.
+# otc update TARGET --frame INPUT --key id
+result = table.update(frame, keys=("id",))
 
-`Client.close()` closes activated providers, transports, credential leases,
-and temporary artifact workspaces in reverse construction order. It is
-idempotent. Operations on a closed client fail predictably. Module-level
-convenience functions never close caller-owned injected dependencies.
+# otc delete TARGET --where EXPRESSION --param name=value
+result = table.delete(where=expression, parameters=parameters)
+```
 
-The synchronous API is authoritative for version 1 because every current
-Connector protocol is synchronous. An async facade is deferred until providers
-have a real async seam; the SDK must not hide blocking provider work inside an
-apparently async method.
+CLI deletion requires `--where`; an explicit `--all-rows` flag maps to
+`otc.all_rows()` and is mutually exclusive with `--where`. There is no empty
+predicate default.
 
-## CLI Cutover
+Standard input and local frame paths are CLI codecs: the CLI decodes them to a
+DataFrame before calling the SDK. `inspect --from -` remains a CLI-local Polars
+schema/shape summary with no Table identity or physical Receipt; it does not
+pretend stdin is a Table. An unbounded worksheet selector is rejected; the
+caller must select an existing bounded sheet-mode Table or bind an explicit
+bounded range through `client.bind_sheet_range()`. Legacy `--limit` never
+slices after a full read. It maps to `read_page(max_rows=...)` only for a
+continuation-conformant Connector and otherwise fails with migration guidance.
 
-After SDK availability, CLI command behavior maps mechanically:
+Compatibility mapping from the completed CLI refactor is:
 
-| CLI command | SDK call |
+| Old intent | New SDK operation |
 | --- | --- |
-| `otc list` | `client.connectors()` |
-| `otc inspect` | `client.table(source).inspect()` |
-| `otc read` | `client.table(source).read_with_receipt()` |
-| `otc convert` | `client.copy(source, local_destination, ...)` |
-| `otc import` | `client.copy(source, connector_destination, ...)` |
-| `otc query` | `client.sql_with_receipt()` |
+| list installed Connectors | `client.connectors()` |
+| read/inspect an existing Table | `client.open(...).require_value().read()/inspect()` |
+| read an explicit bounded sheet range | `client.bind_sheet_range(...).require_value()`, then `client.collect(...)` |
+| stdin/local frame source | CLI decode to DataFrame, then render, query, or materialize |
+| inspect stdin | CLI-local Polars schema/shape summary; no `Table.inspect()` or physical Receipt |
+| unbounded worksheet source | removed; select a Table or exact range |
+| legacy post-read `--limit` | `read_page` only with resumable continuation support; otherwise rejected |
+| `if_exists=error` create/import | `client.materialize(...)` |
+| `if_exists=append` | `table.insert(...)` |
+| `if_exists=replace` | removed; no normalized equivalent |
+| convert to stdout/rendered frame | `client.collect(source)` plus CLI renderer/codec |
+| convert/import to a physical Table | create-only `client.materialize(source, to=...)` |
+| provider query read | explicit native SQL query |
+| URI resolution | SDK internal routing |
 
-The CLI may choose receipt-bearing methods because it renders evidence and
-summaries. That does not change the one-shot SDK default of returning a bare
-Polars dataframe for reads.
+Deprecated CLI aliases may survive one compatibility window, but they call the
+same SDK path and may not preserve removed unsafe semantics.
 
-`otc query` is the one new reference command added by this refactor. It accepts
-SQL from one mutually exclusive `--sql`, `--file`, or stdin source; repeated
-`--relation NAME=TARGET` bindings; `--param NAME=JSON_VALUE` scalar values; and
-an explicit resource-limit profile. Date, timestamp, interval, and decimal
-values use JSON strings plus an explicit SQL cast. The command maps those
-values directly to `client.sql_with_receipt()` and performs no SQL parsing,
-routing, planning, or execution itself. A future temporal CLI command must
-likewise delegate to
-`series.sql_with_receipt()` rather than add another compiler.
+## Complete Current Operation Mapping
 
-Provider-specific CLI adapters, configured registries, credential lifecycle,
-and pipeline orchestration are deleted after parity tests pass. Local codec
-write behavior is first moved from CLI adapters into provider-owned
-Connectors, so SDK `write()` and `copy_to()` never call CLI code. Compatibility
-imports may issue deprecation warnings for one release but must delegate to the
-SDK rather than retain a second implementation.
+| Current contract or declared operation | Final SDK surface |
+| --- | --- |
+| `URIResolver.resolve` | internal Client routing |
+| current receiptless `TableInspector.inspect` | migration input for exact, Receipt-bearing `Table.inspect()` v2 conformance |
+| current `ArrowTableReader` / `PolarsTableReader` | migration inputs for `Table.read()`; Arrow adapts after completeness/Receipt conformance, while Polars is converted at the compatibility boundary and is not the final Connector carrier SPI |
+| current `BoundedArrowTableReader` | truthful bounded-prefix compatibility SPI; not `read_page()` until continuation input/replay is added |
+| CLI-refactor `ConnectorAdapter.read/inspect/write` | transitional façade only; read/inspect route after Complete Read/exact-schema/Receipt conformance, while write additionally requires explicit materialize or insert intent |
+| `TableWriter(if_exists=error)` | migration input for create-only `Client.materialize()` after idempotency/identity/verification conformance |
+| `TableWriter(if_exists=append)` | `Table.insert()` after conformance |
+| `TableWriter(if_exists=replace)` | no normalized operation |
+| database-scoped `TransactionalStore` | migration input for optional `client.native_sql(...).transaction()` after lifecycle/result/evidence conformance; not normalized Table transaction proof |
+| CLI convert to stdout | `Client.collect(TableSource)` plus CLI renderer/codec |
+| CLI convert/import to a physical destination | `Client.materialize(TableSource, to=...)` |
+| provider `ReadOptions(query=...)` row reads | migration input for `client.native_sql(...).query()` after Complete Read and evidence conformance |
+| receiptless `SqlExecutor.execute` status/effect result | migration input for `client.native_sql(...).execute()` after commit/effect/Receipt conformance |
+| `WritePreflightAdapter.preflight_write` | internal materialization/mutation capability preflight |
+| `StepExecutor.prepare/run` | external-processing extension; not Table or Query core |
+| planned portable relational SQL | `Query`, `otc.sql`, `client.collect/sql` |
+| current minimal temporal describe | migration input for richer `TimeSeriesView.describe()` schema/descriptor/evidence conformance |
+| temporal scan/latest/as-of/aggregate/fill | `TimeSeriesView` Queries |
+| temporal append/upsert | physical `TimeSeriesView.append/upsert()` |
+| managed stage/commit/readback/abort | `TimeSeriesView.storage` extension |
+| temporal snapshot read/request binding | Query snapshot constraint and managed readback extension |
+| process `cancel` | internal Client/Connector cancellation, not a Table method |
+| dbt compile/run/cancel/artifact-read/readback | external-processing extension; artifact read and execution readback remain distinct operations |
 
-The CLI does not initially add commands for every advanced SDK method. It is a
-thin reference application, not a requirement that every SDK capability have
-a command-line spelling.
-
-## Testing and Conformance
-
-The SDK public interface becomes the primary application conformance surface.
-Required coverage includes:
-
-- one-shot and explicit-client behavior;
-- exact Polars result types and Arrow isolation;
-- closed `TableRef` normalization for relation, sheet/range, and local
-  format selection;
-- deterministic discovery, route collision, disablement, and unplugging;
-- lazy provider activation and clean shutdown;
-- config compatibility and strict validation;
-- scoped credentials and redaction under failures;
-- capability/protocol agreement and preflight-before-I/O;
-- static versus probed capability versions and supported write policies;
-- every table-operation mapping in this document;
-- bounds that are enforced rather than applied after unbounded materialization;
-- copy ordering, field policy, and dual receipts;
-- transaction commit, abort, nesting rejection, and closed-state behavior;
-- portable versus native SQL namespaces and row-query versus native execution
-  behavior;
-- relational SQL accepted/rejected corpus, typed-plan goldens, parameter and
-  schema binding, and exact statement/plan identities;
-- authoritative schema discovery versus rejected sampling and caller-schema
-  validation;
-- default, custom, partial, and invalid preparation envelopes, including
-  failure before data I/O when no complete bounded envelope exists;
-- preparation-time `pushdown="require"` and `consistency="require_atomic"`
-  preflight, retained snapshot lifetime, and rejection of later policy changes;
-- the normative type matrix across decimals, integer division, overflow,
-  null/blank/empty text, Unicode, nonfinite floats, timestamps, timezones, and
-  daylight-saving boundaries;
-- order-independent exact float reductions and rejection of provider aggregate
-  pushdown without equivalent rounding evidence;
-- total-order proofs and rejection of ambiguous limits and order-sensitive
-  windows, including validation of claimed unique-key evidence;
-- identical SQL Lite plans and normalized results for in-memory Polars, CSV,
-  Excel, SQLite, and configured-live PostgreSQL inputs;
-- local and full-pushdown equivalence for every provider feature it advertises;
-- complete-input enforcement, intermediate/output bounds, and rejection of
-  truncated or unknown-cardinality local joins, unions, windows, or aggregates;
-- cancellable-worker memory/spill/deadline enforcement and cleanup;
-- prepared-plan estimate/authorization/execution identity and schema-drift
-  failure;
-- recorded per-source snapshots and required-atomic snapshot preflight;
-- composite SQL receipts covering every source and execution location;
-- temporal SQL accepted/rejected corpus and exact SQL-to-`PortableTemporalPlan`
-  plus result-shape golden mapping;
-- temporal execution-location policy preflight and matching receipt evidence;
-- temporal unique-constraint validation, snapshot binding, and rejection of
-  equal-ingestion replacement ties without proof;
-- all temporal plan operations and ergonomic-helper equivalence;
-- real temporal description, relation binding, descriptor hashing, and
-  snapshot selection;
-- append/upsert descriptor validation and idempotency;
-- managed lifecycle and independent readback evidence;
-- provider installation/removal independence; and
-- black-box CLI equivalence before old orchestration is removed.
-
-Provider conformance uses a shared SDK harness plus capability-specific suites.
-A provider is tested only for capabilities it advertises, but every advertised
-capability is mandatory. Relational and temporal golden fixtures are
-independent expected plans and results rather than being generated by the same
-evaluator under test. A provider cannot advertise a plan node merely because
-its native engine parses similarly spelled SQL.
-
-FinClaw receives a focused integration test proving it can bind governed
-Artifact inputs to an injected `Client`, run its approved SQL Lite examples,
-and preserve Polars data, statement/plan identity, and source receipts. This
-supersedes its planned standalone parser and run-local SQLite evaluator. The
-FinClaw migration itself may occur after the SDK release.
+The mapping is semantic, not a claim that every current Connector already
+implements each capability. Unsupported capabilities remain unsupported until
+their implementation and conformance evidence exist.
 
 ## Migration Strategy
 
-The implementation plan will sequence this as a strangler refactor after the
-current CLI plan finishes:
+This design follows the assumed completed CLI refactor and supersedes the old
+SDK draft. Implementation planning must decompose it into independently
+reviewable phases:
 
-1. Characterize the completed CLI and current direct-provider behavior.
-2. Add the independently installable SQL package, its closed relational IR,
-   semantic matrix, parser whitelist, independent golden corpus, and bounded
-   Polars evaluator.
-3. Add the independently installable SDK package and stable public result
-   types.
-4. Move configuration, credentials, discovery, routing, and lifecycle from the
-   CLI into the SDK without changing behavior.
-5. Add `TableRef`, exact typed inspection, native row-query, corrected
-   bounded/transaction contracts, and Polars handles.
-6. Add client/table SQL relation binding, prepared estimates, SQL resource
-   limits, isolated local execution, snapshot policy, receipts, and the
-   optional full-plan provider pushdown extension.
-7. Generalize registration to `ProviderInstance`, migrate local writers, and
-   retire CLI-specific adapter factories.
-8. Add temporal describe and writer protocols, the temporal SQL compiler and
-   prepared result shape, execution-location policy, typed extension factory,
-   reference append/upsert implementations, and all temporal handles.
-9. Move copy orchestration into the SDK and cut the CLI, including `otc query`,
-   to direct SDK calls.
-10. Run provider, SQL, temporal, package-isolation, CLI-parity, and FinClaw
-    contract tests before deleting compatibility paths.
-11. Update user, provider-author, SQL-profile, and migration documentation.
+1. **Contract foundation:** add OperationResult, physical Table identities,
+   destinations, normalized capabilities, predicates, and error/reconciliation
+   types without changing CLI behavior.
+2. **SDK core:** add Client, physical Table, DataFrame source binding,
+   create-only materialization, complete/page reads, configuration, credentials,
+   and compatibility adapters over current Connectors.
+3. **Portable Query:** add the pinned SQLGlot front end, OTC Portable Plan,
+   confined-worker PolarsPlanMapper, bounded execution, source snapshots,
+   receipts, and SQL corpus.
+4. **Normalized mutations:** implement `insert`, strict keyed `update`,
+   predicate-required `delete`, `drop`, transactions, idempotency, and
+   reconciliation capability by capability. Connectors that cannot prove a
+   contract continue to reject it.
+5. **Time-series consolidation:** make typed helpers and temporal SQL return
+   Query, add normalized temporal write results, and adapt managed storage
+   Receipts without changing Portable Temporal Plan semantics.
+6. **Thin CLI:** replace CLI orchestration with SDK calls, add explicit
+   insert/update/delete vocabulary, retain bounded compatibility aliases, and
+   delete duplicate provider/configuration logic.
+7. **Extensions and cleanup:** add future presentation extension contracts,
+   remove deprecated TableRef/TableHandle/specialized-result surfaces, and
+   publish independent packages and conformance evidence.
 
-Each step must leave one authoritative path for newly migrated behavior. The
-plan must not create a long-lived SDK facade that simply calls back into CLI
-modules.
+The detailed implementation plan is written only after this specification is
+reviewed and approved.
+
+## Testing and Conformance
+
+### SDK interface tests
+
+Tests use the same public interface as applications and cover:
+
+- DataFrame, Query, Table, and sheet-range source normalization;
+- direct and nested physical-source Client affinity and explicit rebinding;
+- zero-row schema-only materialization;
+- create-only destination conflicts, two-phase idempotency finalization,
+  concurrent join, crash recovery, conflict, and replay;
+- source snapshot stability and exact multi-target DataFrame fan-out;
+- Complete Read versus Page Read and opaque continuation binding;
+- insert-only, strict update-only, predicate-required deletion, all-row
+  explicit predicate, drop, transaction, and stale-handle behavior;
+- every OperationResult state, committed verification failure, uncertain
+  commit, and reconciliation;
+- confined local-worker row/byte/intermediate/memory/temp/deadline enforcement
+  and cleanup after forced termination;
+- provider-enforced read-only native query and mutating native execution
+  separation;
+- managed stage/snapshot handle binding and every abort disposition;
+- client close, credential lease, artifact cleanup, and secret redaction; and
+- thin CLI equivalence to direct SDK calls.
+
+### SQL corpus
+
+The vendored relational corpus contains accepted/rejected SQL, typed sources
+and parameters, exact canonical Portable Plan JSON/hash, exact result schema,
+normalized ordered output, resource expectations, and errors. It covers every
+grammar family, type rule, null rule, numeric edge, timezone, determinism
+proof, snapshot policy, and pushdown policy.
+
+The mutation-predicate corpus separately covers parsing, parameter binding,
+three-valued logic, rejected constructs, constant all-row intent, connector
+lowering, affected rows, atomicity, and revision conflicts.
+
+### Temporal corpus
+
+The existing Portable Temporal Plan corpus remains authoritative and gains
+Python Query/public-result cases for typed helpers, temporal SQL lowering,
+descriptor/duplicate policy, bucket/DST behavior, gap fill, writes, managed
+storage, bounds, and normalized Receipts.
+
+### Connector conformance
+
+A Connector advertises only capabilities whose shared suite passes. Tests
+assert observable semantics and Receipts through Client/Table, not provider
+internals. Recording-stub results do not become configured-live claims.
+
+Initial implementation reality is recorded honestly:
+
+- existing read/inspect support can adapt first;
+- current generic write policies do not automatically prove insert/update/
+  delete/materialize capabilities;
+- Base schema-only creation, source-backed refresh, and distributed workflow
+  guarantees are distinct;
+- current sheet-mode worksheet creation does not yet prove bounded Table
+  creation;
+- current Feishu, Google Sheets, local file, and Maybe adapters do not all
+  provide atomic predicate deletion; and
+- no current Connector has a conforming TableTheme/TableStyle capability.
+
+### Dependency and packaging gates
+
+CI checks the package DAG, independent installation, public symbol inventory,
+schema/wire compatibility, generated artifacts, all conformance corpora,
+configured-live tiers where credentials exist, and CLI thinness. Provider
+packages must not import SDK or CLI modules.
 
 ## Acceptance Criteria
 
-- A Python application can install the SDK plus one provider and read a target
-  into a Polars dataframe without importing CLI modules.
-- The public SDK exposes every table and temporal operation mapped above.
-- Direct reads and temporal queries return Polars dataframes; explicit detailed
-  variants preserve receipts.
-- `client.sql()` executes the same SQL Lite relational semantics over named
-  Polars, CSV, Excel, SQLite, and PostgreSQL inputs; media differ only in
-  certified pushdown availability.
-- SQL Lite accepts the complete closed v1 subset in this document, rejects
-  every provider escape, and never evaluates a truncated source as complete.
-- Every relation has an exact typed schema, every admitted local operator has
-  an enforceable bound, and order-sensitive queries have a proven total order.
-- `prepare_sql()` exposes the exact plan and conservative estimate;
-  preparation binds consistency and pushdown before source reads, and
-  `authorize()` binds an approved envelope that executes without recompilation.
-- Cross-medium parity includes the normative type/semantic matrix and snapshot
-  evidence, not only similar row values.
-- `series.sql()` compiles the temporal profile into the existing portable plan
-  and sends no portable SQL text across provider or process seams.
-- Portable SQL and provider-native SQL have visibly different namespaces,
-  types, capabilities, receipts, and conformance claims.
-- The SDK discovers and activates only installed, enabled providers.
-- Providers depend only on contract and optional SQL/time-series packages,
-  never SDK or CLI.
-- Unsupported capabilities fail with stable errors and do not trigger
-  avoidable provider I/O.
-- The CLI contains no provider registry, credential lifecycle, Connector
-  construction, Arrow conversion, or copy pipeline.
-- Existing CLI behavior passes black-box parity tests through the SDK.
-- `otc query` contains presentation and argument mapping only; it calls the SDK
-  compiler and evaluator unchanged.
-- Time-series results and readback expose Polars without weakening temporal
-  bounds, identities, or receipts.
-- At least one offline provider executes temporal append and upsert; capability
-  claims by other providers require matching conformance evidence.
-- The SDK design contains no dependency on OTS or the deferred Rust bridge.
+The design is implemented only when:
+
+1. applications use Polars DataFrames directly without a logical Table
+   wrapper;
+2. `Query` is the sole deferred public table-producing type;
+3. `Table` is the sole physical table type and uses only base-mode or
+   sheet-mode;
+4. materialization is create-only and source evidence is preserved;
+5. `insert`, strict keyed `update`, predicate-required `delete`, `drop`, and
+   transaction semantics are capability-tested;
+6. there is no public `Table.append`, `clear`, generic replace, copy result,
+   TableRef/TableHandle/MaterializedTable, or specialized result hierarchy;
+7. every evaluated or physical operation uses OperationResult with plural
+   Receipts and safe reconciliation;
+8. SQLGlot is parser/policy only and PolarsPlanMapper is the normative local
+   evaluator;
+9. relational SQL Lite, temporal SQL Lite, and provider-native SQL remain
+   explicit non-fallbacking lanes;
+10. all existing declared time-series helpers, writes, and managed lifecycle
+    operations are represented without a second public result model;
+11. the CLI contains no independent provider, credential, SQL, Arrow, copy,
+    retry, or capability orchestration; and
+12. OTS remains outside this implementation and can later consume the stable
+    internal host port through the separate Rust adapter specification.

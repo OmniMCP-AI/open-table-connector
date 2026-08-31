@@ -68,8 +68,8 @@ They do not make DuckDB SQL the OTC language.
 
 There is **no DuckDB capability in v1** and no public `engine=` option. Normal
 `pushdown` continues to mean certified execution by the physical provider; a
-local DuckDB lowerer is connector-side execution and must never be reported as
-provider pushdown.
+local DuckDB lowerer is SDK-local execution and must never be reported as
+Connector or provider pushdown.
 
 If a later plan version admits it, the public semantic capability remains the
 same versioned SQL Lite query capability. DuckDB may have an internal
@@ -80,14 +80,15 @@ selected DuckDB for a certified execution. A missing optional package or an
 unsupported plan fails before data-bearing I/O (or the normal Polars path is
 chosen *before* execution under the ordinary policy).
 
-The result remains the normal OTC `OperationResult[DataFrame]` with plural
-physical `Receipt` entries, not a DuckDB relation or a DuckDB-specific result
-type. It must retain the portable plan hash, SQL Lite version, source read
-receipts and pinned snapshots, normalized output schema/order/content facts,
-enforced limits, warnings, and `execution_location="connector"`. A future
-receipt may add a safe `local_evaluator="duckdb"` fact; it cannot replace source
-physical receipts or imply provider pushdown, provider transaction semantics,
-or portable semantics for native SQL.
+The result remains the normal OTC `OperationResult[DataFrame]` with ordered
+`Receipt` entries, not a DuckDB relation or a DuckDB-specific result type. It
+always has one local ExecutionReceipt retaining the portable plan hash, SQL
+Lite version, normalized output schema/order/content facts, enforced limits,
+warnings, `execution_location="sdk-local"`, and a safe
+`local_evaluator="duckdb"` fact. Physical source-read Receipts and pinned
+snapshots precede it when physical sources exist; a DataFrame-only query has no
+physical Receipt. The local Receipt cannot imply Connector/provider pushdown,
+provider transaction semantics, or portable semantics for native SQL.
 
 ## Admission gates
 

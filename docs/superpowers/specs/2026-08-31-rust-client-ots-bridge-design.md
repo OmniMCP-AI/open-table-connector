@@ -1,379 +1,525 @@
-# Deferred OTC Rust Client and OTS Binding Bridge
+# Deferred OTC Rust Adapter SDK and OTS Integration
 
-**Status:** deferred; design boundary only; no implementation plan
+**Status:** deferred compatibility design; OTS integration is on hold; no
+implementation plan is authorized by this document.
 
 **Date:** 2026-08-31
 
-**Depends on:** the Polars-first OTC Python SDK reaching a stable public and
-provider-extension interface.
+**Depends on:** the Polars-first OTC Python SDK, its Connector seam, managed
+operation lifecycle, and internal host port reaching a stable contract.
 
 ## Decision
 
-OTS integration is not part of the Python SDK refactor. It will be implemented
-later as a separate wrapper and transport project.
-
-The intended dependency chain is:
+OTS remains predominantly Rust. It may later use OTC through a neutral Rust
+Adapter SDK, but that work is separate from the Python SDK refactor:
 
 ```text
 OTS Rust
-   |
-   v
-OTS OTC Binding
-   |
-   v
-OTC Rust Client
-   |
-   v
-OTC Python bridge host
-   |
-   v
+    |
+    | typed, versioned adapter protocol
+    v
+OTC Rust Adapter SDK
+    |
+    | internal SDK host port
+    v
 OTC Python SDK
-   |
-   v
-Connector plugins
+    |
+    v
+pluggable physical-medium Connectors
 ```
 
-Requests flow downward and results, artifacts, receipts, errors, and
-cancellation acknowledgements flow upward. The arrows describe calls, not
-shared semantic ownership.
+The local Python host or subprocess that realizes the internal host port is an
+implementation detail. It is not a fourth public architecture layer, a second
+provider runtime, or an application API.
 
-## Terminology
-
-- **OTC Python SDK**: the authoritative application/runtime interface for
-  provider discovery and Connector execution.
-- **OTC Python bridge host**: a narrow process wrapper that exposes a versioned
-  transport over an SDK client. It contains no second provider runtime.
-- **OTC Rust Client**: an OTC-owned Rust crate containing wire models,
-  transport, artifact verification, cancellation, and safe error mapping.
-- **OTS OTC Binding**: OTS-owned Rust code translating between OTS kernel
-  concepts and the neutral OTC client.
-- **Connector**: a physical-medium implementation owned by OTC provider
-  packages.
-- **Binding**: framework-specific translation owned by the consuming
-  framework, here OTS.
-
-The Rust component is deliberately called a Client, not an Adapter SDK. In the
-existing domain language, `Adapter` or `Binding` implies semantic translation;
-that translation belongs in OTS. The Rust crate must remain reusable by other
-Rust callers that speak the neutral OTC protocol.
+The adapter boundary carries closed, canonical plans and typed physical
+identities. It never carries SQL text, Python objects, Connector instances,
+credential values, or OTS kernel types. OTS retains ownership of OTS query
+parsing, lowering, semantic acceptance, retry policy, and fallback policy.
 
 ## Goals
 
-- Let the Rust OTS kernel use OTC-backed storage without rewriting OTS in
-  Python.
-- Keep the Python SDK as the only provider discovery, credential, routing, and
-  execution runtime.
-- Extract reusable neutral Rust transport code from the current OTS-local OTC
-  process implementation.
-- Preserve OTS control over logical plans, semantic acceptance, evidence, and
-  fallback policy.
-- Preserve typed, versioned, bounded temporal requests and independently
-  verifiable receipts.
-- Use a control plane for small messages and Arrow IPC artifacts for table
-  data.
-- Allow protocol conformance to be tested independently in Python and Rust.
+1. Preserve one OTC provider discovery, credential, routing, capability, and
+   execution runtime in the Python SDK.
+2. Let a future OTS integration use OTC without embedding Python in OTS or
+   rewriting OTS in Python.
+3. Provide a reusable, framework-neutral Rust crate for protocol framing,
+   compatibility, artifacts, cancellation, errors, and lifecycle recovery.
+4. Preserve bounded portable-plan semantics and independently verifiable
+   physical Receipts across the language boundary.
+5. Make Python/Rust plan parity and normalized-result parity testable from an
+   independent language-neutral corpus.
+6. Preserve managed stage, commit, readback, abort, and reconciliation
+   semantics across transport and process failures.
 
 ## Non-goals
 
-- This design does not authorize implementation while the bridge is on hold.
-- It does not rewrite the OTS semantic kernel, CLI, MCP server, or lifecycle in
+- Starting OTS integration, extraction, or protocol migration now.
+- Rewriting the OTS kernel, CLI, MCP server, SQL frontend, or storage policy in
   Python.
-- It does not embed Python into OTS with PyO3 or expose Python objects over FFI.
-- It does not move OTS-specific plan lowering or acceptance rules into OTC.
-- It does not make the Rust client a second Connector implementation runtime.
-- It does not expose arbitrary Python imports, code execution, relational or
-  temporal SQL text, or provider objects across the bridge. The bridge remains
-  typed-plan-only even though the Python SDK has SQL frontends.
-- It does not require every Python SDK operation to become an OTS operation.
-  The bridge exposes the neutral capability subset OTS needs.
-- It does not select a long-term daemon, remote service, or multiplexed network
+- Embedding a Python runtime in OTS through PyO3, CPython FFI, or a similar
+  mechanism.
+- Making the Rust Adapter SDK another Connector runtime, provider registry, SQL
+  frontend, or semantic planner.
+- Exposing the complete Python SDK surface to Rust before a concrete OTS need
+  exists.
+- Sending relational or temporal SQL text, arbitrary Python imports, code,
+  provider objects, or untyped option maps over the adapter protocol.
+- Choosing a long-lived daemon, remote service, or multiplexed network
   deployment in this deferred phase.
+
+## Relationship to the Python SDK Model
+
+The Python SDK defines three core concepts:
+
+| Concept | Meaning | Adapter boundary |
+| --- | --- | --- |
+| `polars.DataFrame` | Concrete in-memory Python table value | never crosses the wire |
+| `Query` | Immutable deferred table-producing computation | its OTS-used meaning is represented by a canonical Portable Plan and one typed physical source, not serialized as a Python object |
+| `Table` | Physical Connector-backed table handle | represented by a closed physical target/identity message, not serialized as a Python object |
+
+A Query is not a DataFrame, arbitrary SQL text, or provider plan. A Table is
+not an in-memory result. OTS never receives a Python DataFrame, Query, Table,
+Connector, credential resolver, or provider handle.
+
+The adapter accepts only closed members of the versioned OTC Portable Plan
+family, initially the OTS-required temporal subset. The Python SDK's SQLGlot
+frontend is not invoked by OTS requests. OTS retains Timescale-compatible SQL
+parsing and lowers accepted OTS semantics to the same canonical plan model.
+
+Protocol v1 is intentionally narrower than Python `TableSource`: an
+`execute_plan` request accepts exactly one descriptor-bound physical Table
+source. It rejects DataFrame, Query-as-source, sheet-range, and multi-source
+bindings. A later source expansion requires a new reviewed protocol version.
 
 ## Component Ownership
 
 ### OTC Python SDK
 
-The SDK owns:
+The Python SDK remains authoritative for:
 
-- installed-provider discovery and route selection;
+- installed-Connector discovery and route selection;
 - provider configuration and credential leases;
-- Connector and temporal-extension construction;
-- capability preflight;
-- physical reads, writes, temporal execution, and managed lifecycle;
-- OTC SQL Lite compilation for Python applications, which the bridge does not
-  invoke for OTS requests;
-- Polars application results and internal Arrow conversion;
-- neutral and temporal receipts; and
-- provider-safe errors and cleanup.
+- physical target resolution and effective-capability preflight;
+- source snapshot binding, resource admission, and execution strategy;
+- Connector and temporal-extension execution;
+- managed stage, commit, readback, abort, and reconciliation;
+- Arrow carrier validation and public Polars conversion;
+- normalized operation state, Receipts, errors, and cleanup; and
+- the internal carrier-preserving host port.
 
-It has no imports from OTS and no OTS plan types.
+The SDK imports no OTS code and contains no OTS plan, evidence, or storage
+types.
 
-### OTC Python bridge host
+### Internal SDK host port
 
-The bridge host adapts framed transport messages to one SDK client. It owns:
+The host port is a non-public SDK interface used by the protocol host. It
+owns:
 
-- handshake and protocol-version negotiation;
-- request decoding and closed-schema validation;
-- operation dispatch into the SDK;
-- use of the SDK's carrier-preserving host port so verified Arrow evidence is
-  not round-tripped through Polars;
-- bounded artifact creation and cleanup;
-- cancellation propagation;
-- credential-reference resolution at the deployment boundary; and
-- safe serialization of receipts and errors.
+- closed-schema request validation and dispatch into one SDK Client;
+- mapping SDK operation state and Receipt variants to versioned wire models;
+- use of verified internal Arrow carriers without a Polars round trip;
+- bounded artifact publication and cleanup;
+- cancellation propagation; and
+- safe serialization and redaction.
 
-It does not rediscover providers independently of the SDK, reconstruct
-provider-specific process bindings, or implement temporal semantics. The
-existing `otc-process` code is an input to this component, not an additional
-authoritative runtime.
+An initial implementation may be a supervised local Python subprocess. That
+host must use the SDK's existing discovery, credential, and execution runtime;
+it must not maintain a second provider registry or reconstruct Connector
+semantics.
 
-### OTC Rust Client
+### OTC Rust Adapter SDK
 
-The Rust crate is framework-neutral and owns:
+The framework-neutral Rust crate owns:
 
-- versioned request, response, receipt, error, and capability wire models;
-- child-process or injected transport lifecycle;
-- framed message correlation;
-- deadlines and cancellation;
-- Arrow artifact path confinement, size checks, media-type checks, and digest
-  verification;
-- protocol compatibility checks; and
-- conversion from wire failures into stable neutral Rust errors.
+- versioned request, response, capability, Receipt, error, and artifact wire
+  models;
+- transport startup/shutdown and injectable test transports;
+- framed message correlation and compatibility negotiation;
+- deadlines, cancellation, and host-exit handling;
+- Arrow artifact confinement, media/version checks, size checks, digest
+  verification, and lease cleanup;
+- stable Rust error mapping; and
+- validation, transport, and persistence of opaque versioned
+  managed-operation and reconciliation identity records.
 
-It does not own OTS plan types, OTS storage traits, OTS evidence types,
-provider routing, credential values, SQL lowering, result acceptance, retries
-at the semantic-operation level, or fallback selection.
+It owns no OTS kernel types, SQL parsing, Portable Plan semantics, provider
+selection, credential values, semantic retries, or fallback decisions. It
+does not construct, reinterpret, or extend the SDK's idempotency or
+reconciliation binding rules. It must be releasable from the OTC repository
+independently of OTS.
 
-The crate should live in the OTC repository and be released independently of
-OTS. OTS depends on an explicit compatible version.
+### OTS integration code
 
-### OTS OTC Binding
+Ordinary OTS-owned integration code remains in the OTS repository and owns:
 
-The Binding remains in the OTS repository and owns:
+- implementation of the OTS storage adapter seam;
+- Timescale Core/Add-ons SQL parsing and OTS semantic acceptance;
+- lowering the supported OTS subset to canonical OTC Portable Plans;
+- selecting required capability identities and explicit bounds;
+- selecting an OTS-configured logical target and supplying a typed requested
+  physical address, descriptor, expected-identity constraints, and required
+  snapshot/uniqueness policy;
+- translating neutral operation state and Receipts into OTS evidence;
+- independently checking returned identity, schema, ordering, range, snapshot,
+  bounds, and visibility against the original request;
+- OTS retry, reconciliation, fallback, and lifecycle policy; and
+- rejecting a transport-successful result that is semantically inadequate for
+  OTS.
 
-- implementing the OTS storage adapter seam;
-- retaining OTS parsing and acceptance of Timescale Core SQL and Add-ons;
-- lowering the supported subset of OTS plans into neutral portable temporal
-  plans;
-- selecting required capability identities;
-- supplying logical target, descriptor, bounds, operation IDs, credential
-  references, and snapshot references;
-- binding provider-enforced or snapshot-validated temporal unique constraints
-  required by order-sensitive SQL and duplicate resolution;
-- translating neutral results and receipts into OTS evidence;
-- verifying that returned identity, schema, ordering, range, snapshot, and
-  bounds satisfy the OTS request;
-- OTS retry, fallback, and lifecycle policy; and
-- rejecting semantically unacceptable results even when transport succeeded.
+No OTS kernel type crosses the neutral adapter protocol.
 
-No OTS kernel type crosses the neutral OTC wire.
+## Adapter Protocol
 
-## Interface Boundary
+### Identity and compatibility
 
-### Control plane
-
-The initial Rust client preserves the existing
-`otc.connector-process/v1` framed JSON protocol unchanged. A resumed project
-must first codify its current language-neutral schema and golden corpus; any
-widening then requires an explicitly versioned successor rather than a silent
-change. The initial operation families are:
+The future protocol identity is:
 
 ```text
-hello
+otc.rust-adapter/v1
+```
+
+It is a new closed protocol. It does not silently widen or claim wire
+compatibility with the existing `otc.connector-process/v1` transport. Existing
+process code and schemas are migration inputs only.
+
+Compatibility is negotiated from explicit protocol, schema, capability,
+Portable Plan, descriptor, Receipt, artifact-media, and corpus versions. A
+repository commit hash is not a compatibility contract. Unsupported versions
+or capability combinations fail before data-bearing I/O.
+
+### Operation families
+
+The initial closed operation set is:
+
+```text
+hello / negotiate
 describe
-execute
+execute_plan
 stage
 commit
 readback
 abort
+reconcile
 cancel
 ```
 
-These cover the current OTS use case. The bridge host invokes the Python SDK's
-non-public carrier-preserving evidence port, never the bare-dataframe
-convenience methods and never a Polars-to-Arrow reconstruction. The verified
-carrier or artifact and its receipt therefore continue to describe the same
-bytes and schema. Generic table operations are added only if a concrete Rust
-consumer requires them; Python SDK completeness alone does not justify
-widening version 1.
+- `hello / negotiate` selects one exact compatible protocol/schema set.
+- `describe` asks the SDK to resolve the physical Table and returns its
+  canonical identity, Table Mode, observed schema, descriptor validation, and
+  effective capabilities. It does not mint an execution snapshot.
+- `execute_plan` accepts canonical Portable Plan JSON and typed execution
+  metadata, never source SQL.
+- `stage`, `commit`, `readback`, and `abort` preserve managed-operation
+  lifecycle semantics.
+- `reconcile` performs a read-only lookup after an uncertain effect.
+- `cancel` requests bounded cancellation by correlated request identity.
 
-The current `describe` and receipt shapes do not carry the validated unique
-constraint evidence required by the shared temporal SQL profile. Before the
-bridge can claim that profile, an explicitly versioned protocol successor must
-add ordered constraint fields, enforcement or validation identity, and the
-matching snapshot identity. This is a conformance extension, not permission to
-send SQL text over the bridge.
+Generic table mutation and relational-query operations are not added until a
+concrete Rust consumer needs them and their semantics are separately approved.
 
-Every request carries a protocol version, request ID, operation identity,
-deadline or resource bounds, and required capability identities as applicable.
-Unknown fields, duplicate fields, unsupported versions, missing bounds, and
-unrecognized operations fail closed.
+### Request envelope
 
-The initial transport should remain a supervised local subprocess because it
-provides language isolation, explicit lifetime, stderr separation, and a small
-security boundary without embedding Python in the Rust process. The Rust
-client transport must be injectable so conformance tests do not require a real
-child process.
+Every request contains only closed, versioned fields, including as applicable:
 
-### Data plane
+- protocol and message-schema versions;
+- request and operation identities;
+- operation kind and required capability identities;
+- effective finite per-source, total-input, intermediate, and output row/byte
+  bounds, plus duration, local-memory, spill, frame, and artifact bounds;
+- a typed requested physical address with exact selection and an optional
+  expected canonical identity;
+- canonical Portable Plan plus plan/schema/descriptor identities;
+- opaque credential reference;
+- requested or expected snapshot constraints and required uniqueness policy;
+- an optional bounded Arrow IPC input-artifact reference for `stage`;
+- stage and idempotency identities; and
+- cancellation or reconciliation reference.
 
-Large table data uses content-addressed Arrow IPC artifacts rather than JSON
-rows or FFI-owned memory. Artifact references contain only a confined relative
-path, media type, byte size, and SHA-256 digest. Both sides verify the artifact
-before use, enforce configured byte limits, reject traversal and symlinks, and
-clean up according to explicit ownership rules.
+The physical target message represents a typed existing-Table address plus an
+optional expected identity. The SDK alone resolves it to the canonical
+physical Table. The message does not expose a public Python wrapper, provider
+object, or unvalidated options mapping.
 
-Polars remains the Python application table type. Arrow is a bridge artifact
-format, not evidence that the Python SDK public interface has changed.
+Unknown or duplicate fields, missing required bounds, unrecognized operations,
+invalid identities, noncanonical plans, unsupported versions, and capability
+mismatches fail closed.
 
-### Credentials
+### Response envelope
 
-OTS sends opaque credential references, never credential values. The bridge
-deployment resolves them through the SDK's injected credential resolver.
-References and safe provider IDs may appear in diagnostics; values may not.
+Responses contain only:
 
-Credential values are excluded from wire echoes, hashes, receipts, structured
-errors, debug representations, and child-process arguments. Environment
-inheritance is allowlisted rather than copied wholesale.
+- the independent `Outcome`, `CommitState`, and `VerificationState` values;
+- a typed value/artifact descriptor when the outcome permits one;
+- safe capability, target, snapshot, and schema facts;
+- ordered immutable Receipts;
+- ordered warnings and a safe `ErrorInfo` equivalent;
+- normalized result metadata;
+- an optional Arrow IPC artifact reference for table data;
+- a typed reconciliation reference on every unsafe post-dispatch failure and
+  a typed reconciliation disposition for `reconcile`; and
+- cancellation acknowledgement.
 
-## Protocol and Semantic Compatibility
+Python `OperationResult` is not serialized as a Python object. The versioned
+wire envelope preserves its semantic state and evidence so the Rust Adapter
+SDK and OTS can make independent decisions.
 
-Transport success is not semantic acceptance.
+Rejected, failed, partial, and unknown effects remain trusted operation
+envelopes when their schema and evidence validate; they are not collapsed into
+transport errors. No physical failure discards Receipts. A malformed or
+untrusted frame is instead a transport/protocol error and cannot be treated as
+proof that a mutation did not commit.
 
-The Python bridge validates message shape and dispatch preconditions. The OTC
-runtime validates Connector capabilities and physical execution. The OTS
-Binding then validates returned evidence against the original OTS request.
-Each layer rejects only facts it owns.
+## Data Plane
 
-Compatibility is based on explicit protocol and capability versions, not a
-repository commit hash. Artifact SHA-256 identifies transported bytes. Result
-evidence is revalidated by OTS after decoding rather than assuming
-cross-language in-memory identity. The canonical `PortableTemporalPlan` JSON
-is the deliberate exception: for the shared portable temporal SQL corpus, the
-OTC Python compiler and OTS Rust compiler must emit byte-identical plan JSON
-and plan hashes. A compatibility record should pin:
+Across the process boundary, table payloads use content-addressed Arrow IPC
+artifacts only. Each reference contains:
 
-- Rust client crate version;
-- Python bridge/SDK distribution version range;
-- control protocol version;
-- portable plan and descriptor schema versions;
-- portable temporal SQL profile, result-shape schema, and corpus versions;
-- temporal unique-constraint evidence schema and snapshot-binding version;
-- receipt schema versions;
-- Arrow artifact media type/version expectations; and
-- identity and hash of the neutral conformance corpus.
+```text
+confined relative path
+Arrow IPC media type and version
+declared byte length
+SHA-256 digest
+ownership/lease identity
+expiry and cleanup disposition
+```
 
-Python and Rust codecs must run the same language-neutral golden corpus for
-valid messages, invalid messages, canonical hashes, temporal boundary cases,
-errors, cancellation, and artifact verification. The temporal SQL corpus must
-contain source, typed parameters, descriptor/schema binding, expected portable
-plan JSON and hash, expected result shape and hash, and validated unique
-constraint evidence or an expected missing-evidence rejection—not only
-accepted/rejected status. Evidence-bound cases also pin the source snapshot.
-One neutral corpus is maintained independently of both compiler
-implementations; separate Python and Rust harnesses consume it. Expected
-outputs must not be generated at test time by either implementation under
-test. Relational SQL Lite is outside this bridge because OTS does not consume
-it.
+Both sides verify confinement, ownership, media type, length, digest, schema,
+and configured limits before decode. They reject absolute paths, traversal,
+symlinks, ownership/mode violations, unexpected files, oversized values, and
+expired leases.
 
-## Failure and Lifecycle Model
+Artifact ownership follows one direction-independent state machine:
 
-The Rust client distinguishes at least:
+```text
+publisher-owned temporary
+  -> atomically published and digest-bound
+  -> receiver-validated read lease
+  -> receiver release acknowledgement
+  -> publisher deletion after all leases close
+```
 
-- bridge unavailable or startup failure;
-- incompatible protocol;
-- malformed response;
-- unsupported capability;
-- authentication/configuration failure;
-- deadline or cancellation;
-- artifact integrity or confinement failure;
-- provider execution failure; and
-- OTS semantic rejection after a valid OTC response.
+For `stage` input, the Rust side is publisher, digest author, and sole deletion
+authority; the host holds only a read lease. For result/readback output, the
+host is publisher, digest author, and sole deletion authority; Rust holds only
+a read lease. Publishers write only inside their assigned workspace, publish
+by atomic rename after complete write and local verification, and never mutate
+a published artifact. Receivers validate before acknowledging acquisition and
+never delete publisher-owned files.
 
-The OTS Binding decides which failures permit fallback. The Rust client never
-retries a semantic operation implicitly. Transport retries are permitted only
-when the operation contract and idempotency identity make them safe.
+Cancellation or host exit closes live read leases only after bounded cleanup;
+the publisher reclaims an unreferenced artifact at lease expiry. Before a
+mutation can depend on input bytes, the host must copy or pin them into its
+durable stage state. A transport artifact is never the only durable evidence
+for an uncertain commit or reconciliation. Terminal responses and explicit
+release acknowledgements permit earlier deletion.
 
-The OTS-owned process supervisor starts the bridge with an explicit config and
-artifact root, performs `hello`, and closes or kills it on adapter shutdown.
-In-flight cancellation uses a request ID and has bounded acknowledgement time.
-Unexpected process exit fails all pending requests and invalidates unverified
-artifacts.
+Arrow C Data or C Stream may be used only inside the SDK's process-local host
+implementation where lifetime ownership is explicit. C pointers, Python,
+PyArrow, or Polars objects, provider handles, and file descriptors never cross
+the Rust protocol.
 
-Managed stage, commit, readback, and abort preserve their existing idempotency
-and visibility semantics across process failure. The Binding must retain
-enough neutral identity to reconcile an uncertain commit rather than assuming
-success or replaying with different content.
+The artifact digest proves transported bytes. It is not a cross-language
+semantic-result identity: equivalent Arrow values may differ in chunking,
+dictionary encoding, metadata, or IPC bytes. Public Python users continue to
+receive Polars DataFrames; Arrow is an internal carrier.
+
+## Portable Plan and Result Parity
+
+### Plan parity
+
+The Python compiler and OTS-owned Rust compiler/codec consume one independently
+maintained, language-neutral corpus. For every shared accepted case they emit
+byte-identical canonical Portable Plan JSON and the same plan hash. Canonical
+encoding, field ordering, numeric forms, temporal precision, schema identity,
+and hash domain are specified by the corpus; neither implementation generates
+the other's expected fixtures. The Rust Adapter SDK validates the closed plan
+schema and hash but does not acquire plan-semantic ownership.
+
+The adapter never accepts a SQLGlot AST, OTS AST, Polars LazyFrame, provider
+plan, or noncanonical plan JSON as a substitute.
+
+### Result parity
+
+Result comparison uses a defined normalized logical form, not Arrow IPC bytes,
+DataFrame chunking, artifact layout, observation timestamps, or raw
+provider-specific Receipt bytes. The corpus pins:
+
+- typed source definitions and parameters;
+- accepted or rejected outcome;
+- canonical Portable Plan JSON and hash;
+- logical fields, types, nullability, and order;
+- canonical row order and scalar normalization;
+- descriptor, range, snapshot, and validated uniqueness requirements;
+- normalized result fixture/hash or expected rejection;
+- normalized operation-state and required Receipt facts;
+- protocol, cancellation, and artifact-integrity errors; and
+- stage, commit, readback, abort, and reconciliation cases.
+
+Receipt comparison checks required semantic facts: operation, logical and
+physical target identity, descriptor/content/plan identity, snapshot, requested
+and observed bounds, execution location, visibility, verification, and
+idempotency outcome. Incidental timestamps and provider payload bytes are not
+portable equality.
+
+The normalized result encoding is `otc.logical-result/v1`: canonical UTF-8
+JSON with lexicographically sorted object keys, no insignificant whitespace,
+arrays preserving declared field and row order, and no Unicode normalization.
+Keys sort by unsigned UTF-8 bytes. Strings emit non-ASCII UTF-8 directly,
+escape only JSON-required quote, backslash, and control characters, and use
+lowercase hexadecimal for control escapes.
+Its schema records each field's exact name, canonical OTC logical type,
+nullability, and position. Every cell is explicitly tagged: null, boolean,
+integer decimal text, decimal coefficient plus scale, finite IEEE-754 binary64
+hex, exact UTF-8 text, base64url binary, epoch-day date, UTC epoch count plus
+declared timestamp unit, or the profile's canonical interval tuple. Bare JSON
+numbers and NaN/infinity are forbidden. The scalar rules are those of the
+Python SDK's normative SQL semantic matrix.
+
+Rows use the order proved and declared by the Portable Plan and execution
+Receipt; a case without deterministic row order is rejected from parity v1.
+The result hash is
+`SHA-256("otc.logical-result/v1\0" || canonical_json_bytes)` and covers only
+the logical schema and rows. It excludes Receipts, provider metadata,
+artifacts, chunking, and observation timestamps, which are validated through
+their own schemas.
+
+## Managed Lifecycle and Recovery
+
+The adapter preserves these invariants:
+
+- stage is invisible and bound to target, schema, descriptor, content, and
+  idempotency identity;
+- commit is idempotent on target, stage, and idempotency key;
+- reusing a key with different bound content fails deterministically;
+- readback is a fresh independent observation with a mandatory Receipt;
+- abort is idempotent and returns a closed disposition;
+- an unknown commit state enters `reconcile` using durable operation, stage,
+  target, and idempotency identities;
+- reconciliation is read-only and never mutates or guesses state; and
+- a transport retry is permitted only when the operation contract proves it
+  safe.
+
+A timeout, lost acknowledgement, or host exit never means rollback. Neither
+the Rust Adapter SDK nor the host blindly repeats a mutation. OTS decides
+semantic retry and fallback only after validating reconciliation evidence. A
+mutation may be replayed or sent through another execution path only when it
+was rejected before dispatch with `commit=not_started`, or when reconciliation
+has positively established `not_committed`. A committed, in-flight, unknown,
+or expired reconciliation disposition prohibits replay and fallback. OTS must
+surface that state for operator or application policy instead of guessing.
+
+Before mutation dispatch, the host must durably persist the reconciliation
+record and all neutral identities needed to distinguish not-started, in-flight,
+committed, and unknown states after a crash. Persisting only after a timeout or
+before reporting an unknown outcome is too late. If that durability cannot be
+provided, the capability is not advertised.
+
+## Process, Cancellation, and Credentials
+
+The initial deployment should be a supervised local subprocess because it
+provides language isolation, explicit lifetime, stderr separation, and a
+small boundary without embedding Python. The transport remains injectable for
+tests.
+
+The supervisor pins or allowlists the host executable and closed deployment
+configuration. It never accepts a command, module path, import, or executable
+from an OTS request or host response. Environment inheritance is allowlisted.
+
+OTS sends only an opaque credential reference. The host resolves it through
+the SDK's injected resolver. Credential values are excluded from frames,
+echoes, arguments, environment, hashes, Receipts, errors, logs, debug
+representations, and artifacts.
+
+Cancellation is correlated by request identity and has a bounded
+acknowledgement interval. Unexpected host exit fails every pending request,
+invalidates unverified artifacts, closes leases, and preserves durable
+reconciliation records. Cancellation after dispatch does not imply that a
+mutation was not committed.
 
 ## Security Boundary
 
-Before implementation resumes, the threat model must cover:
+Before implementation, the threat model and conformance suite must cover:
 
-- malicious or compromised provider output;
-- a stale or incompatible bridge executable;
-- hostile artifact paths and symlinks;
-- oversized frames and artifacts;
-- stderr or error-body secret leakage;
-- child environment leakage;
-- cancellation races and orphaned children; and
-- untrusted config-file ownership and mutation.
+- malicious or compromised Connector/provider output;
+- stale, substituted, or incompatible host executables;
+- hostile paths, symlinks, file ownership, and artifact replacement;
+- oversized, deeply nested, duplicated, or malformed frames;
+- excessive rows, bytes, duration, memory, and artifact retention;
+- secret leakage through stderr, errors, configuration, process arguments, or
+  inherited environment;
+- cancellation races, orphaned children, and host-exit ambiguity;
+- replay, idempotency conflict, and forged reconciliation references; and
+- untrusted configuration ownership or mutation.
 
-The bridge uses a closed deployment-owned configuration. The Rust client never
-accepts an arbitrary command supplied by an OTC response. The Python bridge
-never accepts arbitrary module paths or code supplied by OTS.
+All returned provider artifacts and host output are hostile until validated.
+The protocol is closed-schema and bounded. Artifact workspaces are confined
+and lease-owned. Cleanup is deterministic. Safe errors never include raw
+provider bodies, SQL literals, credential-bearing URIs, or unrestricted local
+paths.
 
-## Extraction from the Current OTS Code
+## Migration When Work Resumes
 
-When resumed, the current OTS OTC implementation should be divided by
-ownership rather than moved wholesale:
+1. **Freeze/hold:** perform no OTS implementation, extraction, or protocol
+   migration while the Python architecture is under review.
+2. **Complete the Python SDK:** stabilize public DataFrame, deferred Query,
+   physical Table, OperationResult/Receipts, managed lifecycle, reconciliation,
+   and the internal host port; move the CLI onto that SDK.
+3. **Specify protocol and corpus first:** approve the closed adapter schemas,
+   canonical encoding, normalized-result rules, artifact ownership, security
+   model, and independent fixtures.
+4. **Build the Rust Adapter SDK against fakes:** test framing, compatibility,
+   cancellation, artifacts, Receipts, and reconciliation without an OTS or
+   live-provider dependency.
+5. **Run an opt-in OTS pilot:** add a feature-gated integration only after plan
+   parity and lifecycle conformance pass; retain the existing OTS storage path
+   as rollback.
+6. **Adopt managed operations:** use shadow or dual verification where
+   feasible; enable staged lifecycle only after unknown-commit reconciliation
+   is proven.
+7. **Gate release:** publish supported SDK/adapter/OTS version ranges,
+   deployment requirements, upgrade order, failure behavior, and rollback or
+   removal instructions.
 
-- neutral portions of `process.rs` and `wire.rs`, process framing, artifact
-  verification, and neutral errors move or are reimplemented in the OTC Rust
-  Client;
-- `storage.rs`, OTS storage traits, plan lowering, evidence conversion, and
-  semantic acceptance remain in the OTS Binding;
-- `capabilities.rs` and all mapping from neutral claims into OTS profiles remain
-  in the OTS Binding;
-- the current configuration splits into neutral client settings (executable,
-  artifact root, protocol limits, and compatible OTC versions) and OTS Binding
-  settings (logical Store mapping, allowed profiles, evidence pins, credential
-  reference selection, and OTS resource policy); and
-- provider bootstrapping is replaced by calls into the completed Python SDK.
+The detailed implementation plan is written only after the Python SDK is
+implemented and the resume gates below are explicitly approved.
 
-This permits incremental replacement behind the existing OTS storage adapter
-tests. It does not require an OTS language rewrite.
+## Resume Gates
 
-## Gates for Resuming Work
+No Rust/OTS implementation plan is created until:
 
-No implementation plan should be created until all of these are true:
-
-1. The Python SDK public interface and provider-extension seam are stable.
-2. The CLI uses the SDK, proving that SDK orchestration is complete.
-3. Temporal append/upsert and managed lifecycle protocols have executable
-   conformance tests.
-4. OTS has identified the exact portable capability subset it will consume.
-5. A versioned control schema and independent golden corpus are approved,
-   including shared Python/Rust temporal SQL-to-plan cases and validated
-   uniqueness evidence.
-6. Artifact ownership, cancellation, credential resolution, and uncertain
-   commit recovery have written security/lifecycle decisions.
-7. Rust crate placement, release ownership, and supported version policy are
-   agreed by both repositories.
+1. The Python SDK public surface and Connector-extension seam are stable.
+2. The CLI uses the SDK and contains no independent execution runtime.
+3. Temporal writes and managed stage/commit/readback/abort/reconcile have
+   executable conformance tests.
+4. The internal carrier-preserving host port is specified and tested without
+   OTS.
+5. OTS identifies the exact Portable Plan and capability subset it will use.
+6. The closed protocol schemas and independent Python/Rust corpus are
+   approved.
+7. Artifact ownership, cancellation, credentials, process supervision, and
+   uncertain-commit recovery pass security review.
+8. Rust crate placement, release ownership, compatibility ranges, and rollback
+   policy are agreed by both repositories.
 
 ## Deferred Acceptance Criteria
 
 When eventually implemented:
 
-- OTS can use an OTC-backed storage configuration without importing or
-  embedding Python.
-- The OTC Rust Client contains no OTS-specific types or semantics.
-- The Python bridge contains no second provider registry or physical runtime.
-- All transported table data is bounded and integrity-verified.
-- Credential values never cross the control protocol.
-- OTS independently accepts or rejects returned evidence.
-- Python and Rust pass the same protocol and temporal conformance corpus and
-  emit identical portable plans and result shapes for the shared temporal SQL
-  profile.
-- Order-sensitive temporal SQL is accepted only with matching validated
-  uniqueness and snapshot evidence across the language boundary.
-- Bridge removal leaves the Python SDK and CLI fully functional.
+1. OTS uses an OTC-backed storage configuration without importing or embedding
+   Python.
+2. The Rust Adapter SDK contains no OTS-specific type, SQL frontend, provider
+   discovery, credential value, or semantic fallback logic.
+3. The Python host contains no second provider registry or physical runtime.
+4. Every transported table artifact is bounded, confined, lease-owned, and
+   integrity-verified.
+5. Credential values never cross the protocol.
+6. Portable Plan fixtures are byte-identical across Python and Rust; results
+   compare through the normalized logical form rather than Arrow bytes.
+7. OTS independently accepts or rejects operation state and Receipt evidence.
+8. Order-sensitive temporal semantics require matching validated uniqueness
+   and snapshot evidence.
+9. Managed mutations preserve idempotency and enter read-only reconciliation
+   after uncertain outcomes instead of blind replay.
+10. Removing the adapter leaves the Python SDK, CLI, and Connectors fully
+    functional.
