@@ -265,7 +265,10 @@ class AggregateMeasure:
         object.__setattr__(self, "function", AggregateFunction(self.function))
         if self.value_field is not None:
             object.__setattr__(self, "value_field", _name(self.value_field, "value_field"))
-        if self.function is not AggregateFunction.COUNT and self.value_field is None:
+        if self.function is AggregateFunction.COUNT:
+            if self.value_field is not None:
+                raise ValueError("count requires value_field to be null")
+        elif self.value_field is None:
             raise ValueError(f"{self.function.value} requires value_field")
 
     def to_wire(self) -> dict[str, object]:

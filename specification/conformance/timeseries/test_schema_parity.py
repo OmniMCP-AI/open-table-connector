@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import jsonschema
+import pytest
 
 
 ROOT = Path(__file__).parents[3]
@@ -35,3 +36,17 @@ def test_every_vendored_temporal_fixture_matches_its_closed_schema() -> None:
             (ROOT / "specification/schemas" / schema_name).read_text(encoding="utf-8")
         )
         jsonschema.Draft202012Validator(schema).validate(fixture)
+
+
+def test_plan_schema_rejects_count_with_value_field() -> None:
+    fixture_root = ROOT / "specification/fixtures/timeseries/v1"
+    fixture = json.loads((fixture_root / "bucket-aggregate.json").read_text(encoding="utf-8"))
+    fixture["plan"]["operation"]["measures"][1]["value_field"] = "price"
+    schema = json.loads(
+        (ROOT / "specification/schemas/portable-temporal-plan-v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.Draft202012Validator(schema).validate(fixture["plan"])

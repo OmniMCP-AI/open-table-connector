@@ -218,6 +218,16 @@ def test_descriptor_validation_rejects_undeclared_predicate_and_measure_fields()
     with pytest.raises(ValueError, match="predicate field"):
         validate_plan_for_descriptor(invalid_predicate, descriptor())
 
+
+def test_count_is_row_count_and_rejects_value_field() -> None:
+    assert AggregateMeasure("rows", AggregateFunction.COUNT, None).to_wire() == {
+        "output_field": "rows",
+        "function": "count",
+        "value_field": None,
+    }
+    with pytest.raises(ValueError, match="count requires value_field to be null"):
+        AggregateMeasure("non_null_price", AggregateFunction.COUNT, "price")
+
     invalid_measure = plan(
         BucketAggregate(
             start=START,

@@ -163,10 +163,7 @@
         "output_field": {"$ref": "#/$defs/fieldName"},
         "function": {"const": "count"},
         "value_field": {
-          "oneOf": [
-            {"$ref": "#/$defs/fieldName"},
-            {"type": "null"}
-          ]
+          "type": "null"
         }
       }
     },
