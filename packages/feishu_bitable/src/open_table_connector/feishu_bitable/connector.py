@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any, Protocol
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
@@ -82,12 +82,24 @@ class UrllibFeishuTransport:
                 else ConnectorErrorCode.EXECUTION_FAILED
             )
             raise ConnectorError(code, "Feishu Bitable request failed", {"status": exc.code}) from None
+        except URLError as exc:
+            if _looks_like_timeout(exc.reason):
+                raise ConnectorError(ConnectorErrorCode.TIMEOUT, "Feishu Bitable request timed out", {}) from None
+            raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "Feishu Bitable request failed", {"reason": "unexpected transport exception"}) from None
         except TimeoutError:
             raise ConnectorError(ConnectorErrorCode.TIMEOUT, "Feishu Bitable request timed out", {}) from None
         except ConnectorError:
             raise
         except Exception:
             raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "Feishu Bitable request failed", {"reason": "unexpected transport exception"}) from None
+
+
+def _looks_like_timeout(reason: object) -> bool:
+    if isinstance(reason, TimeoutError):
+        return True
+    if isinstance(reason, OSError) and isinstance(getattr(reason, "strerror", None), str):
+        return "timed out" in reason.strerror.casefold()
+    return "timed out" in str(reason).casefold()
 
 
 @dataclass(frozen=True)

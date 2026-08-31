@@ -9,7 +9,13 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from open_table_connector.contract import (
+    CREDENTIAL_ACCESS_TOKEN,
+    CREDENTIAL_TENANT_ACCESS_TOKEN,
     CLI_PLUGIN_GROUP,
+    PROVIDER_FEISHU_BITABLE,
+    PROVIDER_GOOGLE_SHEETS,
+    PROVIDER_MAYBE_SHEET,
+    SCHEME_HTTPS,
     ConnectorAdapter,
     PluginDescriptor,
     ProviderConfig,
@@ -17,10 +23,32 @@ from open_table_connector.contract import (
     parse_adapter_endpoint,
 )
 
-from .config import ClientConfig
+from .config import ClientConfig, CredentialBinding
 from .connector import LegacyConnectorAdapterBridge, TableConnector, _sdk_mode_to_legacy
-from .credentials import CredentialLease, CredentialResolver
+from .credentials import (
+    CredentialLease,
+    CredentialResolver,
+    EnvironmentCredentialResolver,
+)
 from .result import ErrorCode, ErrorInfo, OperationResult, OTCError
+
+_DEFAULT_CREDENTIAL_BINDINGS = {
+    PROVIDER_GOOGLE_SHEETS: {
+        "reference": "default-google-sheets",
+        "field": CREDENTIAL_ACCESS_TOKEN,
+        "env": "GOOGLE_SHEETS_ACCESS_TOKEN",
+    },
+    PROVIDER_FEISHU_BITABLE: {
+        "reference": "default-feishu-bitable",
+        "field": CREDENTIAL_TENANT_ACCESS_TOKEN,
+        "env": "FEISHU_TENANT_ACCESS_TOKEN",
+    },
+    PROVIDER_MAYBE_SHEET: {
+        "reference": "default-maybe-sheet",
+        "field": CREDENTIAL_ACCESS_TOKEN,
+        "env": "MAYBE_SHEET_ACCESS_TOKEN",
+    },
+}
 
 
 def _registry_error(code: ErrorCode, message: str, **details: object) -> OTCError:
@@ -75,6 +103,39 @@ def discover_configured_plugins(
     return tuple(sorted(configured, key=lambda item: item.descriptor.name))
 
 
+def with_default_credential_bindings(
+    config: ClientConfig, environ: Mapping[str, str]
+) -> ClientConfig:
+    providers = dict(config.providers)
+    credentials = {
+        reference: dict(bindings) for reference, bindings in config.credentials.items()
+    }
+    changed = False
+
+    for provider_id, binding in _DEFAULT_CREDENTIAL_BINDINGS.items():
+        env_name = binding["env"]
+        if env_name not in environ:
+            continue
+        provider = providers.get(provider_id, ProviderConfig(provider_id))
+        if provider.credential_reference is not None:
+            continue
+        reference = binding["reference"]
+        field_name = binding["field"]
+        credentials.setdefault(reference, {})[field_name] = CredentialBinding(env_name)
+        providers[provider_id] = ProviderConfig(
+            provider.provider_id,
+            enabled=provider.enabled,
+            credential_reference=reference,
+            environment=provider.environment,
+            options=provider.options,
+        )
+        changed = True
+
+    if not changed:
+        return config
+    return ClientConfig(providers=providers, credentials=credentials)
+
+
 @dataclass
 class ConnectorRegistry:
     _resolver: CredentialResolver | None = field(default=None, repr=False)
@@ -115,7 +176,17 @@ class ConnectorRegistry:
         environ: Mapping[str, str] | None = None,
         transports: Mapping[str, Any] | None = None,
     ) -> ConnectorRegistry:
-        registry = cls(resolver=resolver, environ=environ, transports=transports)
+        scoped_environ = {} if environ is None else dict(environ)
+        config = with_default_credential_bindings(config, scoped_environ)
+        registry = cls(
+            resolver=(
+                EnvironmentCredentialResolver(config, scoped_environ)
+                if resolver is None
+                else resolver
+            ),
+            environ=scoped_environ,
+            transports=transports,
+        )
         for descriptor in sorted(descriptors, key=lambda item: item.name):
             provider_id = descriptor.identity.connector_id
             provider_config = config.providers.get(provider_id, ProviderConfig(provider_id))
@@ -207,7 +278,7 @@ class ConnectorRegistry:
         assert endpoint.uri is not None
         scheme = endpoint.uri.scheme.casefold()
         parsed = urlsplit(endpoint.uri.value)
-        host = parsed.hostname.casefold() if scheme == "https" and parsed.hostname else None
+        host = parsed.hostname.casefold() if scheme == SCHEME_HTTPS and parsed.hostname else None
         descriptor = self._descriptors.get((scheme, host)) or self._descriptors.get((scheme, None))
         if descriptor is None:
             raise _registry_error(
@@ -278,4 +349,9 @@ class ConnectorRegistry:
         return {} if selected is None else {config.provider_id: selected}
 
 
-__all__ = ["ConfiguredPlugin", "ConnectorRegistry", "discover_configured_plugins"]
+__all__ = [
+    "ConfiguredPlugin",
+    "ConnectorRegistry",
+    "discover_configured_plugins",
+    "with_default_credential_bindings",
+]

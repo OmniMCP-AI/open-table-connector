@@ -3,8 +3,47 @@ from __future__ import annotations
 import open_table_connector.sdk as otc
 import polars as pl
 import pytest
+from open_table_connector.feishu_bitable import feishu_bitable_cli_plugin
+from open_table_connector.google_sheets import google_sheets_cli_plugin
+from open_table_connector.maybe_sheet import maybe_sheet_cli_plugin
 
 from .conftest import legacy_descriptor, sdk_descriptor
+
+
+class GoogleTransport:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, dict[str, str], dict | None]] = []
+
+    def request(self, method, url, *, headers, body=None, timeout=None):
+        del timeout
+        self.calls.append((method, url, dict(headers), body))
+        return {"range": "Orders!A1:A2", "values": [["order_id"], ["1"]]}
+
+
+class FeishuTransport:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, dict[str, str], dict | None]] = []
+
+    def request(self, method, url, *, headers, body=None, timeout=None):
+        del timeout
+        self.calls.append((method, url, dict(headers), body))
+        return {
+            "code": 0,
+            "data": {
+                "items": [{"record_id": "rec-1", "fields": {"order_id": "1"}}],
+                "has_more": False,
+            },
+        }
+
+
+class MaybeProcess:
+    def __init__(self) -> None:
+        self.calls: list[tuple[tuple[str, ...], dict[str, str] | None, str | None]] = []
+
+    def run(self, argv, *, credentials=None, stdin=None, timeout=None):
+        del timeout
+        self.calls.append((tuple(argv), dict(credentials or {}), stdin))
+        return {"rows": [{"order_id": "1"}], "source_revision": "rev-1"}
 
 
 def test_client_from_config_opens_through_a_descriptor_registry(fake_connector) -> None:
@@ -111,3 +150,51 @@ def test_client_open_reads_schema_through_a_legacy_adapter() -> None:
 
     assert table.uri.value == "legacy://warehouse/orders"
     assert table.schema == pl.DataFrame({"order_id": [1]}).schema
+
+
+def test_client_from_config_defaults_google_credentials_from_environment() -> None:
+    transport = GoogleTransport()
+
+    client = otc.Client.from_config(
+        otc.ClientConfig.empty(),
+        descriptors=(google_sheets_cli_plugin(),),
+        environ={"GOOGLE_SHEETS_ACCESS_TOKEN": "google-secret"},
+        transports={"google_sheets": transport},
+    )
+
+    table = client.open("gsheets://sheet-123/Orders").require_value()
+
+    assert table.uri.value == "gsheets://sheet-123/Orders"
+    assert transport.calls[0][2]["Authorization"] == "Bearer google-secret"
+
+
+def test_client_from_config_defaults_feishu_credentials_from_environment() -> None:
+    transport = FeishuTransport()
+
+    client = otc.Client.from_config(
+        otc.ClientConfig.empty(),
+        descriptors=(feishu_bitable_cli_plugin(),),
+        environ={"FEISHU_TENANT_ACCESS_TOKEN": "feishu-secret"},
+        transports={"feishu_bitable": transport},
+    )
+
+    table = client.open("feishu://app-token/orders").require_value()
+
+    assert table.uri.value == "feishu://app-token/orders"
+    assert transport.calls[0][2]["Authorization"] == "Bearer feishu-secret"
+
+
+def test_client_from_config_defaults_maybe_credentials_from_environment() -> None:
+    process = MaybeProcess()
+
+    client = otc.Client.from_config(
+        otc.ClientConfig.empty(),
+        descriptors=(maybe_sheet_cli_plugin(),),
+        environ={"MAYBE_SHEET_ACCESS_TOKEN": "maybe-secret"},
+        transports={"maybe_sheet": process},
+    )
+
+    table = client.open("maybe://doc/R_orders").require_value()
+
+    assert table.uri.value == "maybe://doc/R_orders"
+    assert process.calls[0][1] == {"access_token": "maybe-secret"}
