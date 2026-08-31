@@ -28,7 +28,7 @@ that disposition with `verified`, `invalid`, or `superseded`.
 | A15 | SQLite bucket arithmetic truncates | P0 | Correctness 3 | pre-origin tests | verified | dbcabdf |
 | B1 | Frame header short-read unsafe | P0 | Process 4 | framing tests | verified | c7c0c67 |
 | B2 | Serialization failures disappear/leak | P0 | Process 2–6 | failure envelope tests | verified | pending |
-| B3 | Process state/backlog unbounded | P1 | Process 2, 7 | bounded stress tests | hypothesis | pending |
+| B3 | Process state/backlog unbounded | P1 | Process 2, 7 | bounded stress tests | verified | pending |
 | B4 | Cancel callback holds global lock | P1 | Process 2 | concurrency test | hypothesis | pending |
 | B5 | `ok` key sniffs direction | P1 | Process 4, 6 | closed envelope fixtures | hypothesis | pending |
 | B6 | Retry/NACK/diagnostics lifecycle gaps | P1 | Process 2, 7 | protocol lifecycle tests | hypothesis | pending |

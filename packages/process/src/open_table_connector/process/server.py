@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import threading
+from collections import OrderedDict
 from collections.abc import Iterable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -75,12 +76,20 @@ class ConnectorProcessServer:
         artifact_store: ArtifactStore,
         credential_resolver: CredentialResolver,
         clock: object | None = None,
+        max_completed_messages: int = 4096,
     ) -> None:
         del clock
+        if (
+            isinstance(max_completed_messages, bool)
+            or not isinstance(max_completed_messages, int)
+            or max_completed_messages <= 0
+        ):
+            raise ValueError("max_completed_messages must be a positive integer")
         self._registry = registry
         self._artifacts = artifact_store
         self._credentials = credential_resolver
-        self._messages: set[str] = set()
+        self._max_completed_messages = max_completed_messages
+        self._messages: OrderedDict[str, None] = OrderedDict()
         self._sessions: dict[str, _ProcessSession] = {}
         self._cancelled: set[str] = set()
         self._state_lock = threading.RLock()
@@ -91,7 +100,9 @@ class ConnectorProcessServer:
         with self._state_lock:
             if envelope.message_id in self._messages:
                 raise ProcessError("protocol_invalid", "message_id has already been used")
-            self._messages.add(envelope.message_id)
+            self._messages[envelope.message_id] = None
+            while len(self._messages) > self._max_completed_messages:
+                self._messages.popitem(last=False)
             if envelope.operation is ProcessOperation.HELLO:
                 result = self._hello(envelope)
                 return self._response(envelope, result)
@@ -107,9 +118,25 @@ class ConnectorProcessServer:
                     )
         except Exception:
             with self._state_lock:
-                self._messages.discard(envelope.message_id)
+                self._messages.pop(envelope.message_id, None)
             raise
         return self._response(envelope, result)
+
+    def retire_session(self, session_id: str) -> None:
+        """Drop a completed session and its cancellation marker."""
+        with self._state_lock:
+            self._sessions.pop(session_id, None)
+            self._cancelled.discard(session_id)
+
+    def _state_counts(self) -> Mapping[str, int]:
+        with self._state_lock:
+            return MappingProxyType(
+                {
+                    "messages": len(self._messages),
+                    "sessions": len(self._sessions),
+                    "cancelled": len(self._cancelled),
+                }
+            )
 
     def error_response(
         self,
@@ -386,7 +413,14 @@ def run_server(
     registry: ConnectorProcessRegistry | None = None,
     credential_resolver: CredentialResolver | None = None,
     max_frame_bytes: int = 16 * 1024 * 1024,
+    max_pending_requests: int = 8,
 ) -> int:
+    if (
+        isinstance(max_pending_requests, bool)
+        or not isinstance(max_pending_requests, int)
+        or max_pending_requests <= 0
+    ):
+        raise ValueError("max_pending_requests must be a positive integer")
     diagnostics = BoundedDiagnostics(stderr)
     server = ConnectorProcessServer(
         registry or ConnectorProcessRegistry(),
@@ -395,6 +429,7 @@ def run_server(
     )
     output_lock = threading.Lock()
     futures: set[Future[None]] = set()
+    pending = threading.BoundedSemaphore(max_pending_requests)
 
     def handle_and_write(envelope: ConnectorProcessEnvelope) -> None:
         try:
@@ -436,8 +471,10 @@ def run_server(
             if envelope.operation in {ProcessOperation.HELLO, ProcessOperation.CANCEL}:
                 handle_and_write(envelope)
             else:
+                pending.acquire()
                 future = workers.submit(handle_and_write, envelope)
                 futures.add(future)
+                future.add_done_callback(lambda _future: pending.release())
                 future.add_done_callback(observe)
 
 

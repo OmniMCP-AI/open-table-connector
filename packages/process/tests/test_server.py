@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from pathlib import Path
-import threading
 
 import pytest
-
 from open_table_connector.process import (
     ArtifactStore,
     ConnectorProcessEnvelope,
@@ -14,7 +13,6 @@ from open_table_connector.process import (
     ConnectorRegistration,
     CredentialResolver,
     ProcessError,
-    ProcessOperation,
     ProcessResult,
 )
 
@@ -151,6 +149,19 @@ def test_message_ids_are_unique_and_cancel_is_a_session_transition(tmp_path: Pat
                 payload={},
             )
         )
+
+
+def test_completed_message_ids_and_sessions_are_bounded(tmp_path: Path) -> None:
+    instance, _handler, _resolver = server(tmp_path)
+    for index in range(5000):
+        instance.handle(
+            envelope(
+                message_id=f"hello-{index}",
+                session_id=f"session-{index}",
+            )
+        )
+        instance.retire_session(f"session-{index}")
+    assert instance._state_counts() == {"messages": 4096, "sessions": 0, "cancelled": 0}
 
 
 def test_cancel_interrupts_an_in_flight_dispatch_and_suppresses_success(tmp_path: Path) -> None:
