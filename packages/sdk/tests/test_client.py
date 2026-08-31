@@ -23,6 +23,19 @@ def test_client_from_config_opens_through_a_descriptor_registry(fake_connector) 
     assert table.schema == fake_connector.frame.schema
 
 
+def test_client_open_routes_path_targets_without_forcing_table_uri(fake_connector) -> None:
+    fake_connector.schemes = ("file",)
+    fake_connector.local = True
+    fake_connector.handles_paths = True
+    fake_connector.table_uri = "file:///tmp/orders.csv"
+    client = otc.Client(registry=otc.ConnectorRegistry([fake_connector]))
+
+    table = client.open("orders.csv").require_value()
+
+    assert fake_connector.calls[0] == ("open_table", "orders.csv")
+    assert table.uri.value == "file:///tmp/orders.csv"
+
+
 def test_client_rejects_foreign_physical_handles_before_connector_io(fake_connector) -> None:
     left = otc.Client(registry=otc.ConnectorRegistry([fake_connector]))
     right = otc.Client(registry=otc.ConnectorRegistry([fake_connector]))
@@ -84,3 +97,17 @@ def test_client_materialize_works_through_a_legacy_write_adapter() -> None:
     ).require_value()
 
     assert table.uri.value == "legacy://warehouse/created"
+
+
+def test_client_open_reads_schema_through_a_legacy_adapter() -> None:
+    config = otc.ClientConfig.empty()
+    client = otc.Client.from_config(
+        config,
+        descriptors=(legacy_descriptor(),),
+        resolver=otc.EnvironmentCredentialResolver(config, {}),
+    )
+
+    table = client.open("legacy://warehouse/orders").require_value()
+
+    assert table.uri.value == "legacy://warehouse/orders"
+    assert table.schema == pl.DataFrame({"order_id": [1]}).schema

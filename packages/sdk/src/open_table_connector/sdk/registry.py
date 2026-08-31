@@ -19,7 +19,7 @@ from open_table_connector.contract import (
 
 from .config import ClientConfig
 from .connector import LegacyConnectorAdapterBridge, TableConnector, _sdk_mode_to_legacy
-from .credentials import CredentialResolver
+from .credentials import CredentialLease, CredentialResolver
 from .result import ErrorCode, ErrorInfo, OperationResult, OTCError
 
 
@@ -174,14 +174,12 @@ class ConnectorRegistry:
         provider_id = plugin.descriptor.identity.connector_id
         if provider_id in self._connectors:
             return self._connectors[provider_id]
-        connector = plugin.descriptor.factory(
-            ProviderFactoryContext(
-                config=plugin.config,
-                environment=self._provider_environment(plugin.config),
-                credentials=self._provider_credentials(plugin.config),
-                transports=self._provider_transports(plugin.config),
-            )
-        )
+        context, lease = self._provider_context(plugin.config)
+        try:
+            connector = plugin.descriptor.factory(context)
+        finally:
+            if lease is not None:
+                lease.dispose()
         if isinstance(connector, ConnectorAdapter):
             wrapped = LegacyConnectorAdapterBridge(connector)
         else:
@@ -257,11 +255,23 @@ class ConnectorRegistry:
             environment[logical_name] = value
         return environment
 
-    def _provider_credentials(self, config: ProviderConfig) -> Mapping[str, str]:
-        if self._resolver is None:
-            return {}
-        lease = self._resolver.resolve(config)
-        return dict(lease.values)
+    def _provider_context(
+        self, config: ProviderConfig
+    ) -> tuple[ProviderFactoryContext, CredentialLease | None]:
+        credentials: Mapping[str, str] = {}
+        lease = None
+        if self._resolver is not None:
+            lease = self._resolver.resolve(config)
+            credentials = lease.values
+        return (
+            ProviderFactoryContext(
+                config=config,
+                environment=self._provider_environment(config),
+                credentials=credentials,
+                transports=self._provider_transports(config),
+            ),
+            lease,
+        )
 
     def _provider_transports(self, config: ProviderConfig) -> Mapping[str, Any]:
         selected = self._transports.get(config.provider_id)

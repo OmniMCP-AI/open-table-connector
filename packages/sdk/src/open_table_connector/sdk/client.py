@@ -7,10 +7,10 @@ from collections.abc import Iterable
 from dataclasses import replace
 from typing import Any
 
-from open_table_connector.contract import PluginDescriptor, TableURI
+from open_table_connector.contract import PluginDescriptor, TableURI, parse_adapter_endpoint
 
 from .config import ClientConfig
-from .connector import _address_uri, _destination_uri
+from .connector import _destination_uri
 from .credentials import CredentialResolver
 from .model import DirectDestination, DirectTableAddress, ExistingTableAddress, TableDestination
 from .registry import ConnectorRegistry
@@ -65,8 +65,8 @@ class Client:
 
     def open(self, target: str | TableURI | ExistingTableAddress):
         self._assert_open()
-        address = DirectTableAddress(target) if isinstance(target, (str, TableURI)) else target
-        connector = self._registry.connector_for(_address_uri(address).value)
+        route_target, address = self._normalize_open_target(target)
+        connector = self._registry.connector_for(route_target)
         result = connector.open_table(address)
         delivered = self._deliver(result)
         return replace(delivered, value=self._wrap_binding(delivered.require_value()))
@@ -96,6 +96,20 @@ class Client:
         table = Table(self, binding)
         object.__setattr__(table, "_owner_client_id", self._client_id)
         return table
+
+    def _normalize_open_target(
+        self, target: str | TableURI | ExistingTableAddress
+    ) -> tuple[str | ExistingTableAddress, str | ExistingTableAddress]:
+        if isinstance(target, TableURI):
+            address = DirectTableAddress(target)
+            return address, address
+        if isinstance(target, str):
+            endpoint = parse_adapter_endpoint(target)
+            if endpoint.path is not None or endpoint.is_stdio:
+                return target, target
+            address = DirectTableAddress(endpoint.uri)
+            return address, address
+        return target, target
 
     def _assert_open(self) -> None:
         if self._closed:

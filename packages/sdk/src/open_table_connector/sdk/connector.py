@@ -168,23 +168,38 @@ class LegacyConnectorAdapterBridge:
         self.handles_paths = bool(getattr(adapter, "handles_paths", False))
 
     def open_table(self, address: object) -> OperationResult[TableBinding]:
-        if not isinstance(address, DirectTableAddress):
+        if isinstance(address, DirectTableAddress):
+            endpoint_value = address.uri.value
+        elif isinstance(address, str):
+            endpoint_value = address
+        else:
             return _rejected(
-                "legacy adapters only support direct table addresses",
+                "legacy adapters only support direct or path-backed table addresses",
                 ErrorCode.UNSUPPORTED_CAPABILITY,
             )
         inspection = self._adapter.inspect(
-            parse_adapter_endpoint(address.uri.value), AdapterOptions()
+            parse_adapter_endpoint(endpoint_value), AdapterOptions()
         )
         if not isinstance(inspection, LegacyInspection):
             return _rejected(
                 "legacy adapter returned an invalid inspection", ErrorCode.PROTOCOL_FAILURE
             )
-        return _rejected(
-            "legacy adapter inspection does not expose an exact typed schema for open()",
-            ErrorCode.PROTOCOL_FAILURE,
-            connector_id=self.identity.connector_id,
-            columns=list(inspection.columns),
+        read_result = self._adapter.read(
+            parse_adapter_endpoint(endpoint_value), AdapterOptions(limit=1)
+        )
+        frame = pl.from_arrow(read_result.table)
+        return OperationResult(
+            value=TableBinding(
+                uri=inspection.safe_uri,
+                mode=_legacy_mode_to_sdk(inspection.mode),
+                schema=frame.schema,
+                observed_revision=read_result.receipt.source_revision,
+                connector_id=self.identity.connector_id,
+            ),
+            outcome=Outcome.SUCCEEDED,
+            commit=CommitState.NOT_APPLICABLE,
+            verification=VerificationState.PASSED,
+            receipts=(_receipt_from_legacy(read_result.receipt),),
         )
 
     def inspect_table(self, binding: TableBinding) -> OperationResult[TableInspection]:
