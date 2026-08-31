@@ -21,3 +21,42 @@ def build_adapters(
 
 
 __all__ = ["build_adapters"]
+
+
+def __getattr__(name: str):
+    """Resolve legacy adapter names from their owning provider package."""
+
+    providers = {
+        "CsvAdapter": ("open_table_connector.local_files.cli_adapter", "CsvCliAdapter"),
+        "ExcelAdapter": ("open_table_connector.local_files.cli_adapter", "ExcelCliAdapter"),
+        "MarkdownAdapter": (
+            "open_table_connector.local_files.cli_adapter",
+            "MarkdownCliAdapter",
+        ),
+        "LocalAdapter": (
+            "open_table_connector.local_files.cli_adapter",
+            "LocalFilesCliAdapter",
+        ),
+        "GoogleSheetsAdapter": (
+            "open_table_connector.google_sheets.cli_adapter",
+            "GoogleSheetsCliAdapter",
+        ),
+        "FeishuBitableAdapter": (
+            "open_table_connector.feishu_bitable.cli_adapter",
+            "FeishuBitableCliAdapter",
+        ),
+        "MaybeSheetAdapter": (
+            "open_table_connector.maybe_sheet.cli_adapter",
+            "MaybeSheetCliAdapter",
+        ),
+    }
+    try:
+        module_name, attribute = providers[name]
+    except KeyError as exc:
+        raise AttributeError(name) from exc
+    from importlib import import_module
+
+    value = getattr(import_module(module_name), attribute)
+    globals()[name] = value
+    return value
+
