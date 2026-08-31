@@ -5,6 +5,7 @@ from pathlib import Path
 
 import jsonschema
 import pytest
+from open_table_connector.contract import ConnectorErrorCode
 
 
 ROOT = Path(__file__).parents[3]
@@ -50,3 +51,14 @@ def test_plan_schema_rejects_count_with_value_field() -> None:
 
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.Draft202012Validator(schema).validate(fixture["plan"])
+
+
+def test_connector_error_schema_enum_matches_python() -> None:
+    schema = json.loads(
+        (ROOT / "specification/schemas/connector-error-v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert set(schema["properties"]["code"]["enum"]) == {
+        item.value for item in ConnectorErrorCode
+    }

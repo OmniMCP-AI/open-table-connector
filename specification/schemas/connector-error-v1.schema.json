@@ -15,7 +15,13 @@
         "timeout",
         "cancelled",
         "execution_failed",
-        "readback_mismatch"
+        "readback_mismatch",
+        "protocol_invalid",
+        "protocol_version_unsupported",
+        "resource_limit_exceeded",
+        "snapshot_unavailable",
+        "idempotency_conflict",
+        "visibility_incomplete"
       ]
     },
     "message": {"type": "string", "minLength": 1},

@@ -180,6 +180,14 @@ def test_protocols_are_runtime_checkable_and_error_codes_are_extension_local() -
     assert isinstance(Executor(), PortableTemporalExecutor)
     assert isinstance(Store(), ManagedTemporalStore)
     assert {item.value for item in TemporalErrorCode} == {
+        "invalid_uri",
+        "unsupported_capability",
+        "authentication",
+        "conflict",
+        "timeout",
+        "cancelled",
+        "execution_failed",
+        "readback_mismatch",
         "protocol_invalid",
         "protocol_version_unsupported",
         "resource_limit_exceeded",

@@ -16,6 +16,12 @@ class ConnectorErrorCode(StrEnum):
     CANCELLED = "cancelled"
     EXECUTION_FAILED = "execution_failed"
     READBACK_MISMATCH = "readback_mismatch"
+    PROTOCOL_INVALID = "protocol_invalid"
+    PROTOCOL_VERSION_UNSUPPORTED = "protocol_version_unsupported"
+    RESOURCE_LIMIT_EXCEEDED = "resource_limit_exceeded"
+    SNAPSHOT_UNAVAILABLE = "snapshot_unavailable"
+    IDEMPOTENCY_CONFLICT = "idempotency_conflict"
+    VISIBILITY_INCOMPLETE = "visibility_incomplete"
 
 
 _SECRET_KEYS = {
@@ -40,8 +46,7 @@ def _safe_value(value: Any, *, key: str | None = None) -> Any:
         for raw_key, item in value.items():
             text_key = str(raw_key)
             safe_item = _safe_value(item, key=text_key)
-            if safe_item is not None:
-                result[text_key] = safe_item
+            result[text_key] = safe_item
         return result
     if isinstance(value, (list, tuple)):
         return [_safe_value(item) for item in value]

@@ -182,8 +182,6 @@ class PolarsTemporalExecutor:
         )
         _check_deadline(started, request.plan.resource_bounds)
         elapsed_ms = (time.monotonic_ns() - started) // 1_000_000
-        examined_rows = max(examined_rows, returned_rows)
-        examined_bytes = max(examined_bytes, returned_bytes)
         receipt = _receipt(
             request,
             descriptor,

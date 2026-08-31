@@ -11,7 +11,7 @@ from typing import Mapping, Protocol, runtime_checkable
 
 import pyarrow as pa
 
-from open_table_connector.contract import TableURI
+from open_table_connector.contract import ConnectorErrorCode, TableURI
 
 from .plan import PortableTemporalPlan, ResourceBounds
 from .receipts import (
@@ -27,13 +27,7 @@ _HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _STAGE_RE = re.compile(r"^stage:[0-9a-f]{64}$")
 
 
-class TemporalErrorCode(StrEnum):
-    PROTOCOL_INVALID = "protocol_invalid"
-    PROTOCOL_VERSION_UNSUPPORTED = "protocol_version_unsupported"
-    RESOURCE_LIMIT_EXCEEDED = "resource_limit_exceeded"
-    SNAPSHOT_UNAVAILABLE = "snapshot_unavailable"
-    IDEMPOTENCY_CONFLICT = "idempotency_conflict"
-    VISIBILITY_INCOMPLETE = "visibility_incomplete"
+TemporalErrorCode = ConnectorErrorCode
 
 
 class TemporalExtensionError(RuntimeError):

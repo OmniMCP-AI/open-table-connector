@@ -74,7 +74,7 @@ def test_temporal_receipt_round_trips_and_enforces_request_bounds() -> None:
     assert TemporalReceipt.from_wire(receipt.to_wire()) == receipt
     assert receipt.to_wire()["execution_location"] == "connector"
 
-    with pytest.raises(ValueError, match="returned_rows <= examined_rows <= max_rows"):
+    with pytest.raises(ValueError, match="cannot exceed max_rows"):
         TemporalReceipt(
             **{
                 **receipt.to_wire(),

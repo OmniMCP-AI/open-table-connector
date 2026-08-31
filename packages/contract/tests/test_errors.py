@@ -17,6 +17,12 @@ def test_error_codes_are_closed_and_stable() -> None:
         "cancelled",
         "execution_failed",
         "readback_mismatch",
+        "protocol_invalid",
+        "protocol_version_unsupported",
+        "resource_limit_exceeded",
+        "snapshot_unavailable",
+        "idempotency_conflict",
+        "visibility_incomplete",
     )
 
 
@@ -37,3 +43,18 @@ def test_error_rejects_exception_objects_in_safe_details() -> None:
             message="failed",
             safe_details={"cause": RuntimeError("secret")},
         )
+
+
+def test_error_preserves_safe_none_values() -> None:
+    error = ConnectorError(
+        ConnectorErrorCode.PROTOCOL_INVALID,
+        "invalid",
+        {"optional": None, "token": "secret"},
+    )
+
+    assert error.to_wire()["safe_details"] == {"optional": None, "token": None}
+
+
+def test_error_wire_code_enum_is_schema_vocabulary() -> None:
+    for code in ConnectorErrorCode:
+        assert ConnectorError(code, "message").to_wire()["code"] == code.value

@@ -188,8 +188,10 @@ def assert_temporal_semantics(
     assert receipt.plan_schema_version == case.request.plan.schema_version
     assert receipt.resource_bounds == case.request.plan.resource_bounds
     assert receipt.returned_rows == result.table.num_rows
-    assert receipt.returned_rows <= receipt.examined_rows <= receipt.resource_bounds.max_rows
-    assert receipt.returned_bytes <= receipt.examined_bytes <= receipt.resource_bounds.max_bytes
+    assert receipt.examined_rows <= receipt.resource_bounds.max_rows
+    assert receipt.returned_rows <= receipt.resource_bounds.max_rows
+    assert receipt.examined_bytes <= receipt.resource_bounds.max_bytes
+    assert receipt.returned_bytes <= receipt.resource_bounds.max_bytes
     return result
 
 

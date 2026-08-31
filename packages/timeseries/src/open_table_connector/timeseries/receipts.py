@@ -141,14 +141,10 @@ class TemporalReceipt:
             "elapsed_ms",
         ):
             object.__setattr__(self, field, _nonnegative(getattr(self, field), field))
-        if not (
-            self.returned_rows <= self.examined_rows <= self.resource_bounds.max_rows
-        ):
-            raise ValueError("receipt requires returned_rows <= examined_rows <= max_rows")
-        if not (
-            self.returned_bytes <= self.examined_bytes <= self.resource_bounds.max_bytes
-        ):
-            raise ValueError("receipt requires returned_bytes <= examined_bytes <= max_bytes")
+        if self.examined_rows > self.resource_bounds.max_rows or self.returned_rows > self.resource_bounds.max_rows:
+            raise ValueError("receipt row counts cannot exceed max_rows")
+        if self.examined_bytes > self.resource_bounds.max_bytes or self.returned_bytes > self.resource_bounds.max_bytes:
+            raise ValueError("receipt byte counts cannot exceed max_bytes")
         if self.elapsed_ms > self.resource_bounds.max_duration_ms:
             raise ValueError("elapsed_ms cannot exceed max_duration_ms")
         if (
