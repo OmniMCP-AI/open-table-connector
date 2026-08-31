@@ -229,8 +229,9 @@ class SQLiteSdkTemporalExtension:
     def descriptor_hash_for(
         self, binding: TableBinding, descriptor: TemporalTableDescriptor
     ) -> str:
+        schema = pl.DataFrame(schema=binding.schema).select(list(descriptor.declared_fields)).to_arrow().schema
         return temporal_descriptor_hash(
-            descriptor, pl.DataFrame(schema=binding.schema).to_arrow().schema
+            descriptor, schema
         )
 
     def executor_for(
@@ -287,7 +288,9 @@ class SQLiteSdkTemporalExtension:
             ManagedStageRequest(
                 operation_id=f"sdk-stage-{idempotency_key}",
                 artifact=artifact,
-                descriptor_hash=temporal_descriptor_hash(descriptor, frame.to_arrow().schema),
+                descriptor_hash=temporal_descriptor_hash(
+                    descriptor, frame.select(list(descriptor.declared_fields)).to_arrow().schema
+                ),
                 logical_target=self._database_uri,
                 physical_target=self._database_uri,
                 idempotency_key=idempotency_key,
