@@ -1,0 +1,22 @@
+{
+  "schema_version": "otc.cross-framework-manifest/v1",
+  "connector": {"id": "local_files", "version": "0.1.0", "contract_version": "1.0"},
+  "fixtures": [
+    {
+      "id": "decimal-null-order",
+      "source": "decimal-null-order.csv",
+      "expected": "expected/decimal-null-order.json",
+      "expected_mode": "sheet"
+    }
+  ],
+  "comparisons": [
+    "arrow_schema",
+    "polars_schema",
+    "nulls",
+    "row_order",
+    "coordinate_convention",
+    "source_revision",
+    "content_fingerprint",
+    "receipt_facts"
+  ]
+}

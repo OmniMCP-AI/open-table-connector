@@ -1,18 +1,39 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import openpyxl
-
 from open_table_connector.contract import TableURI
-from open_table_connector.local_files import LocalFilesConnector, LocalReadOptions, LocalTableReadRequest
+from open_table_connector.local_files import (
+    LocalFilesConnector,
+    LocalReadOptions,
+    LocalTableReadRequest,
+)
 
+from .manifest import collected_cases, load_manifest
 
 ROOT = Path(__file__).parent
 
 
+def test_every_manifest_case_is_executed() -> None:
+    manifest = load_manifest(ROOT / "local-files.json")
+    assert {case.id for case in collected_cases(ROOT / "local-files.json")} == {
+        item["id"] for item in manifest["fixtures"]
+    }
+
+
+def test_manifest_expected_rows_are_pinned() -> None:
+    case = collected_cases(ROOT / "local-files.json")[0]
+    expected = json.loads(case.expected.read_text(encoding="utf-8"))
+    assert expected["rows"] == [
+        {"id": "1", "amount": "2.50", "label": "中文"},
+        {"id": "2", "amount": None, "label": "last"},
+    ]
+
+
 def test_shared_csv_physical_facts_are_stable_across_arrow_and_polars() -> None:
-    source = ROOT / "decimal-null-order.csv"
+    source = collected_cases(ROOT / "local-files.json")[0].source
     connector = LocalFilesConnector()
     request = LocalTableReadRequest(TableURI(source.as_uri()))
     arrow = connector.read_arrow(request)

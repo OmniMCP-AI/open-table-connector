@@ -1,0 +1,13 @@
+{
+  "schema": [
+    {"name": "id", "type": "large_string", "nullable": true},
+    {"name": "amount", "type": "large_string", "nullable": true},
+    {"name": "label", "type": "large_string", "nullable": true}
+  ],
+  "rows": [
+    {"id": "1", "amount": "2.50", "label": "中文"},
+    {"id": "2", "amount": null, "label": "last"}
+  ],
+  "coordinate_convention": {"mode": "sheet", "sheet": "data", "header_rows": 1, "first_data_row": 2},
+  "row_count": 2
+}
