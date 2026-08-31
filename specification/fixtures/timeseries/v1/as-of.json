@@ -12,7 +12,7 @@
   },
   "plan": {
     "schema_version": "otc.portable-temporal-plan/v1",
-    "descriptor_hash": "sha256:1838c5f919cce1407f02d59f1c05a00ee3a4b213441180fdcf446272895f588a",
+    "descriptor_hash": "sha256:8023acaa7cccd55b556364e77fb544b4629c40c53c9ec72acaad2976b69cfa0f",
     "relation": "ticks",
     "required_capabilities": ["timeseries.lookup.asof/1.0"],
     "resource_bounds": {"max_rows": 1000, "max_bytes": 1000000, "max_duration_ms": 5000},

@@ -1,0 +1,9 @@
+[
+  {"ts":"2026-08-29T00:00:00.000000123Z","symbol":"AAPL","venue":"XNAS","price":100.0,"size":10,"received_at":"2026-08-29T00:00:00.000000124Z"},
+  {"ts":"2026-08-29T00:00:00.000000000Z","symbol":"MSFT","venue":"XNYS","price":200.0,"size":20,"received_at":"2026-08-29T00:00:00.000000001Z"},
+  {"ts":"2026-08-29T00:05:00.000000000Z","symbol":"AAPL","venue":"XNAS","price":101.0,"size":11,"received_at":"2026-08-29T00:05:00.000000001Z"},
+  {"ts":"2026-08-29T00:05:00.000000000Z","symbol":"AAPL","venue":"XNAS","price":102.0,"size":12,"received_at":"2026-08-29T00:05:00.000000002Z"},
+  {"ts":"2026-08-29T00:05:00.000000000Z","symbol":"MSFT","venue":"XNYS","price":null,"size":21,"received_at":"2026-08-29T00:05:00.000000001Z"},
+  {"ts":"2026-08-29T00:05:00.000000000Z","symbol":"MSFT","venue":"ARCX","price":202.0,"size":22,"received_at":"2026-08-29T00:05:00.000000002Z"},
+  {"ts":"2026-08-29T00:10:00.000000000Z","symbol":"AAPL","venue":"XNAS","price":103.0,"size":13,"received_at":"2026-08-29T00:10:00.000000001Z"}
+]

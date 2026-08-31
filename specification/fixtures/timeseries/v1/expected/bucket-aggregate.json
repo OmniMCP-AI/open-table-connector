@@ -1,0 +1,15 @@
+{
+  "schema": [
+    {"name":"symbol","type":"string","nullable":true},
+    {"name":"bucket","type":"timestamp[ns, tz=UTC]","nullable":true},
+    {"name":"avg_price","type":"double","nullable":true},
+    {"name":"rows","type":"int64","nullable":true}
+  ],
+  "rows": [
+    {"symbol":"AAPL","bucket":"2026-08-29T00:00:00.000000000Z","avg_price":100.0,"rows":1},
+    {"symbol":"AAPL","bucket":"2026-08-29T00:05:00.000000000Z","avg_price":102.0,"rows":1},
+    {"symbol":"AAPL","bucket":"2026-08-29T00:10:00.000000000Z","avg_price":103.0,"rows":1},
+    {"symbol":"MSFT","bucket":"2026-08-29T00:00:00.000000000Z","avg_price":200.0,"rows":1},
+    {"symbol":"MSFT","bucket":"2026-08-29T00:05:00.000000000Z","avg_price":202.0,"rows":1}
+  ]
+}

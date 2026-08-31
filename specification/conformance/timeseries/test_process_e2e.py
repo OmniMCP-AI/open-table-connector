@@ -13,7 +13,7 @@ from open_table_connector.process import (
 from open_table_connector.contract import TableURI
 from open_table_connector.local_files import CsvManagedTemporalStore, CsvTemporalExecutor
 from open_table_connector.timeseries import PolarsTemporalExecutor
-from packages.timeseries.tests.fixtures import MemoryTemporalSource, descriptor
+from specification.conformance.timeseries.support import MemoryTemporalSource, descriptor
 
 from .conftest import lifecycle_case
 

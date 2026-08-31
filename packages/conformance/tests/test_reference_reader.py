@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 from decimal import Decimal
+from pathlib import Path
 
+import pyarrow as pa
 import polars as pl
 import pyarrow as pa
 import pytest
@@ -25,6 +27,10 @@ from open_table_connector.conformance.assertions import (
     assert_read_connector_conformance,
     assert_receipt_safe,
 )
+from open_table_connector.conformance.timeseries import load_temporal_cases
+
+
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def _receipt(*, operation_id: str = "op-1", content: str = "content-1") -> NeutralReceipt:
@@ -118,3 +124,24 @@ def test_direct_parity_assertion_accepts_matching_order_and_nulls() -> None:
     result = reader.read_arrow(TableReadRequest(TableURI("file:///fixture.csv")))
 
     assert_arrow_polars_equal(result.table, reader.read_polars(TableReadRequest(result.receipt.safe_uri)).frame)
+
+
+def test_vendored_cases_supply_expected_rows_without_running_an_executor(monkeypatch) -> None:
+    from open_table_connector.timeseries import PolarsTemporalExecutor
+
+    def fail(*args, **kwargs):
+        raise AssertionError("conformance expected values must be vendored")
+
+    monkeypatch.setattr(PolarsTemporalExecutor, "execute", fail)
+    cases = load_temporal_cases(ROOT / "specification/fixtures/timeseries/v1")
+
+    assert [case.case_id for case in cases] == [
+        "scan-range",
+        "latest",
+        "as-of",
+        "bucket-aggregate",
+        "gap-fill",
+    ]
+    assert cases[0].expected["ts"].cast(pa.int64()).to_pylist()[0] == 1787961600000000123
+    assert cases[0].expected["symbol"].to_pylist()[0] == "AAPL"
+    assert cases[0].expected["price"].to_pylist()[0] == 100.0

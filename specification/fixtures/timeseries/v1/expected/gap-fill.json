@@ -1,0 +1,12 @@
+{
+  "schema": [
+    {"name":"symbol","type":"string","nullable":true},
+    {"name":"bucket","type":"timestamp[ns, tz=UTC]","nullable":true},
+    {"name":"avg_price","type":"double","nullable":true},
+    {"name":"rows","type":"int64","nullable":true}
+  ],
+  "rows": [
+    {"symbol":"AAPL","bucket":"2026-08-29T00:00:00.000000000Z","avg_price":101.66666666666667,"rows":3},
+    {"symbol":"MSFT","bucket":"2026-08-29T00:00:00.000000000Z","avg_price":201.0,"rows":2}
+  ]
+}

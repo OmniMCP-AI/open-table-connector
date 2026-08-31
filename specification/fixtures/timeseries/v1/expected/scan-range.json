@@ -1,0 +1,12 @@
+{
+  "schema": [
+    {"name":"ts","type":"timestamp[ns, tz=UTC]","nullable":true},
+    {"name":"symbol","type":"string","nullable":true},
+    {"name":"price","type":"double","nullable":true}
+  ],
+  "rows": [
+    {"ts":"2026-08-29T00:00:00.000000123Z","symbol":"AAPL","price":100.0},
+    {"ts":"2026-08-29T00:05:00.000000000Z","symbol":"AAPL","price":102.0},
+    {"ts":"2026-08-29T00:10:00.000000000Z","symbol":"AAPL","price":103.0}
+  ]
+}

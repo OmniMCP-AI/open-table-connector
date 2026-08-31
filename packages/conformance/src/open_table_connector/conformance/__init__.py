@@ -13,6 +13,7 @@ from .timeseries import (
     TemporalSemanticCase,
     assert_managed_lifecycle,
     assert_temporal_semantics,
+    load_temporal_cases,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "ManagedLifecycleResult",
     "run_read_suite",
     "TemporalSemanticCase",
+    "load_temporal_cases",
 ]

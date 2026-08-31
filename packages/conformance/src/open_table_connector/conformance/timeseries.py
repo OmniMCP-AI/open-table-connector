@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
+import json
+from pathlib import Path
 
 import pyarrow as pa
+
+from open_table_connector.contract import TableURI
 
 from open_table_connector.timeseries import (
     AbortDisposition,
@@ -18,20 +23,133 @@ from open_table_connector.timeseries import (
     ResourceBounds,
     TemporalExecutionRequest,
     TemporalExecutionResult,
+    TemporalExecutionRequest,
     VisibilityGuarantee,
 )
 
 
 @dataclass(frozen=True, slots=True)
 class TemporalSemanticCase:
+    case_id: str
     request: TemporalExecutionRequest
     expected: pa.Table
 
     def __post_init__(self) -> None:
+        if not isinstance(self.case_id, str) or not self.case_id:
+            raise TypeError("case_id must be a non-empty string")
         if not isinstance(self.request, TemporalExecutionRequest):
             raise TypeError("request must be a TemporalExecutionRequest")
         if not isinstance(self.expected, pa.Table):
             raise TypeError("expected must be a pyarrow.Table")
+
+
+_EXPECTED_TYPES = {
+    "string": pa.string,
+    "double": pa.float64,
+    "int64": pa.int64,
+    "bool": pa.bool_,
+}
+
+
+def _expected_table(document: dict[str, object]) -> pa.Table:
+    schema_entries = document.get("schema")
+    rows = document.get("rows")
+    if not isinstance(schema_entries, list) or not isinstance(rows, list):
+        raise ValueError("expected fixture requires schema and rows arrays")
+    fields: list[pa.Field] = []
+    for entry in schema_entries:
+        if not isinstance(entry, dict) or set(entry) != {"name", "type", "nullable"}:
+            raise ValueError("expected schema entries must contain name, type, nullable")
+        name = entry["name"]
+        type_name = entry["type"]
+        nullable = entry["nullable"]
+        if not isinstance(name, str) or not name or not isinstance(type_name, str):
+            raise ValueError("expected schema names and types must be strings")
+        if not isinstance(nullable, bool):
+            raise ValueError("expected schema nullable must be boolean")
+        if type_name.startswith("timestamp[") and type_name.endswith("]"):
+            inner = type_name[10:-1]
+            unit, _, timezone = inner.partition(", tz=")
+            arrow_type = pa.timestamp(unit, tz=timezone or None)
+        else:
+            try:
+                arrow_type = _EXPECTED_TYPES[type_name]()
+            except KeyError as exc:
+                raise ValueError(f"unsupported expected Arrow type: {type_name}") from exc
+        fields.append(pa.field(name, arrow_type, nullable=nullable))
+    names = [field.name for field in fields]
+    if len(names) != len(set(names)):
+        raise ValueError("expected schema contains duplicate fields")
+    if any(not isinstance(row, dict) or set(row) != set(names) for row in rows):
+        raise ValueError("expected rows must match the declared schema exactly")
+    columns: list[pa.Array] = []
+    for field in fields:
+        values = [row[field.name] for row in rows]
+        if pa.types.is_timestamp(field.type):
+            scale = {"s": 0, "ms": 3, "us": 6, "ns": 9}[field.type.unit]
+            converted: list[int | None] = []
+            for value in values:
+                if value is None:
+                    converted.append(None)
+                    continue
+                text = str(value).replace("Z", "+00:00")
+                whole_text, _, fraction_text = text.partition(".")
+                fraction_text = fraction_text.split("+", 1)[0].ljust(9, "0")
+                whole = datetime.fromisoformat(whole_text + "+00:00").astimezone(UTC)
+                converted.append(
+                    int(whole.timestamp()) * (10**scale)
+                    + int(fraction_text[:9]) // (10 ** (9 - scale))
+                )
+            values = converted
+        columns.append(pa.array(values, type=field.type))
+    return pa.Table.from_arrays(columns, schema=pa.schema(fields))
+
+
+def load_temporal_cases(root: Path) -> tuple[TemporalSemanticCase, ...]:
+    """Load vendored temporal cases without executing an implementation oracle."""
+
+    root = root.resolve()
+    manifest = json.loads((root / "cases.json").read_text(encoding="utf-8"))
+    if set(manifest) != {"schema_version", "source", "cases"}:
+        raise ValueError("temporal case manifest has unknown or missing fields")
+    if manifest["schema_version"] != "otc.temporal-conformance-cases/v1":
+        raise ValueError("unsupported temporal case manifest schema_version")
+    source = manifest["source"]
+    if not isinstance(source, str) or not (root / source).is_file():
+        raise ValueError("temporal case source is missing")
+    raw_cases = manifest["cases"]
+    if not isinstance(raw_cases, list):
+        raise ValueError("temporal case manifest cases must be an array")
+    cases: list[TemporalSemanticCase] = []
+    seen: set[str] = set()
+    for raw_case in raw_cases:
+        if not isinstance(raw_case, dict) or set(raw_case) != {"id", "plan", "expected"}:
+            raise ValueError("temporal case entries must contain id, plan, expected")
+        case_id, plan_name, expected_name = (
+            raw_case["id"],
+            raw_case["plan"],
+            raw_case["expected"],
+        )
+        if not all(isinstance(value, str) and value for value in (case_id, plan_name, expected_name)):
+            raise ValueError("temporal case identifiers and paths must be non-empty strings")
+        if case_id in seen:
+            raise ValueError(f"duplicate temporal case id: {case_id}")
+        seen.add(case_id)
+        plan_document = json.loads((root / plan_name).read_text(encoding="utf-8"))
+        plan_wire = plan_document.get("plan", plan_document)
+        expected_document = json.loads((root / expected_name).read_text(encoding="utf-8"))
+        from open_table_connector.timeseries import plan_from_wire
+
+        plan = plan_from_wire(plan_wire)
+        request = TemporalExecutionRequest(
+            TableURI("json:///conformance/ticks.json"),
+            plan,
+            None,
+            f"semantic-{case_id}",
+            None,
+        )
+        cases.append(TemporalSemanticCase(case_id, request, _expected_table(expected_document)))
+    return tuple(cases)
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +272,7 @@ __all__ = [
     "ManagedLifecycleCase",
     "ManagedLifecycleResult",
     "TemporalSemanticCase",
+    "load_temporal_cases",
     "assert_managed_lifecycle",
     "assert_temporal_semantics",
 ]

@@ -1,0 +1,11 @@
+{
+  "schema_version": "otc.temporal-conformance-cases/v1",
+  "source": "source/ticks.json",
+  "cases": [
+    {"id": "scan-range", "plan": "scan-range.json", "expected": "expected/scan-range.json"},
+    {"id": "latest", "plan": "latest.json", "expected": "expected/latest.json"},
+    {"id": "as-of", "plan": "as-of.json", "expected": "expected/as-of.json"},
+    {"id": "bucket-aggregate", "plan": "bucket-aggregate.json", "expected": "expected/bucket-aggregate.json"},
+    {"id": "gap-fill", "plan": "gap-fill.json", "expected": "expected/gap-fill.json"}
+  ]
+}

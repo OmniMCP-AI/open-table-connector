@@ -8,7 +8,11 @@ import pyarrow as pa
 import pytest
 
 from open_table_connector.contract import TableURI
-from open_table_connector.conformance import ManagedLifecycleCase, TemporalSemanticCase
+from open_table_connector.conformance import (
+    ManagedLifecycleCase,
+    TemporalSemanticCase,
+    load_temporal_cases,
+)
 from open_table_connector.local_files import (
     CsvManagedTemporalStore,
     CsvTemporalExecutor,
@@ -25,33 +29,30 @@ from open_table_connector.timeseries import (
     ManagedCommitRequest,
     ManagedStageRequest,
     PolarsTemporalExecutor,
+    ResourceBounds,
     TemporalExecutionRequest,
     temporal_descriptor_hash,
 )
-from packages.local_files.tests.excel_fixtures import value_workbook
-from packages.local_files.tests.test_temporal_csv import operations
-from packages.maybe_sheet.tests.test_temporal_recording import RecordingTemporalProcess
-from packages.sqlite.tests.temporal_fixtures import create_ticks, sqlite_uri
-from packages.timeseries.tests.fixtures import (
+from specification.conformance.timeseries.support import (
     MemoryTemporalSource,
+    RecordingTemporalProcess,
+    create_ticks,
     descriptor,
+    sqlite_uri,
     ticks_table,
+    value_workbook,
 )
 
 
-@pytest.fixture(params=operations(), ids=lambda plan: plan.operation.to_wire()["kind"])
+FIXTURE_ROOT = Path(__file__).resolve().parents[2] / "fixtures/timeseries/v1"
+
+
+@pytest.fixture(
+    params=load_temporal_cases(FIXTURE_ROOT),
+    ids=lambda case: case.case_id,
+)
 def semantic_case(request) -> TemporalSemanticCase:
-    plan = request.param
-    execution = TemporalExecutionRequest(
-        TableURI("json:///conformance/ticks.json"),
-        plan,
-        None,
-        f"semantic-{plan.operation.to_wire()['kind']}",
-        None,
-    )
-    expected = PolarsTemporalExecutor(MemoryTemporalSource()).execute(execution).table
-    assert expected is not None
-    return TemporalSemanticCase(execution, expected)
+    return request.param
 
 
 def put_artifact(root: Path, table: pa.Table | None = None) -> ArrowArtifactReference:
@@ -71,7 +72,7 @@ def put_artifact(root: Path, table: pa.Table | None = None) -> ArrowArtifactRefe
 
 def lifecycle_case(artifact_root: Path, target: TableURI) -> ManagedLifecycleCase:
     table = ticks_table()
-    bounds = operations()[0].resource_bounds
+    bounds = ResourceBounds(max_rows=1000, max_bytes=1000000, max_duration_ms=5000)
     stage = ManagedStageRequest(
         "conformance-stage",
         put_artifact(artifact_root, table),
@@ -152,7 +153,11 @@ def provider_semantic_case(request, semantic_case, tmp_path):
         operation_id,
         snapshot_reference,
     )
-    return provider, executor, TemporalSemanticCase(execution, semantic_case.expected)
+    return provider, executor, TemporalSemanticCase(
+        semantic_case.case_id,
+        execution,
+        semantic_case.expected,
+    )
 
 
 class _PostgresCursor:

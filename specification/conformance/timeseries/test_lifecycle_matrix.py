@@ -4,9 +4,7 @@ from open_table_connector.conformance import assert_managed_lifecycle
 from open_table_connector.contract import TableURI
 from open_table_connector.local_files import CsvManagedTemporalStore, JsonManagedTemporalStore
 from open_table_connector.sqlite import SQLiteManagedTemporalStore
-from packages.timeseries.tests.fixtures import descriptor, ticks_table
-from packages.sqlite.tests.temporal_fixtures import create_ticks
-from packages.sqlite.tests.temporal_fixtures import sqlite_uri
+from specification.conformance.timeseries.support import create_ticks, descriptor, sqlite_uri, ticks_table
 
 from .conftest import lifecycle_case
 

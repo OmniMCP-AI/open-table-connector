@@ -1,0 +1,13 @@
+{
+  "schema": [
+    {"name":"ts","type":"timestamp[ns, tz=UTC]","nullable":true},
+    {"name":"symbol","type":"string","nullable":true},
+    {"name":"venue","type":"string","nullable":true},
+    {"name":"price","type":"double","nullable":true},
+    {"name":"size","type":"int64","nullable":true}
+  ],
+  "rows": [
+    {"ts":"2026-08-29T00:10:00.000000000Z","symbol":"AAPL","venue":"XNAS","price":103.0,"size":13},
+    {"ts":"2026-08-29T00:05:00.000000000Z","symbol":"MSFT","venue":"ARCX","price":202.0,"size":22}
+  ]
+}
