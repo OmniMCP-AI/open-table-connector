@@ -44,7 +44,7 @@ that disposition with `verified`, `invalid`, or `superseded`.
 | C10 | Cross-framework manifest ignored | P1 | Specification 6 | manifest execution test | hypothesis | pending |
 | C11 | Schema misses semantic invariants | P1 | Specification 1, 3 | normative/schema tests | hypothesis | pending |
 | D1 | USER_ENTERED enables formulas | P1 | Correctness 6 | write option test | verified | 37e93dd |
-| D2 | Postgres read gate allows writes | P1 | Correctness 4 | read-only transaction test | hypothesis | pending |
+| D2 | Postgres read gate allows writes | P1 | Correctness 4 | read-only transaction test | verified | pending |
 | D3 | URI scrubbing misses empty/fragments | P1 | Process 3 | URI security tests | hypothesis | pending |
 | D4 | ResolveContext repr leaks credentials | P1 | Process 3 | repr/redaction test | hypothesis | pending |
 | D5 | maybe_sheet env/cache collisions | P1 | Process 3 | key/cache tests | hypothesis | pending |

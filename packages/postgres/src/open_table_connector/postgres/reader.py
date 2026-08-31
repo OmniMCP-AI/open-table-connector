@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Callable, Mapping
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from hashlib import sha256
-from contextvars import ContextVar
-import re
-from typing import Any, Callable, Mapping
+from typing import Any
 from urllib.parse import urlsplit
 
 import polars as pl
 import pyarrow as pa
-
 from open_table_connector.contract import (
     ArrowReadResult,
     ArrowTableReader,
@@ -24,7 +24,6 @@ from open_table_connector.contract import (
     NeutralReceipt,
     PolarsReadResult,
     PolarsTableReader,
-    ResourceLimits,
     ResolveContext,
     ResolvedTable,
     SqlExecutor,
@@ -33,18 +32,20 @@ from open_table_connector.contract import (
     TableMode,
     TableReadRequest,
     TableURI,
+    TableWriter,
     TableWriteRequest,
     TableWriteResult,
-    TableWriter,
     TransactionalStore,
     URIResolver,
 )
-from open_table_connector.contract.fingerprints import arrow_content_fingerprint, arrow_schema_fingerprint, operation_identity
+from open_table_connector.contract.fingerprints import (
+    arrow_content_fingerprint,
+    arrow_schema_fingerprint,
+    operation_identity,
+)
 
 from .identity import (
     CONNECTOR_IDENTITY,
-    TABLE_EXECUTE_CAPABILITY,
-    TABLE_INSPECT_CAPABILITY,
     TABLE_READ_ARROW_CAPABILITY,
     TABLE_READ_POLARS_CAPABILITY,
     TABLE_WRITE_CAPABILITY,
@@ -88,7 +89,7 @@ class ResolvedPostgres:
 
 
 class PostgresTransaction:
-    def __init__(self, connector: "PostgresConnector", uri: TableURI, connection: Any) -> None:
+    def __init__(self, connector: PostgresConnector, uri: TableURI, connection: Any) -> None:
         self._connector = connector
         self.uri = uri
         self._connection = connection
@@ -163,6 +164,15 @@ def _close_cursor(cursor: Any | None) -> None:
         pass
 
 
+def _begin_read_only(connection: Any, cursor: Any | None = None) -> None:
+    """Put a standalone query read in a database-enforced read-only transaction."""
+    active_cursor = cursor or connection.cursor()
+    try:
+        active_cursor.execute("SET TRANSACTION READ ONLY")
+    except TypeError:
+        active_cursor.execute("SET TRANSACTION READ ONLY", ())
+
+
 class PostgresConnector(
     URIResolver,
     TableInspector,
@@ -183,7 +193,7 @@ class PostgresConnector(
 
     @staticmethod
     def _execution_id(request: ExecutionRequest) -> str:
-        payload = f"{request.uri.value}\0{request.statement}".encode("utf-8")
+        payload = f"{request.uri.value}\0{request.statement}".encode()
         return "exec_" + sha256(payload).hexdigest()
 
     @staticmethod
@@ -239,12 +249,20 @@ class PostgresConnector(
         resolved = self.resolve(request.uri, ResolveContext(resource_limits=request.resource_limits, credentials=request.credentials))
         resource: ResolvedPostgres = resolved.resource
         active = self._active_transaction(request.uri)
+        options = request.options
+        if options.query is not None and active is not None:
+            raise ConnectorError(
+                ConnectorErrorCode.CONFLICT,
+                "query reads cannot run inside a writable PostgreSQL transaction",
+                {},
+            )
         connection = active._connection if active is not None else self._connect(resource)
         owns_connection = active is None
         cursor = None
         try:
             cursor = connection.cursor()
-            options = request.options
+            if options.query is not None:
+                _begin_read_only(connection, cursor)
             statement = options.query or f"SELECT * FROM {options.table}"
             cursor.execute(statement, options.parameters)
             description = cursor.description or ()
