@@ -35,6 +35,31 @@ The supported entry-point names are:
 - `open-table-connector`
 - `open-connectors` (deprecated compatibility alias)
 
+## Provider configuration
+
+Provider adapters are discovered from installed wheels and configured without
+embedding credentials in command arguments. Set `OTC_CONFIG` (or place the file
+at `$XDG_CONFIG_HOME/open-table-connector/config.toml`) and reference secrets
+through environment variables:
+
+```toml
+schema_version = "otc.cli-config/v1"
+
+[[providers]]
+id = "google_sheets"
+key = "work-google"
+env = { endpoint = "GOOGLE_SHEETS_ENDPOINT" }
+options = { timeout_seconds = 30 }
+
+[credentials.work-google]
+access_token = { env = "GOOGLE_SHEETS_ACCESS_TOKEN" }
+```
+
+Use `--credential-key PROVIDER=REFERENCE` for a one-run reference override.
+Configuration contains only logical environment bindings; literal secrets and
+route overrides are rejected. Providers may be installed, disabled, or removed
+independently; `otc list` reports only installed and enabled descriptors.
+
 ## Local connector routing
 
 The CLI exposes four local connector identities:

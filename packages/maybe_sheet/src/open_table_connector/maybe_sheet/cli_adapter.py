@@ -162,11 +162,14 @@ def _factory(context: ProviderFactoryContext) -> MaybeSheetCliAdapter:
         raise ValueError("MaybeSheet timeout must be positive")
     process = context.transports.get(PROVIDER_MAYBE_SHEET)
     if process is None:
-        binary = context.environment.get(SETTING_BINARY)
-        if binary is None:
-            raise ValueError("MaybeSheet binary must be configured")
+        binary = context.environment.get(SETTING_BINARY, "mbs")
         process = SubprocessProcessClient(
-            binary=_absolute_executable(binary), timeout_seconds=float(timeout)
+            binary=(
+                _absolute_executable(binary)
+                if binary != "mbs"
+                else binary
+            ),
+            timeout_seconds=float(timeout),
         )
     return MaybeSheetCliAdapter(
         MaybeSheetConnector(process), dict(context.credentials), float(timeout)

@@ -122,7 +122,7 @@ class ExcelManagedTemporalStore:
         self.snapshots.recover(target)
 
     def _validate_physical_target(self, target: TableURI) -> None:
-        if target.scheme == "managed+xlsx":
+        if target.scheme == SCHEME_MANAGED_XLSX:
             _managed_namespace(target, self.worksheet)
             return
         source = _direct_source(target, self.worksheet, required=True)
@@ -171,7 +171,7 @@ class ExcelTemporalExecutor:
     def execute(self, request: TemporalExecutionRequest) -> TemporalExecutionResult:
         if not isinstance(request, TemporalExecutionRequest):
             raise TypeError("request must be a TemporalExecutionRequest")
-        if request.target.scheme == "managed+xlsx":
+        if request.target.scheme == SCHEME_MANAGED_XLSX:
             _managed_namespace(request.target, self.worksheet)
             if self.managed_store is None or request.snapshot_reference is None:
                 raise TemporalExtensionError(
@@ -434,10 +434,10 @@ def _direct_source(target: TableURI, worksheet: str, *, required: bool) -> Path 
 
 
 def _managed_namespace(target: TableURI, worksheet: str) -> Path:
-    if target.scheme != "managed+xlsx":
+    if target.scheme != SCHEME_MANAGED_XLSX:
         raise TemporalExtensionError(
             TemporalErrorCode.PROTOCOL_INVALID,
-            "managed Excel target requires managed+xlsx scheme",
+            "managed Excel target requires " + SCHEME_MANAGED_XLSX + " scheme",
             {"scheme": target.scheme},
         )
     return _target_parts(target, worksheet)

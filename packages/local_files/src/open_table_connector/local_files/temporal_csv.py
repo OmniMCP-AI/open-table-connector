@@ -11,7 +11,7 @@ from urllib.parse import unquote, urlsplit
 import pyarrow as pa
 import pyarrow.csv as pa_csv
 
-from open_table_connector.contract import PROVIDER_CSV, TableURI
+from open_table_connector.contract import PROVIDER_CSV, SCHEME_MANAGED_CSV, TableURI
 from open_table_connector.timeseries import (
     ManagedAbortReceipt,
     ManagedAbortRequest,
@@ -139,7 +139,7 @@ class CsvManagedTemporalStore:
         self.snapshots = ManagedSnapshotStore(
             artifact_root,
             descriptor,
-            target_scheme="managed+csv",
+            target_scheme=SCHEME_MANAGED_CSV,
             extension=PROVIDER_CSV,
             encode_snapshot=_encode_csv,
             decode_snapshot=lambda data: _decode_csv(data, descriptor),
@@ -217,7 +217,7 @@ class CsvTemporalExecutor:
     def execute(self, request: TemporalExecutionRequest) -> TemporalExecutionResult:
         if not isinstance(request, TemporalExecutionRequest):
             raise TypeError("request must be a TemporalExecutionRequest")
-        if request.target.scheme == "managed+csv":
+        if request.target.scheme == SCHEME_MANAGED_CSV:
             if self.managed_store is None or request.snapshot_reference is None:
                 raise TemporalExtensionError(
                     TemporalErrorCode.SNAPSHOT_UNAVAILABLE,
@@ -241,7 +241,7 @@ class CsvTemporalExecutor:
         else:
             raise TemporalExtensionError(
                 TemporalErrorCode.PROTOCOL_INVALID,
-                "CSV temporal executor accepts csv and managed+csv targets",
+                "CSV temporal executor accepts " + PROVIDER_CSV + " and " + SCHEME_MANAGED_CSV + " targets",
                 {"scheme": request.target.scheme},
             )
         return PolarsTemporalExecutor(

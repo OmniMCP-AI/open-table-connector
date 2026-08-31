@@ -105,6 +105,11 @@ and the [conformance suite](specification/conformance/timeseries/README.md).
 
 ## Documentation
 
+Provider adapters are independently pluggable. Configure installed providers
+with a reference-only TOML file selected by `OTC_CONFIG` (or the XDG config
+location); credentials are resolved from environment variables at operation
+time. For a complete example, see [CLI provider configuration](packages/cli/README.md#provider-configuration).
+
 - [Getting started](docs/getting-started.md) — install, first reads, and a
   minimal portable temporal query.
 - [User manual](docs/user-manual.md) — CLI reference, URI rules, connector

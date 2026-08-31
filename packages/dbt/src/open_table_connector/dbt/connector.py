@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from open_table_connector.contract import ConnectorError, ConnectorErrorCode
+from open_table_connector.contract import ConnectorError, ConnectorErrorCode, PROVIDER_DBT
 
 from .identity import CONNECTOR_IDENTITY
 
@@ -88,8 +88,8 @@ class DbtConnector:
             separators=(",", ":"),
             default=str,
         )
-        invocation_id = "dbt_" + sha256(invocation_payload.encode("utf-8")).hexdigest()[:24]
-        argv = ("dbt", "compile", "--project-dir", str(request.project_dir))
+        invocation_id = PROVIDER_DBT + "_" + sha256(invocation_payload.encode("utf-8")).hexdigest()[:24]
+        argv = (PROVIDER_DBT, "compile", "--project-dir", str(request.project_dir))
         if request.select:
             argv += ("--select", *request.select)
         if request.exclude:
@@ -98,7 +98,7 @@ class DbtConnector:
             argv += ("--target", request.target)
         if request.vars:
             argv += ("--vars", json.dumps(request.vars, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
-        run_argv = ("dbt", "run", "--project-dir", str(request.project_dir))
+        run_argv = (PROVIDER_DBT, "run", "--project-dir", str(request.project_dir))
         if request.select:
             run_argv += ("--select", *request.select)
         if request.exclude:
@@ -149,7 +149,7 @@ class DbtConnector:
         if self._runner is None:
             raise ConnectorError(ConnectorErrorCode.UNSUPPORTED_CAPABILITY, "dbt execution runner is not configured", {})
         try:
-            argv = operation.run_argv or ("dbt", "run", "--project-dir", str(operation.project_dir))
+            argv = operation.run_argv or (PROVIDER_DBT, "run", "--project-dir", str(operation.project_dir))
             payload = self._runner(argv, operation.project_dir)
             run_results = payload.get("run_results")
             return DbtRunResult(operation.invocation_id, str(payload.get("status", "completed")), run_results if isinstance(run_results, bytes) else None, dict(payload.get("artifact_refs", {})))
@@ -164,7 +164,7 @@ class DbtConnector:
         if self._runner is None:
             raise ConnectorError(ConnectorErrorCode.UNSUPPORTED_CAPABILITY, "dbt cancellation runner is not configured", {})
         try:
-            payload = self._runner(("dbt", "cancel", "--invocation-id", operation.invocation_id), operation.project_dir)
+            payload = self._runner((PROVIDER_DBT, "cancel", "--invocation-id", operation.invocation_id), operation.project_dir)
             return DbtRunResult(operation.invocation_id, "cancelled", payload.get("run_results"))
         except Exception:
             raise ConnectorError(

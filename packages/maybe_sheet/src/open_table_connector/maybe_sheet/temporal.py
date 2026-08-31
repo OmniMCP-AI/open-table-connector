@@ -15,7 +15,7 @@ from pathlib import Path
 from threading import Lock
 
 import pyarrow as pa
-from open_table_connector.contract import ConnectorError, ConnectorErrorCode, TableURI
+from open_table_connector.contract import ConnectorError, ConnectorErrorCode, PROVIDER_JSON, TableURI
 from open_table_connector.timeseries import (
     ManagedAbortReceipt,
     ManagedAbortRequest,
@@ -122,7 +122,7 @@ def _probe(client: ProcessClient) -> frozenset[str]:
             return cached
     description = _run(
         client,
-        ("mbs", "timeseries", "describe", "--format", "json"),
+        ("mbs", "timeseries", "describe", "--format", PROVIDER_JSON),
         credentials=None,
         stdin=None,
         timeout=5,

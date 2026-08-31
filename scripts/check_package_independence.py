@@ -42,6 +42,60 @@ _DISTRIBUTION_MODULES = {
 }
 
 
+def _cli_provider_matrix_check(wheels: tuple[Path, ...]) -> list[str]:
+    """Verify CLI discovery remains usable with one provider wheel at a time."""
+
+    errors: list[str] = []
+    provider_distributions = (
+        "open-table-connector-local-files",
+        "open-table-connector-google-sheets",
+        "open-table-connector-feishu-bitable",
+        "open-table-connector-maybe-sheet",
+    )
+    for selected in provider_distributions:
+        selected_module = _DISTRIBUTION_MODULES[selected]
+        allowed_distributions = {
+            "open-table-connector",
+            "open-table-connector-contract",
+            "open-table-connector-timeseries",
+            selected,
+        }
+        paths = [
+            str(wheel)
+            for wheel in wheels
+            if _wheel_distribution(wheel) in allowed_distributions
+        ]
+        blocked = {
+            module
+            for distribution, module in _DISTRIBUTION_MODULES.items()
+            if distribution != selected
+        }
+        expected_id = selected_module.rsplit(".", 1)[-1]
+        code = (
+            "import builtins,sys;"
+            "sys.path[:0]=sys.argv[1:];"
+            f"blocked={blocked!r};"
+            "real=builtins.__import__;"
+            "builtins.__import__=lambda n,*a,**k: "
+            "(_ for _ in ()).throw(ModuleNotFoundError(name=n)) "
+            "if any(n==x or n.startswith(x+'.') for x in blocked) else real(n,*a,**k);"
+            "from open_table_connector.cli.registry import build_default_registry;"
+            "r=build_default_registry(env={});"
+            f"assert any(d.identity.connector_id == {expected_id!r} for d in r.list())"
+        )
+        result = subprocess.run(
+            [sys.executable, "-I", "-c", code, *paths],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            errors.append(
+                f"CLI with {selected}: provider matrix check failed: {result.stderr.strip()}"
+            )
+    return errors
+
+
 def _wheel_distribution(wheel: Path) -> str:
     return wheel.name.split("-", 1)[0].replace("_", "-")
 
@@ -119,6 +173,7 @@ def check_independence(root: Path, dist: Path, *, build: bool = False) -> list[s
             error = _uninstall_check(wheels, distribution)
             if error:
                 errors.append(error)
+    errors.extend(_cli_provider_matrix_check(wheels))
     return errors
 
 

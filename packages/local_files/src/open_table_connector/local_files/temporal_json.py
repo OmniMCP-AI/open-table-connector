@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
 
 import pyarrow as pa
 
@@ -60,7 +59,7 @@ from .managed_snapshots import ManagedSnapshotStore
 from .identity import CONNECTOR_IDENTITY
 
 
-JsonFormat = Literal["json", "jsonl"]
+JsonFormat = str
 
 
 class JsonManagedTemporalStore:
