@@ -1,5 +1,13 @@
 """Public contract-v1 symbols for framework-neutral Connectors."""
 
+from .bounded_reads import (
+    BOUNDED_ARROW_TABLE_READ_CAPABILITY,
+    BoundedArrowTableReader,
+    BoundedArrowTableReadResult,
+    BoundedReadReceipt,
+    BoundedTableReadRequest,
+    ReadExtent,
+)
 from .capabilities import CapabilityManifest, TableMode
 from .coordinates import (
     BaseConvention,
@@ -8,8 +16,15 @@ from .coordinates import (
     SheetCoordinate,
     TableCoordinate,
 )
-from .identity import CapabilityIdentity, ConnectorIdentity
 from .errors import ConnectorError, ConnectorErrorCode
+from .execution import (
+    ExecutionRequest,
+    ExecutionResult,
+    PreparedOperation,
+    SqlExecutor,
+    StepExecutor,
+)
+from .identity import CapabilityIdentity, ConnectorIdentity
 from .inspect import InspectRequest, TableInspection, TableInspector
 from .read import (
     ArrowReadResult,
@@ -20,18 +35,22 @@ from .read import (
 )
 from .receipts import NeutralReceipt
 from .resolve import (
-    ResolvedTable,
     ResolveContext,
+    ResolvedTable,
     ResourceLimits,
     URIResolver,
 )
 from .scalars import Scalar
+from .storage import TableWriter, TableWriteRequest, TableWriteResult, TransactionalStore
 from .uri import TableURI
-from .execution import ExecutionRequest, ExecutionResult, PreparedOperation, SqlExecutor, StepExecutor
-from .storage import TableWriteRequest, TableWriteResult, TableWriter, TransactionalStore
 
 __all__ = [
     "BaseConvention",
+    "BOUNDED_ARROW_TABLE_READ_CAPABILITY",
+    "BoundedArrowTableReadResult",
+    "BoundedArrowTableReader",
+    "BoundedReadReceipt",
+    "BoundedTableReadRequest",
     "BaseCoordinate",
     "CapabilityIdentity",
     "CapabilityManifest",
@@ -47,6 +66,7 @@ __all__ = [
     "ResolvedTable",
     "ResolveContext",
     "ResourceLimits",
+    "ReadExtent",
     "Scalar",
     "SheetConvention",
     "SheetCoordinate",

@@ -71,7 +71,7 @@ class ConnectorError(RuntimeError):
             raise TypeError("code must be a ConnectorErrorCode")
         if not isinstance(self.message, str) or not self.message.strip():
             raise ValueError("message must be a non-empty string")
-        details = _safe_value(self.safe_details)
+        details = _safe_value({} if self.safe_details is None else self.safe_details)
         object.__setattr__(self, "message", self.message.strip())
         object.__setattr__(self, "safe_details", details)
         RuntimeError.__init__(self, self.message)
