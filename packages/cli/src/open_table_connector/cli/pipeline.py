@@ -329,6 +329,11 @@ def _should_fallback_to_legacy(error: otc.OTCError) -> bool:
 
 def _should_use_sdk_pipeline(registry: object) -> bool:
     listed = registry.list() if hasattr(registry, "list") else ()
+    # Explicitly registered CLI adapters are the legacy compatibility seam.
+    # Descriptor-backed SDK connectors still use the normalized OTC pipeline,
+    # while manually injected adapters retain their Arrow/receipt contract.
+    if getattr(registry, "_manual_adapters", ()):
+        return False
     return (
         bool(getattr(registry, "_use_sdk_pipeline", False))
         or isinstance(registry, otc.ConnectorRegistry)

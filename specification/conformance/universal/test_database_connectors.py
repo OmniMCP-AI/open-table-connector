@@ -302,7 +302,9 @@ def test_database_sql_options_execute_exact_statement_and_parameters(
     assert result.receipt.coordinate_convention.key_fields == ("id",)
     if case_name == "postgres":
         fixture = _postgres_fixture(connector_case)
-        call = fixture.connection_factory.connections[-1].cursors[0].calls[0]
+        # PostgreSQL query reads first enter a read-only transaction; the
+        # provider SELECT is therefore the final recorded cursor call.
+        call = fixture.connection_factory.connections[-1].cursors[0].calls[-1]
         assert call.statement == "SELECT id, amount FROM orders WHERE id = %s"
         assert call.parameters == ("b",)
 
@@ -657,7 +659,8 @@ def test_postgres_execution_failures_are_stable_and_close_connections() -> None:
     assert "cursor rejection" in raised.value.safe_details["reason"]
     assert_error_is_safe(raised.value, forbidden_values=("fixture-password",))
     connection = factory.connections[-1]
-    assert connection.cursors[0].calls[0].statement == (
+    # The read-only transaction guard precedes the provider query.
+    assert connection.cursors[0].calls[-1].statement == (
         "SELECT id, amount FROM orders"
     )
     assert connection.closed

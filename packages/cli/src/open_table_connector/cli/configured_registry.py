@@ -367,7 +367,10 @@ class ConfiguredConnectorRegistry:
                 raise ConnectorError(
                     ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
                     "connector does not support the requested capability",
-                    {"capability": capability_id},
+                    {
+                        "scheme": endpoint.uri.scheme if endpoint.uri else SCHEME_FILE,
+                        "capability": capability_id,
+                    },
                 )
             return manual
         if self._plugins and not isinstance(self._plugins[0], ConfiguredPlugin):
@@ -378,7 +381,10 @@ class ConfiguredConnectorRegistry:
                 raise ConnectorError(
                     ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
                     "connector does not support the requested capability",
-                    {"capability": capability_id},
+                    {
+                        "scheme": endpoint.uri.scheme if endpoint.uri else SCHEME_FILE,
+                        "capability": capability_id,
+                    },
                 )
             return adapter  # type: ignore[return-value]
         plugin = self._plugin_for(endpoint)
