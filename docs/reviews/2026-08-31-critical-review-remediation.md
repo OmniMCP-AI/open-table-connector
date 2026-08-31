@@ -13,9 +13,9 @@ that disposition with `verified`, `invalid`, or `superseded`.
 | T5 | Workspace engineering lags claims | P0 | Packaging 1–6 | metadata/CI checks | hypothesis | pending |
 | A1 | DST calendar chaining can drop rows | P0 | Correctness 1 | DST fixture | hypothesis | pending |
 | A2 | COUNT accepts a value field | P0 | Specification 1 | Python/schema contract tests | superseded | 4e1372b |
-| A3 | SQLite precision mismatch | P0 | Correctness 3 | non-ns fixtures | hypothesis | pending |
-| A4 | Postgres isolation after DDL | P0 | Correctness 4 | live/recording SQL test | hypothesis | pending |
-| A5 | SQL observed range assumes ns | P0 | Correctness 4 | precision receipt tests | hypothesis | pending |
+| A3 | SQLite precision mismatch | P0 | Correctness 3 | non-ns fixtures | verified | dbcabdf |
+| A4 | Postgres isolation after DDL | P0 | Correctness 4 | live/recording SQL test | verified | pending |
+| A5 | SQL observed range assumes ns | P0 | Correctness 4 | precision receipt tests | verified | dbcabdf |
 | A6 | Hosted if_exists=error overwrites/appends | P0 | Correctness 6–7 | provider write tests | hypothesis | pending |
 | A7 | CLI CSV uses Markdown escaping | P0 | Packaging 4–5 | delimiter/newline tests | hypothesis | pending |
 | A8 | IPC fingerprint depends on chunking | P1 | Correctness 5 | chunk invariance test | hypothesis | pending |
@@ -25,7 +25,7 @@ that disposition with `verified`, `invalid`, or `superseded`.
 | A12 | Google gid treated as title | P1 | Correctness 6 | URL parsing tests | hypothesis | pending |
 | A13 | output_order fields unchecked | P1 | Specification 1 | plan validation tests | hypothesis | pending |
 | A14 | SQLite in-memory state resets | P0 | Correctness 4 | lifecycle test | hypothesis | pending |
-| A15 | SQLite bucket arithmetic truncates | P0 | Correctness 3 | pre-origin tests | hypothesis | pending |
+| A15 | SQLite bucket arithmetic truncates | P0 | Correctness 3 | pre-origin tests | verified | dbcabdf |
 | B1 | Frame header short-read unsafe | P0 | Process 4 | framing tests | hypothesis | pending |
 | B2 | Serialization failures disappear/leak | P0 | Process 2–6 | failure envelope tests | hypothesis | pending |
 | B3 | Process state/backlog unbounded | P1 | Process 2, 7 | bounded stress tests | hypothesis | pending |

@@ -562,7 +562,8 @@ class PostgresManagedTemporalStore:
 
     def readback(self, request: ManagedReadbackRequest) -> ManagedReadbackResult:
         self._bind_target(request.logical_target)
-        with self._connection(request.credential_values) as (_, cursor):
+        self.ensure_schema(request.credential_values)
+        with self._connection(request.credential_values, ensure_schema=False) as (_, cursor):
             cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             cursor.execute("SET LOCAL statement_timeout = %s", (request.resource_bounds.max_duration_ms,))
             table = self._read_snapshot(cursor, request.snapshot_reference, request.resource_bounds, request.snapshot_id)
@@ -591,7 +592,8 @@ class PostgresManagedTemporalStore:
         credential_values: Mapping[str, object] | None = None,
     ) -> pa.Table:
         self._bind_target(target)
-        with self._connection(credential_values) as (_, cursor):
+        self.ensure_schema(credential_values)
+        with self._connection(credential_values, ensure_schema=False) as (_, cursor):
             cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             cursor.execute("SET LOCAL statement_timeout = %s", (bounds.max_duration_ms,))
             return self._read_snapshot(cursor, snapshot_reference, bounds, snapshot_id)
@@ -666,6 +668,8 @@ class PostgresManagedTemporalStore:
     def _connection(
         self,
         credential_values: Mapping[str, object] | None = None,
+        *,
+        ensure_schema: bool = True,
     ) -> Iterator[tuple[object, object]]:
         resolved = self._connector.resolve(
             self.database_uri,
@@ -675,7 +679,8 @@ class PostgresManagedTemporalStore:
         cursor = None
         try:
             cursor = connection.cursor()
-            self._ensure_schema(cursor)
+            if ensure_schema:
+                self._ensure_schema(cursor)
             yield connection, cursor
             connection.commit()
         except BaseException:
@@ -688,6 +693,11 @@ class PostgresManagedTemporalStore:
                 except Exception:
                     pass
             connection.close()
+
+    def ensure_schema(self, credentials: Mapping[str, object] | None = None) -> None:
+        """Create metadata tables in a dedicated bootstrap transaction."""
+        with self._connection(credentials, ensure_schema=False) as (_, cursor):
+            self._ensure_schema(cursor)
 
     def _ensure_schema(self, cursor) -> None:
         schema = _quote(self.metadata_schema)

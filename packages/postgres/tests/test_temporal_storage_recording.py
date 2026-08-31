@@ -108,6 +108,7 @@ def test_recording_lifecycle_uses_advisory_lock_upsert_timeout_and_fresh_connect
         [
             [None],
             [None, ("idem-1", data, artifact_hash)],
+            [],
             [(snapshot_id, data)],
             [(1,)],
         ]
@@ -159,6 +160,34 @@ def test_recording_lifecycle_uses_advisory_lock_upsert_timeout_and_fresh_connect
     assert "SET LOCAL statement_timeout" in statements
     assert all(connection.closed for connection in factory.connections)
     assert all(connection.commits == 1 for connection in factory.connections)
+
+
+def test_readback_sets_isolation_before_any_query_and_skips_ddl(tmp_path: Path) -> None:
+    target = TableURI("postgres://localhost/analytics")
+    table, data, reference = artifact(tmp_path / "artifacts")
+    factory = RecordingFactory([[], [], [(reference.sha256, data)]])
+    store = PostgresManagedTemporalStore(
+        target,
+        tmp_path / "artifacts",
+        descriptor(),
+        connection_factory=factory,
+    )
+
+    store.ensure_schema()
+    result = store.readback(
+        ManagedReadbackRequest(
+            "readback-order",
+            target,
+            reference.sha256,
+            "postgres-snapshot:" + reference.sha256[7:],
+            ResourceBounds(100, 10_000_000, 500),
+        )
+    )
+
+    assert result.table.num_rows == table.num_rows
+    statements = factory.connections[-1].statements
+    assert statements[0][0] == "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"
+    assert not any(statement.startswith("CREATE ") for statement, _ in statements)
 
 
 def test_ambiguous_commit_is_reconciled_without_replaying_the_write(tmp_path) -> None:
