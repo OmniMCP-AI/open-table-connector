@@ -75,10 +75,15 @@ def _safe_parser_details(message: str) -> dict[str, list[str]]:
 
 
 def _emit_parser_error(message: str) -> None:
+    details = _safe_parser_details(message)
+    option = details.get("option")
+    summary = "invalid command input"
+    if isinstance(option, str):
+        summary += f" (--{option})"
     payload = {
         "code": "usage",
-        "message": "invalid command input",
-        "safe_details": _safe_parser_details(message),
+        "message": summary,
+        "safe_details": details,
     }
     sys.stderr.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
 
