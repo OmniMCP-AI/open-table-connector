@@ -1,0 +1,1 @@
+{"schema_version":"otc.provider-evidence/v1","provider":"json","tier":"unit","commit":"22aa51f","commands":["uv run --frozen python -m pytest packages/local_files/tests/test_json_connector.py -q"],"artifacts":["packages/local_files/tests/test_json_connector.py"],"live_run":null}

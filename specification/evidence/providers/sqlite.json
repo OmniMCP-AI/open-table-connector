@@ -1,0 +1,1 @@
+{"schema_version":"otc.provider-evidence/v1","provider":"sqlite","tier":"unit","commit":"22aa51f","commands":["uv run --frozen python -m pytest packages/sqlite/tests -q"],"artifacts":["packages/sqlite/tests"],"live_run":null}

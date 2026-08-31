@@ -1,0 +1,1 @@
+{"schema_version":"otc.provider-evidence/v1","provider":"postgres","tier":"recording_stub","commit":"22aa51f","commands":["uv run --frozen python -m pytest packages/postgres/tests -q"],"artifacts":["packages/postgres/tests"],"live_run":null}

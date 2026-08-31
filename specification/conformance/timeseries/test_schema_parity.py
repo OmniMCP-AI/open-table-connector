@@ -7,7 +7,6 @@ import jsonschema
 import pytest
 from open_table_connector.contract import ConnectorErrorCode
 
-
 ROOT = Path(__file__).parents[3]
 
 
@@ -62,3 +61,21 @@ def test_connector_error_schema_enum_matches_python() -> None:
     assert set(schema["properties"]["code"]["enum"]) == {
         item.value for item in ConnectorErrorCode
     }
+
+
+def test_provider_evidence_documents_match_closed_schema() -> None:
+    schema = json.loads(
+        (ROOT / "specification/schemas/provider-evidence-v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    validator = jsonschema.Draft202012Validator(schema)
+    evidence_root = ROOT / "specification/evidence/providers"
+    documents = sorted(evidence_root.glob("*.json"))
+    assert documents
+    for path in documents:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        validator.validate(document)
+        assert document["provider"] == path.stem
+        if document["tier"] == "recording_stub":
+            assert document["live_run"] is None

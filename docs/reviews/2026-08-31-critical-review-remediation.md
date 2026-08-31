@@ -35,11 +35,11 @@ that disposition with `verified`, `invalid`, or `superseded`.
 | C1 | No normative semantics | P1 | Specification 1 | semantics document | verified | 4e1372b |
 | C2 | Runtime oracle computes expected values | P1 | Specification 2 | fixture loader tests | hypothesis | pending |
 | C3 | Hash inputs unspecified/non-portable | P1 | Specification 7 | hash manifest tests | hypothesis | pending |
-| C4 | Stub providers labeled offline verified | P1 | Specification 5 | evidence documents | hypothesis | pending |
+| C4 | Stub providers labeled offline verified | P1 | Specification 5 | evidence documents | verified | pending |
 | C5 | Only process requests schema'd | P1 | Specification 4 | payload schema tests | hypothesis | pending |
 | C6 | Error codes outside closed enum | P1 | Specification 3 | enum/schema parity | hypothesis | pending |
 | C7 | Published schemas looser than Python | P1 | Specification 3 | invalid fixture parity | hypothesis | pending |
-| C8 | Capability identity has two forms | P1 | Specification 5 | identity round-trip tests | hypothesis | pending |
+| C8 | Capability identity has two forms | P1 | Specification 5 | identity round-trip tests | verified | pending |
 | C9 | Receipt defs copy-pasted | P1 | Specification 3 | shared-ref schema tests | hypothesis | pending |
 | C10 | Cross-framework manifest ignored | P1 | Specification 6 | manifest execution test | hypothesis | pending |
 | C11 | Schema misses semantic invariants | P1 | Specification 1, 3 | normative/schema tests | hypothesis | pending |
@@ -60,18 +60,18 @@ that disposition with `verified`, `invalid`, or `superseded`.
 | E8 | Usage errors lose actionable details | P2 | Packaging 5 | CLI error tests | hypothesis | pending |
 | E9 | ConnectorError unsafe defaults/None loss | P2 | Process 6 | error serialization tests | hypothesis | pending |
 | E10 | Invalid lazy type expression | P2 | Specification 6 | get_type_hints test | hypothesis | pending |
-| E11 | Capability names inconsistent | P2 | Specification 5 | identity tests | hypothesis | pending |
+| E11 | Capability names inconsistent | P2 | Specification 5 | identity tests | verified | pending |
 | E12 | Registry shadows/dead write routes | P2 | Packaging 4 | collision/route tests | hypothesis | pending |
 | F1 | Evaluator repeats IPC and loops buckets | P2 | Structure 1–3 | performance regressions | hypothesis | pending |
 | F2 | Projection pushdown defeated | P2 | Structure 4–5 | requested-field tests | hypothesis | pending |
 | F3 | CLI materializes before limit | P2 | Packaging 4 | bounded reader tests | hypothesis | pending |
 | F4 | Feishu unchunked/unbounded transport | P2 | Correctness 7, Process 7 | chunk/transport tests | hypothesis | pending |
 | G1 | Hosted packages omit dependencies | P0 | Packaging 1 | metadata checker | verified | 4e1372b |
-| G2 | Missing license/release artifacts | P0 | Packaging 2 | package checker | hypothesis | pending |
+| G2 | Missing license/release artifacts | P0 | Packaging 2 | package checker | verified | b683229 |
 | G3 | Documented sync uninstalls workspace | P0 | Packaging 1 | docs/uv sync check | verified | 4e1372b |
 | G4 | No CI/lint/typecheck automation | P1 | Packaging 3, 6 | workflow validation | hypothesis | pending |
-| G5 | No release trains/tags | P1 | Packaging 2, 3 | package boundary docs | hypothesis | pending |
+| G5 | No release trains/tags | P1 | Packaging 2, 3 | package boundary docs | verified | 22aa51f |
 | G6 | Rename residue and junk | P1 | Packaging 6 | hygiene check | hypothesis | pending |
 | G7 | Conflicting dependency pins | P0 | Packaging 1 | metadata checker | verified | 4e1372b |
-| G8 | Buildable root/no typing markers | P0 | Packaging 1–2 | uv/build/py.typed checks | hypothesis | pending |
+| G8 | Buildable root/no typing markers | P0 | Packaging 1–2 | uv/build/py.typed checks | verified | b683229 |
 | G9 | Micro-package hygiene uncertain | P2 | Packaging 2 | boundary evidence | hypothesis | pending |

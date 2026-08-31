@@ -1,0 +1,1 @@
+{"schema_version":"otc.provider-evidence/v1","provider":"maybe_sheet","tier":"recording_stub","commit":"22aa51f","commands":["uv run --frozen python -m pytest packages/maybe_sheet/tests -q"],"artifacts":["packages/maybe_sheet/tests"],"live_run":null}

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-connectors.dev/schemas/provider-evidence-v1.schema.json",
+  "title": "Provider conformance evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "provider", "tier", "commit", "commands", "artifacts", "live_run"],
+  "properties": {
+    "schema_version": {"const": "otc.provider-evidence/v1"},
+    "provider": {"type": "string", "minLength": 1},
+    "tier": {"enum": ["unit", "recording_stub", "configured_live", "cross_implementation"]},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+    "commands": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "artifacts": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "live_run": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["run_id", "timestamp", "artifact"],
+          "properties": {
+            "run_id": {"type": "string", "minLength": 1},
+            "timestamp": {"type": "string", "minLength": 1},
+            "artifact": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    }
+  }
+}

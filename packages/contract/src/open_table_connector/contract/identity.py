@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 
 def _required_text(value: str, field_name: str) -> str:
@@ -41,7 +43,7 @@ class ConnectorIdentity:
         }
 
     @classmethod
-    def from_wire(cls, payload: Mapping[str, Any]) -> "ConnectorIdentity":
+    def from_wire(cls, payload: Mapping[str, Any]) -> ConnectorIdentity:
         _closed_wire(
             payload,
             {"connector_id", "connector_version", "contract_version"},
@@ -62,6 +64,23 @@ class CapabilityIdentity:
                 field_name,
                 _required_text(getattr(self, field_name), field_name),
             )
+        if "/" in self.capability_id:
+            raise ValueError("capability_id must not contain '/'")
+        if re.fullmatch(r"\d+\.\d+", self.capability_version) is None:
+            raise ValueError("capability_version must use major.minor form")
+
+    @classmethod
+    def parse(cls, value: str) -> CapabilityIdentity:
+        """Parse the single wire reference form ``capability_id/major.minor``."""
+        if not isinstance(value, str):
+            raise ValueError("capability reference must be a string")
+        capability_id, separator, version = value.rpartition("/")
+        if not separator:
+            raise ValueError("capability reference must contain a final '/'")
+        return cls(capability_id, version)
+
+    def to_reference(self) -> str:
+        return f"{self.capability_id}/{self.capability_version}"
 
     def to_wire(self) -> dict[str, str]:
         return {
@@ -70,7 +89,7 @@ class CapabilityIdentity:
         }
 
     @classmethod
-    def from_wire(cls, payload: Mapping[str, Any]) -> "CapabilityIdentity":
+    def from_wire(cls, payload: Mapping[str, Any]) -> CapabilityIdentity:
         _closed_wire(
             payload,
             {"capability_id", "capability_version"},

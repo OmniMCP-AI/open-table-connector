@@ -1,0 +1,1 @@
+{"schema_version":"otc.provider-evidence/v1","provider":"timescaledb","tier":"recording_stub","commit":"22aa51f","commands":["uv run --frozen python -m pytest packages/postgres/tests/test_temporal_storage_live.py -q"],"artifacts":["packages/postgres/tests/test_temporal_storage_live.py"],"live_run":null}

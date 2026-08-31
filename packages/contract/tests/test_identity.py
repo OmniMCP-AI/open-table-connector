@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from open_table_connector.contract import (
     CapabilityIdentity,
     CapabilityManifest,
@@ -39,3 +38,15 @@ def test_capability_manifest_rejects_duplicate_capability_ids() -> None:
 
 def test_table_mode_is_closed_to_base_and_sheet() -> None:
     assert tuple(mode.value for mode in TableMode) == ("base", "sheet")
+
+
+def test_capability_reference_has_one_round_trip() -> None:
+    identity = CapabilityIdentity.parse("timeseries.scan.range/1.0")
+    assert identity == CapabilityIdentity("timeseries.scan.range", "1.0")
+    assert identity.to_reference() == "timeseries.scan.range/1.0"
+
+
+@pytest.mark.parametrize("value", ["timeseries.scan.range", "/1.0", "x/1", "x/1.0/extra"])
+def test_capability_reference_rejects_ambiguous_versions(value: str) -> None:
+    with pytest.raises(ValueError):
+        CapabilityIdentity.parse(value)

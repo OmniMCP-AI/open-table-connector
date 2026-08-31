@@ -1,0 +1,1 @@
+{"schema_version":"otc.provider-evidence/v1","provider":"csv","tier":"unit","commit":"22aa51f","commands":["uv run --frozen python -m pytest packages/local_files/tests/test_csv_reader.py -q"],"artifacts":["packages/local_files/tests/test_csv_reader.py"],"live_run":null}
