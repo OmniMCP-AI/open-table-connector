@@ -49,7 +49,7 @@ that disposition with `verified`, `invalid`, or `superseded`.
 | D4 | ResolveContext repr leaks credentials | P1 | Process 3 | repr/redaction test | verified | pending |
 | D5 | maybe_sheet env/cache collisions | P1 | Process 3 | key/cache tests | verified | pending |
 | D6 | Bootstrap TOCTOU/PATH/env leakage | P1 | Process 3 | bootstrap security tests | verified | pending |
-| D7 | Redaction over/under-matches | P1 | Process 6 | structured redaction tests | hypothesis | pending |
+| D7 | Redaction over/under-matches | P1 | Process 6 | structured redaction tests | verified | pending |
 | E1 | CLI output flag conflates destination | P2 | Packaging 4 | codec routing tests | hypothesis | pending |
 | E2 | Read/convert JSONL diverge | P2 | Packaging 4 | shared codec tests | hypothesis | pending |
 | E3 | Resource limits truncate silently | P2 | Process 6, Packaging 5 | receipt/CLI tests | hypothesis | pending |

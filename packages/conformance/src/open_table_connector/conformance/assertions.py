@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import polars as pl
 import pyarrow as pa
-
 from open_table_connector.contract import (
     ArrowTableReader,
     NeutralReceipt,
@@ -45,9 +43,27 @@ def assert_arrow_polars_equal(table: pa.Table, frame: pl.DataFrame) -> None:
 
 def assert_receipt_safe(receipt: NeutralReceipt) -> None:
     payload = receipt.to_wire()
-    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-    forbidden = ("access_token", "api_key", "password", "secret", "token")
-    assert not any(term in encoded.casefold() for term in forbidden)
+    forbidden = {
+        "access_token",
+        "api_key",
+        "apikey",
+        "authorization",
+        "password",
+        "secret",
+        "token",
+    }
+
+    def contains_secret_key(value: object) -> bool:
+        if isinstance(value, dict):
+            return any(
+                str(key).casefold() in forbidden or contains_secret_key(item)
+                for key, item in value.items()
+            )
+        if isinstance(value, list):
+            return any(contains_secret_key(item) for item in value)
+        return False
+
+    assert not contains_secret_key(payload)
     assert NeutralReceipt.from_wire(payload) == receipt
 
 

@@ -27,6 +27,21 @@ def test_diagnostics_are_bounded_and_redact_registered_secrets() -> None:
     assert len(target.getvalue().encode()) <= 24
 
 
+def test_redact_text_covers_json_assignments_without_touching_safe_names() -> None:
+    assert redact_text('{"token": "fixture-secret", "ok": true}') == (
+        '{"token": "[REDACTED]", "ok": true}'
+    )
+    assert redact_text("table=tokens") == "table=tokens"
+
+
+def test_diagnostics_apply_the_limit_per_message() -> None:
+    target = StringIO()
+    diagnostics = BoundedDiagnostics(target, max_bytes_per_message=8)
+    diagnostics.write("first message")
+    diagnostics.write("second message")
+    assert len(target.getvalue().encode()) == 16
+
+
 def test_empty_process_loop_keeps_stdout_frame_only_channel_clean(tmp_path) -> None:
     stdout = BytesIO()
     stderr = StringIO()

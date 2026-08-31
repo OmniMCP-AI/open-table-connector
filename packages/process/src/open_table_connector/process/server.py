@@ -320,7 +320,32 @@ def redact_text(value: str, secrets: Iterable[str] = ()) -> str:
         lambda match: f"{match.group(1)}=[REDACTED]",
         result,
     )
+    result = re.sub(
+        r'(?i)(["\']?(?:token|password|secret|access_token|api[_-]?key|authorization)["\']?\s*:\s*)("[^"]*"|[^,}\s]+)',
+        lambda match: f'{match.group(1)}"[REDACTED]"',
+        result,
+    )
     return result
+
+
+def _contains_secret_key(value: object) -> bool:
+    secret_keys = {
+        "access_token",
+        "api_key",
+        "apikey",
+        "authorization",
+        "password",
+        "secret",
+        "token",
+    }
+    if isinstance(value, Mapping):
+        return any(
+            str(key).casefold() in secret_keys or _contains_secret_key(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_contains_secret_key(item) for item in value)
+    return False
 
 
 def _required_capabilities(
@@ -387,18 +412,25 @@ class BoundedDiagnostics:
         stream: TextIO,
         *,
         max_bytes: int = 16_384,
+        max_bytes_per_message: int | None = None,
         secrets: Iterable[str] = (),
     ) -> None:
         if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
             raise ValueError("max_bytes must be positive")
         self._stream = stream
-        self._remaining = max_bytes
+        self._max_bytes_per_message = (
+            max_bytes if max_bytes_per_message is None else max_bytes_per_message
+        )
+        if (
+            isinstance(self._max_bytes_per_message, bool)
+            or not isinstance(self._max_bytes_per_message, int)
+            or self._max_bytes_per_message <= 0
+        ):
+            raise ValueError("max_bytes_per_message must be positive")
         self._secrets = tuple(secrets)
 
     def write(self, message: str) -> None:
-        if self._remaining <= 0:
-            return
-        encoded = redact_text(message, self._secrets).encode("utf-8")[: self._remaining]
+        encoded = redact_text(message, self._secrets).encode("utf-8")[: self._max_bytes_per_message]
         while encoded:
             try:
                 rendered = encoded.decode("utf-8")
@@ -409,7 +441,6 @@ class BoundedDiagnostics:
             return
         self._stream.write(rendered)
         self._stream.flush()
-        self._remaining -= len(encoded)
 
 
 def run_server(
