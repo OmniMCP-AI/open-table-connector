@@ -1,5 +1,15 @@
 """Polars-first OTC SDK."""
 
+from .client import Client
+from .config import ClientConfig, CredentialBinding, load_client_config, resolve_config_path
+from .connector import LegacyConnectorAdapterBridge, TableConnector
+from .credentials import (
+    CredentialLease,
+    CredentialResolver,
+    EnvironmentCredentialResolver,
+    apply_credential_overrides,
+    parse_credential_overrides,
+)
 from .model import (
     BaseModeDestination,
     BaseModeTableAddress,
@@ -16,6 +26,7 @@ from .model import (
     TableMode,
 )
 from .predicates import PortablePredicate, PredicateKind, all_rows
+from .registry import ConfiguredPlugin, ConnectorRegistry, discover_configured_plugins
 from .result import (
     CommitState,
     ErrorCode,
@@ -28,17 +39,28 @@ from .result import (
     ReconciliationReference,
     VerificationState,
 )
+from .table import CapabilitySet, Table, TableBinding, TableInspection, TableTransaction
 
 __all__ = [
     "BaseModeDestination",
     "BaseModeTableAddress",
+    "CapabilitySet",
+    "Client",
+    "ClientConfig",
     "CommitState",
+    "ConfiguredPlugin",
+    "ConnectorRegistry",
+    "CredentialLease",
+    "CredentialBinding",
+    "CredentialResolver",
     "DatabaseTableAddress",
     "DirectDestination",
     "DirectTableAddress",
+    "EnvironmentCredentialResolver",
     "ErrorCode",
     "ErrorInfo",
     "ExistingTableAddress",
+    "LegacyConnectorAdapterBridge",
     "OTCError",
     "OperationResult",
     "OperationWarning",
@@ -52,8 +74,18 @@ __all__ = [
     "SheetModeDestination",
     "SheetModeTableAddress",
     "SheetRangeSource",
+    "Table",
+    "TableBinding",
+    "TableConnector",
     "TableDestination",
+    "TableInspection",
     "TableMode",
+    "TableTransaction",
     "VerificationState",
     "all_rows",
+    "apply_credential_overrides",
+    "discover_configured_plugins",
+    "load_client_config",
+    "parse_credential_overrides",
+    "resolve_config_path",
 ]
