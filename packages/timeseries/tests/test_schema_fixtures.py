@@ -63,12 +63,12 @@ def test_descriptor_fixture_shape_validates_and_hashes_with_arrow_schema() -> No
     descriptor = descriptor_from_wire(descriptor_wire)
     arrow_schema = pa.schema(
         [
-            pa.field("ts", pa.timestamp("ns", tz="UTC"), nullable=False),
-            pa.field("symbol", pa.string(), nullable=False),
+                pa.field("ts", pa.timestamp("ns", tz="UTC")),
+                pa.field("symbol", pa.string()),
             pa.field("venue", pa.string()),
             pa.field("price", pa.float64()),
             pa.field("size", pa.int64()),
-            pa.field("received_at", pa.timestamp("ns", tz="UTC"), nullable=False),
+                pa.field("received_at", pa.timestamp("ns", tz="UTC")),
         ]
     )
     assert isinstance(descriptor, TemporalTableDescriptor)

@@ -185,6 +185,7 @@ class PolarsTemporalExecutor:
         result = filtered.select(_result_fields(operation)).to_arrow()
         if not isinstance(result, pa.Table):
             result = pa.Table.from_batches(result)
+        result = _canonical_result_types(result)
         returned_rows = result.num_rows
         returned_bytes = len(_arrow_ipc_bytes(result))
         _check_size_bounds(
@@ -504,6 +505,16 @@ def _arrow_ipc_bytes(table: pa.Table) -> bytes:
     with pa.ipc.new_stream(sink, table.schema) as writer:
         writer.write_table(table)
     return sink.getvalue().to_pybytes()
+
+
+def _canonical_result_types(table: pa.Table) -> pa.Table:
+    """Use stable Arrow string widths across Polars and process transports."""
+    arrays = [
+        column.cast(pa.string()) if pa.types.is_large_string(column.type) else column
+        for column in table.columns
+    ]
+    normalized = pa.Table.from_arrays(arrays, names=table.column_names)
+    return normalized.replace_schema_metadata(table.schema.metadata)
 
 
 def _identity(data: bytes) -> str:

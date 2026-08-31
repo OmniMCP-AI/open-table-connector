@@ -52,7 +52,7 @@ def test_error_preserves_safe_none_values() -> None:
         {"optional": None, "token": "secret"},
     )
 
-    assert error.to_wire()["safe_details"] == {"optional": None, "token": None}
+    assert error.to_wire()["safe_details"] == {"optional": None}
 
 
 def test_error_wire_code_enum_is_schema_vocabulary() -> None:

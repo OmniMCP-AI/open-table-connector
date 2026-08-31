@@ -45,6 +45,8 @@ def _safe_value(value: Any, *, key: str | None = None) -> Any:
         result: dict[str, Any] = {}
         for raw_key, item in value.items():
             text_key = str(raw_key)
+            if text_key.casefold() in _SECRET_KEYS:
+                continue
             safe_item = _safe_value(item, key=text_key)
             result[text_key] = safe_item
         return result

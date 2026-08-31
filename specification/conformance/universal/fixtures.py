@@ -101,6 +101,8 @@ class RecordingSheetsTransport:
         )
         if self._failure is not None:
             raise self._failure
+        if method == "GET" and "fields=sheets" in url:
+            return {"sheets": [{"properties": {"sheetId": 0, "title": "Orders"}}]}
         try:
             responses = self._responses[method]
         except KeyError as exc:
@@ -498,10 +500,10 @@ def build_fixture_bundle(root: Path) -> UniversalFixtureBundle:
         [("a", "1.00"), ("b", None)],
     )
     connection.execute(
-        'create table "main.table" (default_id text, label text)'
+        'create table "table" (default_id text, label text)'
     )
     connection.executemany(
-        'insert into "main.table" values (?, ?)',
+        'insert into "table" values (?, ?)',
         [("default-a", "default resource")],
     )
     connection.commit()

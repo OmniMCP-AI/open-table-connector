@@ -155,7 +155,7 @@ def test_auth_error_is_safe_json_on_stderr(fake_registry) -> None:
     assert code == 4
     assert out.getvalue() == ""
     assert payload["code"] == "authentication"
-    assert payload["safe_details"].get("token") is None
+    assert "token" not in payload["safe_details"]
 
 
 def test_provider_auth_failure_maps_to_exit_code_four(fake_registry) -> None:

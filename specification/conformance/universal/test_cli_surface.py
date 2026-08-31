@@ -338,7 +338,7 @@ def test_cli_inspect_from_selects_exact_scheme_and_reports_safe_metadata(
     feishu_requests = bridge.cases["feishu_bitable"].http_fixture.transport.requests
     maybe_sheet_calls = bridge.cases["maybe_sheet"].process_fixture.process.calls
     if case_name == "google_sheets":
-        assert len(google_requests) == 1
+        assert len(google_requests) == 2
         assert feishu_requests == []
         assert maybe_sheet_calls == []
     elif case_name == "feishu_bitable":
