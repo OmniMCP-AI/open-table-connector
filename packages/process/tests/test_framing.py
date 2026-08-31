@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from io import BytesIO
 import json
 import struct
+from io import BytesIO
 
 import pytest
-
 from open_table_connector.process import FrameError, read_frame, write_frame
+
+
+class OneByteStream(BytesIO):
+    def read(self, size: int = -1) -> bytes:
+        return super().read(1 if size < 0 else min(size, 1))
 
 
 def test_frame_is_big_endian_length_followed_by_one_json_object() -> None:
@@ -19,6 +23,12 @@ def test_frame_is_big_endian_length_followed_by_one_json_object() -> None:
     assert json.loads(raw[4:].decode("utf-8")) == {"hello": "世界"}
     assert read_frame(BytesIO(raw), 1024) == {"hello": "世界"}
     assert read_frame(BytesIO(), 1024) is None
+
+
+def test_frame_header_may_arrive_one_byte_at_a_time() -> None:
+    stream = BytesIO()
+    write_frame(stream, {"ok": True})
+    assert read_frame(OneByteStream(stream.getvalue()), 1024) == {"ok": True}
 
 
 @pytest.mark.parametrize(

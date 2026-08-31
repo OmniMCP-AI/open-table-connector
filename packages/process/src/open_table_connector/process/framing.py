@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import struct
-from typing import BinaryIO, Mapping
+from collections.abc import Mapping
+from typing import BinaryIO
 
 
 class FrameError(ValueError):
@@ -32,16 +33,29 @@ def _read_exact(stream: BinaryIO, size: int, description: str) -> bytes:
     return b"".join(chunks)
 
 
+def _read_exact_or_eof(stream: BinaryIO, size: int, description: str) -> bytes | None:
+    """Read exactly ``size`` bytes, distinguishing clean EOF from truncation."""
+    chunks: list[bytes] = []
+    remaining = size
+    while remaining:
+        chunk = stream.read(remaining)
+        if not chunk:
+            if not chunks:
+                return None
+            raise FrameError(f"truncated {description}")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
 def read_frame(stream: BinaryIO, max_frame_bytes: int) -> Mapping[str, object] | None:
     if isinstance(max_frame_bytes, bool) or not isinstance(max_frame_bytes, int):
         raise TypeError("max_frame_bytes must be an integer")
     if max_frame_bytes <= 0:
         raise ValueError("max_frame_bytes must be positive")
-    header = stream.read(4)
-    if header == b"":
+    header = _read_exact_or_eof(stream, 4, "frame header")
+    if header is None:
         return None
-    if len(header) != 4:
-        raise FrameError("truncated frame header")
     size = struct.unpack(">I", header)[0]
     if size == 0:
         raise FrameError("frame payload cannot be empty")
