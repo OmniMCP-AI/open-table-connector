@@ -50,6 +50,8 @@ from open_table_connector.timeseries import (
     TimestampPrecision,
     VisibilityGuarantee,
     temporal_descriptor_hash,
+    storage_to_timestamp,
+    timestamp_to_storage,
     validate_stage_retry,
 )
 
@@ -146,10 +148,13 @@ def _lower_fixed_aggregate(
 ) -> PreparedTemporalQuery:
     operation = plan.operation
     bucket = operation.bucket
-    origin = _timestamp_ns(bucket.origin)
-    expression = (
-        f"((CAST({_quote(descriptor.time_field)} AS INTEGER) - ? - ?) / ?) * ? + ? + ?"
-    )
+    nanos_per_unit = {TimestampPrecision.SECOND: 1_000_000_000, TimestampPrecision.MILLISECOND: 1_000_000, TimestampPrecision.MICROSECOND: 1_000, TimestampPrecision.NANOSECOND: 1}[descriptor.precision]
+    origin = timestamp_to_storage(bucket.origin, descriptor.precision)
+    width = bucket.width_ns // nanos_per_unit
+    offset = bucket.offset_ns // nanos_per_unit
+    delta = f"(CAST({_quote(descriptor.time_field)} AS INTEGER) - ? - ?)"
+    quotient = f"(({delta} / ?) - CAST(({delta} < ? AND {delta} % ? != ?) AS INTEGER))"
+    expression = f"({quotient} * ? + ? + ?)"
     select = [_quote(field) for field in operation.group_by]
     select.append(f"{expression} AS \"bucket\"")
     for measure in operation.measures:
@@ -166,11 +171,18 @@ def _lower_fixed_aggregate(
     )
     parameters = (
         origin,
-        bucket.offset_ns,
-        bucket.width_ns,
-        bucket.width_ns,
+        offset,
+        width,
         origin,
-        bucket.offset_ns,
+        offset,
+        0,
+        origin,
+        offset,
+        width,
+        0,
+        width,
+        origin,
+        offset,
         *where_parameters,
     )
     return PreparedTemporalQuery(statement, parameters, None)
@@ -184,18 +196,18 @@ def _where(operation, descriptor: TemporalTableDescriptor, *, numeric_time: bool
         clauses.extend((f"{time} >= ?", f"{time} < ?"))
         parameters.extend(
             (
-                _timestamp_ns(operation.start) if numeric_time else operation.start,
-                _timestamp_ns(operation.end) if numeric_time else operation.end,
+                timestamp_to_storage(operation.start, descriptor.precision) if numeric_time else operation.start,
+                timestamp_to_storage(operation.end, descriptor.precision) if numeric_time else operation.end,
             )
         )
     elif isinstance(operation, Latest) and operation.at_or_before is not None:
         clauses.append(f"{time} <= ?")
         parameters.append(
-            _timestamp_ns(operation.at_or_before) if numeric_time else operation.at_or_before
+            timestamp_to_storage(operation.at_or_before, descriptor.precision) if numeric_time else operation.at_or_before
         )
     elif isinstance(operation, AsOf):
         clauses.append(f"{time} <= ?")
-        parameters.append(_timestamp_ns(operation.at) if numeric_time else operation.at)
+        parameters.append(timestamp_to_storage(operation.at, descriptor.precision) if numeric_time else operation.at)
     for predicate in operation.tag_predicates:
         field = _quote(predicate.field)
         if predicate.operator is TagOperator.EQ:
@@ -477,7 +489,7 @@ class SQLiteManagedTemporalStore:
             _sha256(arrow),
             table.num_rows,
             len(arrow),
-            _observed_range(table, self.descriptor.time_field),
+            _observed_range(table, self.descriptor.time_field, self.descriptor.precision),
         )
         with self._connection(immediate=True) as connection:
             self._record_receipt(connection, request.operation_id, "readback", receipt.to_wire())
@@ -781,20 +793,20 @@ def _storage_where(
         clauses.extend((f"{field} >= ?", f"{field} < ?"))
         parameters.extend(
             (
-                _timestamp_ns(operation.start) if numeric_time else operation.start,
-                _timestamp_ns(operation.end) if numeric_time else operation.end,
+                timestamp_to_storage(operation.start, descriptor.precision) if numeric_time else operation.start,
+                timestamp_to_storage(operation.end, descriptor.precision) if numeric_time else operation.end,
             )
         )
     elif isinstance(operation, Latest) and operation.at_or_before is not None:
         clauses.append(f"{field} <= ?")
         parameters.append(
-            _timestamp_ns(operation.at_or_before)
+            timestamp_to_storage(operation.at_or_before, descriptor.precision)
             if numeric_time
             else operation.at_or_before
         )
     elif isinstance(operation, AsOf):
         clauses.append(f"{field} <= ?")
-        parameters.append(_timestamp_ns(operation.at) if numeric_time else operation.at)
+        parameters.append(timestamp_to_storage(operation.at, descriptor.precision) if numeric_time else operation.at)
     for predicate in operation.tag_predicates:
         quoted = _quote(predicate.field)
         if predicate.operator is TagOperator.EQ:
@@ -836,11 +848,11 @@ def _sha256(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
-def _observed_range(table: pa.Table, time_field: str) -> TimeRange | None:
+def _observed_range(table: pa.Table, time_field: str, precision: TimestampPrecision) -> TimeRange | None:
     if table.num_rows == 0:
         return None
     values = table[time_field].cast(pa.int64()).to_pylist()
-    return TimeRange(_format_ns(min(values)), _format_ns(max(values)))
+    return TimeRange(storage_to_timestamp(min(values), precision), storage_to_timestamp(max(values), precision))
 
 
 def _format_ns(value: int) -> str:

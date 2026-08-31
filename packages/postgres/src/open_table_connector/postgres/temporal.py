@@ -51,6 +51,7 @@ from open_table_connector.timeseries import (
     VisibilityGuarantee,
     temporal_descriptor_hash,
     validate_stage_retry,
+    arrow_time_bounds,
 )
 from open_table_connector.timeseries.capabilities import (
     AGGREGATE_WINDOW,
@@ -575,7 +576,7 @@ class PostgresManagedTemporalStore:
                 _sha256(data),
                 table.num_rows,
                 len(data),
-                _observed_range(table, self.descriptor.time_field),
+                _observed_range(table, self.descriptor.time_field, self.descriptor.precision),
             )
             self._record_receipt(cursor, request.operation_id, "readback", receipt.to_wire())
             return ManagedReadbackResult(table, None, receipt)
@@ -944,11 +945,13 @@ def _sha256(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
-def _observed_range(table: pa.Table, time_field: str) -> TimeRange | None:
-    if table.num_rows == 0:
+def _observed_range(
+    table: pa.Table, time_field: str, precision: TimestampPrecision
+) -> TimeRange | None:
+    bounds = arrow_time_bounds(table, time_field, precision)
+    if bounds is None:
         return None
-    values = table[time_field].cast(pa.int64()).to_pylist()
-    return TimeRange(_format_ns(min(values)), _format_ns(max(values)))
+    return TimeRange(*bounds)
 
 
 def _format_ns(value: int) -> str:

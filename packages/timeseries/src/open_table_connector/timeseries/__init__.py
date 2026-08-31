@@ -35,6 +35,7 @@ from .plan import (
     portable_plan_hash,
     validate_plan_for_descriptor,
 )
+from .precision import arrow_time_bounds, storage_to_timestamp, timestamp_to_storage
 from .receipts import (
     AbortDisposition,
     ExecutionLocation,
@@ -117,5 +118,8 @@ __all__ = [
     "temporal_descriptor_hash",
     "validate_plan_for_descriptor",
     "validate_stage_retry",
+    "arrow_time_bounds",
+    "storage_to_timestamp",
+    "timestamp_to_storage",
     "VisibilityGuarantee",
 ]

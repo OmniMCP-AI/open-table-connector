@@ -39,6 +39,7 @@ from open_table_connector.timeseries import (
     VisibilityGuarantee,
     temporal_descriptor_hash,
     validate_stage_retry,
+    arrow_time_bounds,
 )
 
 
@@ -760,8 +761,6 @@ class ManagedSnapshotStore:
                 path.unlink()
 
     def _observed_range(self, table: pa.Table) -> TimeRange | None:
-        if table.num_rows == 0:
-            return None
         values = table[self.descriptor.time_field]
         if values.null_count:
             raise TemporalExtensionError(
@@ -775,11 +774,10 @@ class ManagedSnapshotStore:
                 "readback event-time field is not a timestamp",
                 {},
             )
-        multiplier = {"s": 1_000_000_000, "ms": 1_000_000, "us": 1_000, "ns": 1}[
-            values.type.unit
-        ]
-        casted = [value * multiplier for value in values.cast(pa.int64()).to_pylist()]
-        return TimeRange(_format_ns(min(casted)), _format_ns(max(casted)))
+        bounds = arrow_time_bounds(table, self.descriptor.time_field, self.descriptor.precision)
+        if bounds is None:
+            return None
+        return TimeRange(*bounds)
 
     def _now(self) -> str:
         value = self._clock()
