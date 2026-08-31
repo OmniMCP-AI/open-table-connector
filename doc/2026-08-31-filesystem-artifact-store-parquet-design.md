@@ -31,6 +31,12 @@ the interface and capability identity; the local-files capability manifest
 advertises and implements it. Parquet must not become a required concern of
 every OTC connector or of the base ETL runtime.
 
+The artifact capability must also have a small dependency closure. The current
+local-files distribution depends mandatorily on the time-series and Excel
+packages; the OTC upgrade must make those concerns optional or otherwise let
+artifact-store users install the contract, Arrow/Polars, and local artifact
+implementation without pulling temporal or spreadsheet behavior.
+
 ## Context
 
 The current FinClaw local ETL store writes Parquet through Polars, hashes the
@@ -92,6 +98,15 @@ membership, lineage, gates, or contracts. Logical reference policy remains
 ETL-owned, while the physical reference update and its concurrency guarantees
 are OTC-owned.
 
+The binding record itself is immutable, durable, and independently
+readbackable. Several caller keys may bind the same physical bytes while
+carrying different metadata. For Bean, the main caller key is its semantic
+`ArtifactId`; the adapter derives a separate membership key from that ID when
+membership exists. Reading the main key returns its physical identity and
+semantic manifest, and the adapter then verifies the derived membership
+artifact against the checksum declared by that manifest. Named references
+target the main caller key, never the raw Parquet checksum.
+
 The generic store must not depend on the OTC time-series package. Temporal
 storage may later reuse lower-level filesystem primitives from the generic
 implementation, but the generic contract cannot require temporal descriptors,
@@ -133,11 +148,20 @@ For the local implementation:
 - Staged content is not visible through committed reads or named references.
 - Reference publication validates that the target artifact is committed and
   intact.
-- `expected=None` means the reference must currently be absent.
-- Publishing the value already held by the reference is an idempotent success;
-  any other expected/current mismatch is a zero-mutation conflict.
-- Two processes racing to create the same absent reference have exactly one
-  winner.
+- Compare-and-swap first returns idempotent success when the current key already
+  equals the requested target. Otherwise it publishes only when the current key
+  equals `expected`; in that comparison, `expected=None` means absent. Every
+  other mismatch is a zero-mutation conflict reporting the reference, expected
+  key, actual key, and target key.
+- Two processes racing to create the same absent reference with different
+  targets have exactly one winner. Racers publishing the same target may both
+  report success, with one result identified as an idempotent replay.
+- Every mutating request has an idempotency key bound to a canonical request
+  fingerprint. Reusing the key for the same request recovers the same durable
+  outcome; reusing it for another request fails with an idempotency conflict.
+- A retry after visibility but before receipt delivery reconciles from durable
+  state and returns the original result rather than repeating or rolling back
+  the mutation.
 - Temporary writes, file flushes, atomic replacement, directory flushes, and an
   interprocess lock protect artifact and reference visibility across crashes.
 - A reopened store either observes the previous complete state or the new
@@ -146,11 +170,13 @@ For the local implementation:
   non-regular artifact files are rejected.
 
 Every operation returns a closed, versioned, credential-safe receipt with a
-common operation identity and disposition. Artifact lifecycle receipts also
-contain the caller key, codec profile, physical checksum, observed schema and
-shape facts, and durability or visibility result. Reference receipts contain
-the reference and its observed or resulting caller key. Receipts and errors
-must not contain table values, credentials, or unsafe absolute paths.
+common operation identity, request fingerprint, and disposition. Mutating
+receipts also carry the idempotency key and are durably recoverable. Artifact
+lifecycle receipts contain the caller key, codec profile, physical checksum,
+observed schema and shape facts, and durability or visibility result. Reference
+receipts contain the reference and its observed or resulting caller key.
+Receipts and errors must not contain table values, credentials, or unsafe
+absolute paths.
 
 ## Bean integration boundary
 
@@ -182,11 +208,17 @@ includes checksums of encoded Parquet bytes, a deterministic OTC codec may
 produce new artifact IDs for the same logical table. The later Bean migration
 must explicitly choose between:
 
-- rebuilding local artifacts and references at the storage-format boundary; or
-- providing a read-only importer for legacy FinClaw artifacts.
+- an OTC-owned legacy layout/codec adapter that preserves lookup of existing
+  IDs and allows old runs to retain their current resume behavior; or
+- a declared cutover after which legacy runs remain readable evidence but are
+  non-resumable and new runs rebuild artifacts and references.
 
-That migration choice belongs to the Bean specification, not to OTC. Serialized
-ETL identities such as `etl.artifact-manifest/v1` remain ETL-owned.
+Existing hash-chained event documents, run outputs, or artifact IDs must never
+be rewritten during migration because doing so invalidates their recorded
+hashes. The migration choice belongs to the Bean specification. Any legacy
+physical reader remains an OTC adapter so Bean never opens the old layout or
+decodes its Parquet directly. Serialized ETL identities such as
+`etl.artifact-manifest/v1` remain ETL-owned.
 
 ## Non-goals
 
@@ -208,6 +240,9 @@ OTC is ready for the Bean filesystem adapter when:
 
 - the generic store is non-temporal and passes lifecycle, restart, corruption,
   symlink, resource-bound, and interprocess concurrency tests;
+- the installable artifact path does not require the time-series or Excel
+  implementations, and locking/durability behavior is tested on every platform
+  OTC claims to support;
 - `otc.parquet/v1` has a documented type matrix and golden byte/hash vectors;
 - commit, independent readback, and named-ref compare-and-swap are covered by a
   reusable conformance suite;
@@ -216,5 +251,6 @@ OTC is ready for the Bean filesystem adapter when:
 - Bean can pin one exact OTC Git commit containing both the contract and local
   implementation.
 
-Only after those criteria pass should `bean-etl` add its thin adapter and
-remove the copied FinClaw filesystem implementation from the extraction scope.
+The FinClaw filesystem implementation remains excluded from the `bean-etl`
+extraction from the start. Only after these criteria pass should `bean-etl` add
+its thin OTC adapter.
