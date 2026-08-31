@@ -54,6 +54,7 @@ from open_table_connector.timeseries import (
     timestamp_to_storage,
     validate_stage_retry,
 )
+from .identity import CONNECTOR_IDENTITY
 
 
 _TABLE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*(?:\.[A-Za-z_][A-Za-z0-9_$]*)?$")
@@ -729,7 +730,9 @@ class SQLiteTemporalExecutor:
             )
         else:
             table = self._read_bounded(request)
-        return PolarsTemporalExecutor(_SQLiteTemporalSource(table, self.descriptor)).execute(request)
+        return PolarsTemporalExecutor(
+            _SQLiteTemporalSource(table, self.descriptor), connector_identity=CONNECTOR_IDENTITY
+        ).execute(request)
 
     def _read_bounded(self, request: TemporalExecutionRequest) -> pa.Table:
         path = _database_path(request.target)

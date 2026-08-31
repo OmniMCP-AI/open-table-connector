@@ -53,6 +53,11 @@ def descriptor() -> TemporalTableDescriptor:
 
 
 def plan(operation: object) -> PortableTemporalPlan:
+    output_order = (
+        (OrderKey(field="symbol", direction=OrderDirection.ASC), OrderKey(field="bucket", direction=OrderDirection.ASC))
+        if isinstance(operation, (BucketAggregate, GapFill))
+        else (OrderKey(field="symbol", direction=OrderDirection.ASC), OrderKey(field="ts", direction=OrderDirection.ASC))
+    )
     return PortableTemporalPlan(
         schema_version="otc.portable-temporal-plan/v1",
         descriptor_hash=DESCRIPTOR_HASH,
@@ -64,10 +69,7 @@ def plan(operation: object) -> PortableTemporalPlan:
             max_duration_ms=5_000,
         ),
         operation=operation,
-        output_order=(
-            OrderKey(field="symbol", direction=OrderDirection.ASC),
-            OrderKey(field="ts", direction=OrderDirection.ASC),
-        ),
+        output_order=output_order,
         result_row_limit=500,
     )
 

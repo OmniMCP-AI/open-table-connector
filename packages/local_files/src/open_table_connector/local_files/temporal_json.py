@@ -52,6 +52,7 @@ from .json_codec import (
 )
 from .json_connector import _json_path
 from .managed_snapshots import ManagedSnapshotStore
+from .identity import CONNECTOR_IDENTITY
 
 
 JsonFormat = Literal["json", "jsonl"]
@@ -182,7 +183,9 @@ class JsonTemporalExecutor:
                 request.plan.resource_bounds,
             )
         _validate_temporal_types(table, request, self.descriptor)
-        return PolarsTemporalExecutor(_JsonTemporalSource(table, self.descriptor)).execute(request)
+        return PolarsTemporalExecutor(
+            _JsonTemporalSource(table, self.descriptor), connector_identity=CONNECTOR_IDENTITY
+        ).execute(request)
 
 
 def _read_direct(

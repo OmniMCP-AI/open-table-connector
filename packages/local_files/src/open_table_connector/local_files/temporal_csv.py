@@ -46,6 +46,7 @@ from open_table_connector.timeseries.capabilities import (
 )
 
 from .managed_snapshots import ManagedSnapshotStore
+from .identity import CONNECTOR_IDENTITY
 
 
 def _encode_csv(table: pa.Table) -> bytes:
@@ -243,7 +244,9 @@ class CsvTemporalExecutor:
                 "CSV temporal executor accepts csv and managed+csv targets",
                 {"scheme": request.target.scheme},
             )
-        return PolarsTemporalExecutor(_CsvTemporalSource(table, self.descriptor)).execute(request)
+        return PolarsTemporalExecutor(
+            _CsvTemporalSource(table, self.descriptor), connector_identity=CONNECTOR_IDENTITY
+        ).execute(request)
 
 
 def _direct_csv_path(target: TableURI) -> Path:

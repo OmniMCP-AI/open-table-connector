@@ -72,10 +72,16 @@ class TemporalSource(Protocol):
 class PolarsTemporalExecutor:
     """Evaluate the portable lookup subset through one bounded Polars pipeline."""
 
-    def __init__(self, source: TemporalSource) -> None:
+    def __init__(
+        self,
+        source: TemporalSource,
+        *,
+        connector_identity: ConnectorIdentity | None = None,
+    ) -> None:
         if not isinstance(source, TemporalSource):
             raise TypeError("source must implement TemporalSource")
         self._source = source
+        self._connector_identity = connector_identity
 
     def execute(self, request: TemporalExecutionRequest) -> TemporalExecutionResult:
         if not isinstance(request, TemporalExecutionRequest):
@@ -90,7 +96,14 @@ class PolarsTemporalExecutor:
         descriptor = self._source.descriptor
         if not isinstance(descriptor, TemporalTableDescriptor):
             raise TypeError("source descriptor must be a TemporalTableDescriptor")
-        validate_plan_for_descriptor(request.plan, descriptor)
+        try:
+            validate_plan_for_descriptor(request.plan, descriptor)
+        except (TypeError, ValueError) as exc:
+            raise TemporalExtensionError(
+                TemporalErrorCode.PROTOCOL_INVALID,
+                "portable temporal plan is invalid for the resolved descriptor",
+                {"reason": str(exc)},
+            ) from None
 
         started = time.monotonic_ns()
         required = _required_fields(request.plan, descriptor)
@@ -193,6 +206,7 @@ class PolarsTemporalExecutor:
             returned_bytes,
             elapsed_ms,
             observed_range,
+            self._connector_identity,
         )
         return TemporalExecutionResult(table=result, artifact=None, receipt=receipt)
 
@@ -531,6 +545,7 @@ def _receipt(
     returned_bytes: int,
     elapsed_ms: int,
     observed_range: TimeRange | None,
+    connector_identity: ConnectorIdentity | None,
 ) -> TemporalReceipt:
     operation = request.plan.operation
     capability = {
@@ -549,7 +564,7 @@ def _receipt(
         else BaseConvention(ordinal_snapshot_id=source_revision)
     )
     neutral = NeutralReceipt(
-        connector=ConnectorIdentity(request.target.scheme, "0.1.0", "1.0"),
+        connector=connector_identity or ConnectorIdentity(request.target.scheme, "0.1.0", "1.0"),
         capability=CapabilityIdentity(capability, "1.0"),
         operation_id=request.operation_id,
         safe_uri=request.target,

@@ -705,6 +705,9 @@ def validate_plan_for_descriptor(
                 raise ValueError(
                     f"aggregate value field is not declared: {measure.value_field}"
                 )
+        outputs = [*operation.group_by, "bucket", *(measure.output_field for measure in operation.measures)]
+        if len(outputs) != len(set(outputs)):
+            raise ValueError("aggregate output fields must be unique")
         if isinstance(operation, GapFill):
             outputs = {measure.output_field for measure in operation.measures}
             unknown_fills = sorted(fill.field for fill in operation.fills if fill.field not in outputs)
@@ -712,6 +715,21 @@ def validate_plan_for_descriptor(
                 raise ValueError(f"fill field is not an aggregate output: {', '.join(unknown_fills)}")
     for field, value in timestamps:
         _validate_precision(value, descriptor.precision, field)
+    allowed_order = set(
+        projections
+        if projections
+        else (
+            [*operation.group_by, "bucket", *(measure.output_field for measure in operation.measures)]
+            if isinstance(operation, (BucketAggregate, GapFill))
+            else descriptor.declared_fields
+        )
+    )
+    order_fields = [key.field for key in plan.output_order]
+    unknown_order = sorted(set(order_fields) - allowed_order)
+    if unknown_order:
+        raise ValueError(f"output_order contains fields absent from the result: {', '.join(unknown_order)}")
+    if len(order_fields) != len(set(order_fields)):
+        raise ValueError("output_order fields must be unique")
 
 
 __all__ = [

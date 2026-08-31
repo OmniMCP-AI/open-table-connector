@@ -68,6 +68,7 @@ from open_table_connector.timeseries.capabilities import (
 )
 
 from .reader import PostgresConnector
+from .identity import CONNECTOR_IDENTITY
 
 
 _TABLE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*(?:\.[A-Za-z_][A-Za-z0-9_$]*)?$")
@@ -872,7 +873,9 @@ class PostgresTemporalExecutor:
             )
         else:
             table = self._read_bounded(request)
-        return PolarsTemporalExecutor(_PostgresTemporalSource(table, self.descriptor)).execute(request)
+        return PolarsTemporalExecutor(
+            _PostgresTemporalSource(table, self.descriptor), connector_identity=CONNECTOR_IDENTITY
+        ).execute(request)
 
     def _read_bounded(self, request: TemporalExecutionRequest) -> pa.Table:
         resolved = self._connector.resolve(

@@ -50,6 +50,7 @@ from open_table_connector.timeseries.capabilities import (
     STORAGE_STAGE,
     STORAGE_VISIBILITY_ATOMIC,
 )
+from .identity import CONNECTOR_IDENTITY
 
 from .connector import ProcessClient
 
@@ -239,7 +240,7 @@ class MaybeSheetTemporalExecutor:
             )
         del carrier
         return PolarsTemporalExecutor(
-            _MaybeSheetTemporalSource(table, self.descriptor)
+            _MaybeSheetTemporalSource(table, self.descriptor), connector_identity=CONNECTOR_IDENTITY
         ).execute(request)
 
 

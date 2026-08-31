@@ -45,6 +45,7 @@ from open_table_connector.timeseries.capabilities import (
 )
 
 from .managed_snapshots import ManagedSnapshotStore
+from .identity import CONNECTOR_IDENTITY
 
 
 _SCHEMA_SHEET = "_otc_ts_schema"
@@ -194,7 +195,9 @@ class ExcelTemporalExecutor:
                     "Excel source exceeds max_rows",
                     {"rows": table.num_rows},
                 )
-        return PolarsTemporalExecutor(_ExcelTemporalSource(table, self.descriptor)).execute(request)
+        return PolarsTemporalExecutor(
+            _ExcelTemporalSource(table, self.descriptor), connector_identity=CONNECTOR_IDENTITY
+        ).execute(request)
 
 
 def _encode_workbook(table: pa.Table, worksheet_name: str) -> bytes:

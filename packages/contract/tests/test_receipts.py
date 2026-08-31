@@ -9,6 +9,8 @@ from open_table_connector.contract import (
     TableURI,
 )
 from open_table_connector.contract.receipts import NeutralReceipt
+from open_table_connector.contract.fingerprints import arrow_content_fingerprint
+import pyarrow as pa
 
 
 def test_read_receipt_round_trips_without_vendor_credentials() -> None:
@@ -54,3 +56,12 @@ def test_base_receipt_keeps_base_convention_parallel_to_frame_schema() -> None:
         "key_fields": ["order_id"],
         "ordinal_snapshot_id": None,
     }
+
+
+def test_equal_tables_with_different_chunks_have_one_fingerprint() -> None:
+    one = pa.table({"x": [1, 2, 3]})
+    many = pa.Table.from_batches(
+        [pa.RecordBatch.from_pylist([{"x": 1}]), pa.RecordBatch.from_pylist([{"x": 2}, {"x": 3}])]
+    )
+    assert one.equals(many)
+    assert arrow_content_fingerprint(one) == arrow_content_fingerprint(many)

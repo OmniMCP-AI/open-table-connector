@@ -18,10 +18,21 @@ def arrow_schema_fingerprint(schema: pa.Schema) -> str:
 
 
 def arrow_content_fingerprint(table: pa.Table) -> str:
+    table = canonical_arrow_table(table)
     sink = pa.BufferOutputStream()
     with pa.ipc.new_stream(sink, table.schema) as writer:
         writer.write_table(table)
     return hashlib.sha256(sink.getvalue().to_pybytes()).hexdigest()
+
+
+def canonical_arrow_table(table: pa.Table) -> pa.Table:
+    """Normalize record-batch chunking while preserving schema metadata."""
+    if not isinstance(table, pa.Table):
+        raise TypeError("table must be a pyarrow.Table")
+    combined = table.combine_chunks()
+    if combined.schema.metadata != table.schema.metadata:
+        combined = combined.replace_schema_metadata(table.schema.metadata)
+    return combined
 
 
 def operation_identity(
