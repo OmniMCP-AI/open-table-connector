@@ -6,7 +6,6 @@ import tomllib
 from pathlib import Path
 from typing import Any, NamedTuple
 
-
 _INTERNAL_PREFIX = "open-table-connector-"
 _INTERNAL_RANGE = ">=0.1,<0.2"
 _HOSTED_CONNECTORS = ("google_sheets", "feishu_bitable")
@@ -41,10 +40,7 @@ def package_metadata(path: Path) -> PackageMetadata:
         ranges[name] = specifier
 
     raw_license = project.get("license")
-    if isinstance(raw_license, dict):
-        license_name = raw_license.get("text")
-    else:
-        license_name = raw_license
+    license_name = raw_license.get("text") if isinstance(raw_license, dict) else raw_license
 
     raw_sources: dict[str, Any] = document.get("tool", {}).get("uv", {}).get(
         "sources", {}
@@ -114,6 +110,17 @@ def check_package_metadata(root: Path) -> list[str]:
             continue
         metadata = package_metadata(pyproject)
         metadata_by_member[str(member)] = metadata
+        project_document = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        if project_readme := project_document.get("project", {}).get("readme"):
+            readme_name = str(project_readme)
+        else:
+            readme_name = "README.md"
+        if not (pyproject.parent / readme_name).is_file():
+            errors.append(f"{metadata.name}: missing README.md")
+        package_dir = pyproject.parent.name
+        typed_marker = pyproject.parent / "src" / "open_table_connector" / package_dir / "py.typed"
+        if not typed_marker.is_file():
+            errors.append(f"{metadata.name}: missing py.typed")
         if metadata.requires_python != expected_support["python"]:
             errors.append(
                 f"{metadata.name}: requires-python must be {expected_support['python']!r}"
@@ -138,13 +145,13 @@ def check_package_metadata(root: Path) -> list[str]:
                     )
 
     for package in _HOSTED_CONNECTORS:
-        metadata = metadata_by_member.get(f"packages/{package}")
-        if metadata is None:
+        hosted_metadata = metadata_by_member.get(f"packages/{package}")
+        if hosted_metadata is None:
             errors.append(f"{package}: missing workspace package")
             continue
         for dependency in ("open-table-connector-contract", "polars", "pyarrow"):
-            if dependency not in metadata.dependencies:
-                errors.append(f"{metadata.name}: missing dependency {dependency}")
+            if dependency not in hosted_metadata.dependencies:
+                errors.append(f"{hosted_metadata.name}: missing dependency {dependency}")
 
     compatibility = _runtime_ranges(
         root / "specification/compatibility/ots-otc-timeseries-v1.yaml"

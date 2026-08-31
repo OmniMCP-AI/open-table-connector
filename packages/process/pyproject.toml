@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Local framed connector supervisor for Open Table Connector"
 requires-python = ">=3.11,<3.15"
 license = { text = "Apache-2.0" }
+readme = "README.md"
 dependencies = [
   "open-table-connector-contract>=0.1,<0.2",
   "open-table-connector-timeseries>=0.1,<0.2",
@@ -33,3 +34,6 @@ open-table-connector-sqlite = { workspace = true }
 where = ["src"]
 include = ["open_table_connector.process*"]
 namespaces = true
+
+[tool.setuptools.package-data]
+"open_table_connector.process" = ["py.typed"]

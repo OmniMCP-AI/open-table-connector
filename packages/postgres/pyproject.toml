@@ -7,6 +7,7 @@ name = "open-table-connector-postgres"
 version = "0.1.0"
 requires-python = ">=3.11,<3.15"
 license = { text = "Apache-2.0" }
+readme = "README.md"
 dependencies = ["open-table-connector-contract>=0.1,<0.2", "open-table-connector-timeseries>=0.1,<0.2", "polars>=1,<2", "pyarrow>=14,<20"]
 
 [project.optional-dependencies]
@@ -20,3 +21,6 @@ open-table-connector-timeseries = { workspace = true }
 where = ["src"]
 include = ["open_table_connector.postgres*"]
 namespaces = true
+
+[tool.setuptools.package-data]
+"open_table_connector.postgres" = ["py.typed"]

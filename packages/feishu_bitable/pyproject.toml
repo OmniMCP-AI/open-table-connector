@@ -23,4 +23,4 @@ include = ["open_table_connector.feishu_bitable*"]
 namespaces = true
 
 [tool.setuptools.package-data]
-"open_table_connector.feishu_bitable" = ["manifest.json"]
+"open_table_connector.feishu_bitable" = ["manifest.json", "py.typed"]

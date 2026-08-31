@@ -23,4 +23,4 @@ include = ["open_table_connector.google_sheets*"]
 namespaces = true
 
 [tool.setuptools.package-data]
-"open_table_connector.google_sheets" = ["manifest.json"]
+"open_table_connector.google_sheets" = ["manifest.json", "py.typed"]

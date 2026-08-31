@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Portable temporal plans and execution contracts for Open Table Connector"
 requires-python = ">=3.11,<3.15"
 license = { text = "Apache-2.0" }
+readme = "README.md"
 dependencies = [
   "open-table-connector-contract>=0.1,<0.2",
   "polars>=1,<2",
@@ -21,3 +22,6 @@ open-table-connector-contract = { workspace = true }
 where = ["src"]
 include = ["open_table_connector.timeseries*"]
 namespaces = true
+
+[tool.setuptools.package-data]
+"open_table_connector.timeseries" = ["py.typed"]
