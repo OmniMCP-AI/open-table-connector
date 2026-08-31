@@ -14,6 +14,10 @@
 
 **Prerequisite:** Complete Tasks 1 and 3 of `docs/superpowers/plans/2026-08-31-critical-review-specification-conformance.md` so COUNT and receipt bounds have matching normative, Python, and schema rules.
 
+**Execution status (2026-08-31):** Tasks 1–7 implemented and verified in the
+isolated remediation worktree. See the remediation ledger for commit-backed
+evidence and any findings that remain open outside this plan.
+
 ## Global Constraints
 
 - Preserve valid v1 wire documents; version any public identity whose canonical bytes must change.
