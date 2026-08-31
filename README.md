@@ -50,7 +50,7 @@ When working from a checkout, install the workspace and activate its virtual
 environment:
 
 ```console
-uv sync --dev
+uv sync --all-packages --group dev
 source .venv/bin/activate
 otc --help
 ```

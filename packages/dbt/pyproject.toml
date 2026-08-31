@@ -5,8 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "open-table-connector-dbt"
 version = "0.1.0"
-requires-python = ">=3.11"
-dependencies = ["open-table-connector-contract==0.1.0"]
+requires-python = ">=3.11,<3.15"
+license = { text = "Apache-2.0" }
+dependencies = ["open-table-connector-contract>=0.1,<0.2"]
 
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }

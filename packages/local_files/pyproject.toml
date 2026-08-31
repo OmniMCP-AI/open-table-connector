@@ -6,12 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "open-table-connector-local-files"
 version = "0.1.0"
 description = "Neutral CSV, Excel, and Markdown Connectors with a local-files compatibility facade"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.15"
+license = { text = "Apache-2.0" }
 dependencies = [
-  "open-table-connector-contract==0.1.0",
-  "open-table-connector-timeseries==0.1.0",
+  "open-table-connector-contract>=0.1,<0.2",
+  "open-table-connector-timeseries>=0.1,<0.2",
   "openpyxl>=3.1,<4",
-  "polars>=1.0,<2",
+  "polars>=1,<2",
   "pyarrow>=14,<20",
 ]
 

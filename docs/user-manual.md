@@ -29,7 +29,7 @@ otc --help
 From a source checkout:
 
 ```console
-uv sync --dev
+uv sync --all-packages --group dev
 source .venv/bin/activate
 otc --help
 ```

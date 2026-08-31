@@ -21,7 +21,7 @@ runtime_ranges:
   rust: ">=1.98"
   arrow_rs: "59.2.0"
   pyarrow: ">=14,<20"
-  polars: ">=1.43.2,<2"
+  polars: ">=1,<2"
 timescaledb_version: "2.29.0"
 postgresql_major: 17
 providers:

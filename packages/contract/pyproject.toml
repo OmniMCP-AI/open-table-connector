@@ -6,10 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "open-table-connector-contract"
 version = "0.1.0"
 description = "Framework-neutral Connector contract v1"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.15"
+license = { text = "Apache-2.0" }
 dependencies = [
   "jsonschema>=4.23,<5",
-  "polars>=1.0,<2",
+  "polars>=1,<2",
   "pyarrow>=14,<20",
 ]
 

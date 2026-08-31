@@ -6,7 +6,7 @@ The CLI supports listing connectors, inspecting and reading tables, converting
 to local files or stdout, and importing into writable connectors.
 
 Install a released CLI with `uv tool install open-table-connector`, or install
-from this checkout with `uv sync --dev` followed by `source .venv/bin/activate`.
+from this checkout with `uv sync --all-packages --group dev` followed by `source .venv/bin/activate`.
 Then verify the command with `otc --help`.
 
 Examples:

@@ -23,7 +23,7 @@ OTC is a connector layer. It owns URI parsing, physical I/O, provider
 ```console
 git clone https://github.com/OmniMCP-AI/open-table-connector.git
 cd open-table-connector
-uv sync --dev
+uv sync --all-packages --group dev
 source .venv/bin/activate
 otc --help
 ```

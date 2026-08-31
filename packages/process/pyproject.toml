@@ -6,14 +6,15 @@ build-backend = "setuptools.build_meta"
 name = "open-table-connector-process"
 version = "0.1.0"
 description = "Local framed connector supervisor for Open Table Connector"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.15"
+license = { text = "Apache-2.0" }
 dependencies = [
-  "open-table-connector-contract==0.1.0",
-  "open-table-connector-timeseries==0.1.0",
-  "open-table-connector-local-files==0.1.0",
-  "open-table-connector-maybe-sheet==0.1.0",
-  "open-table-connector-postgres==0.1.0",
-  "open-table-connector-sqlite==0.1.0",
+  "open-table-connector-contract>=0.1,<0.2",
+  "open-table-connector-timeseries>=0.1,<0.2",
+  "open-table-connector-local-files>=0.1,<0.2",
+  "open-table-connector-maybe-sheet>=0.1,<0.2",
+  "open-table-connector-postgres>=0.1,<0.2",
+  "open-table-connector-sqlite>=0.1,<0.2",
   "pyarrow>=14,<20",
 ]
 

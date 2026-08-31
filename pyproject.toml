@@ -1,12 +1,5 @@
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "open-table-connector-workspace"
-version = "0.1.0"
-description = "Framework-neutral physical data Connectors"
-requires-python = ">=3.11"
+[tool.uv]
+package = false
 
 [tool.uv.workspace]
 members = ["packages/contract", "packages/conformance", "packages/timeseries", "packages/process", "packages/local_files", "packages/postgres", "packages/sqlite", "packages/dbt", "packages/maybe_sheet", "packages/google_sheets", "packages/feishu_bitable", "packages/cli"]
@@ -14,8 +7,10 @@ members = ["packages/contract", "packages/conformance", "packages/timeseries", "
 [dependency-groups]
 dev = ["pytest>=9,<10"]
 
-[tool.setuptools]
-packages = []
+[tool.otc.support]
+python = ">=3.11,<3.15"
+pyarrow = ">=14,<20"
+polars = ">=1,<2"
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
