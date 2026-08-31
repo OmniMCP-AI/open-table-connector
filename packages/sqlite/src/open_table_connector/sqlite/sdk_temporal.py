@@ -287,7 +287,7 @@ class SQLiteSdkTemporalExtension:
             ManagedStageRequest(
                 operation_id=f"sdk-stage-{idempotency_key}",
                 artifact=artifact,
-                descriptor_hash=self.descriptor_hash_for(binding, descriptor),
+                descriptor_hash=temporal_descriptor_hash(descriptor, frame.to_arrow().schema),
                 logical_target=self._database_uri,
                 physical_target=self._database_uri,
                 idempotency_key=idempotency_key,
