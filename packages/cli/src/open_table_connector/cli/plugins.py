@@ -188,7 +188,9 @@ def _csv_factory(*, env: Mapping[str, str], transports: Mapping[str, Any]) -> An
 def excel_plugin() -> PluginDescriptor:
     from open_table_connector.cli.adapters import ExcelAdapter
 
-    return PluginDescriptor(PROVIDER_EXCEL, ExcelAdapter.identity, ExcelAdapter.schemes, _excel_factory)
+    return PluginDescriptor(
+        PROVIDER_EXCEL, ExcelAdapter.identity, ExcelAdapter.schemes, _excel_factory
+    )
 
 
 def _excel_factory(*, env: Mapping[str, str], transports: Mapping[str, Any]) -> Any:
