@@ -6,7 +6,7 @@ that disposition with `verified`, `invalid`, or `superseded`.
 
 | Finding | Evidence | Priority | Plan task | Verification | Disposition | Commit |
 |---|---|---:|---|---|---|---|
-| T1 | Evidence chain self-referential | P1 | Specification 1–7 | ledger, fixtures, verifier | hypothesis | pending |
+| T1 | Evidence chain self-referential | P1 | Specification 1–7 | ledger, fixtures, verifier | verified | pending |
 | T2 | Duplicated temporal cores | P2 | Structure 1–7 | structural review | hypothesis | pending |
 | T3 | Wire rigor exceeds runtime rigor | P0 | Correctness 1–7 | adversarial tests | hypothesis | pending |
 | T4 | Semantics live only in code | P1 | Specification 1 | normative document | verified | 4e1372b |
@@ -34,7 +34,7 @@ that disposition with `verified`, `invalid`, or `superseded`.
 | B6 | Retry/NACK/diagnostics lifecycle gaps | P1 | Process 2, 7 | protocol lifecycle tests | hypothesis | pending |
 | C1 | No normative semantics | P1 | Specification 1 | semantics document | verified | 4e1372b |
 | C2 | Runtime oracle computes expected values | P1 | Specification 2 | fixture loader tests | hypothesis | pending |
-| C3 | Hash inputs unspecified/non-portable | P1 | Specification 7 | hash manifest tests | hypothesis | pending |
+| C3 | Hash inputs unspecified/non-portable | P1 | Specification 7 | hash manifest tests | verified | pending |
 | C4 | Stub providers labeled offline verified | P1 | Specification 5 | evidence documents | verified | pending |
 | C5 | Only process requests schema'd | P1 | Specification 4 | payload schema tests | hypothesis | pending |
 | C6 | Error codes outside closed enum | P1 | Specification 3 | enum/schema parity | hypothesis | pending |

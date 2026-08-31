@@ -1,0 +1,16 @@
+# Lexically sorted repository-relative paths whose bytes define the v1 fixture manifest.
+specification/evidence/providers/csv.json
+specification/evidence/providers/excel.json
+specification/evidence/providers/json.json
+specification/evidence/providers/jsonl.json
+specification/evidence/providers/maybe_sheet.json
+specification/evidence/providers/postgres.json
+specification/evidence/providers/sqlite.json
+specification/evidence/providers/timescaledb.json
+specification/fixtures/timeseries/v1/cases.json
+specification/fixtures/timeseries/v1/expected/as-of.json
+specification/fixtures/timeseries/v1/expected/bucket-aggregate.json
+specification/fixtures/timeseries/v1/expected/gap-fill.json
+specification/fixtures/timeseries/v1/expected/latest.json
+specification/fixtures/timeseries/v1/expected/scan-range.json
+specification/fixtures/timeseries/v1/source/ticks.json

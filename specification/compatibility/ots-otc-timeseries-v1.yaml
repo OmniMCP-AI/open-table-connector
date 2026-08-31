@@ -13,8 +13,8 @@ protocols:
     commit: otc.managed-commit-receipt/v1
     readback: otc.managed-readback-receipt/v1
     abort: otc.managed-abort-receipt/v1
-fixture_manifest_hash: 622ba317fba852fbc77694113aa3fe1cbc3ef9b4f15d0a91335e015111e520d6
-fixture_manifest_sha256: 622ba317fba852fbc77694113aa3fe1cbc3ef9b4f15d0a91335e015111e520d6
+fixture_manifest_hash: bbf61c58367dcbb6fbfba61b534d77bc8009d6a985cd8453d5730eb8940cc31f
+fixture_manifest_sha256: bbf61c58367dcbb6fbfba61b534d77bc8009d6a985cd8453d5730eb8940cc31f
 corpus_hash: 7dc11cd5553084a8decc7f28ad792e107c239573ccaa8ba7c0356c92f334c9fe
 runtime_ranges:
   python: ">=3.11,<3.15"
@@ -29,44 +29,44 @@ providers:
     backend_class: native
     support: native-default
     status: offline_verified
-    evidence_hash: 91aaf5e41f7c769a9a1be5c601142bf43b5134b104174872cfadcaddc4576250
+    evidence_hash: 4700e878412ae869e9d5ad3e541a1f2045a48949b9f155eda45e4f7ce9393a3a
     configured_live_evidence_hash: null
   - id: csv
     backend_class: portable
     support: portable-storage
     status: offline_verified
-    evidence_hash: 4052102b5a986d2572ff2a139c9d17324511f1c5b9b1e84c2faa078f8d3da76a
+    evidence_hash: 996df16e7fe8729b6f72dd012a1d348d2666b55584af8dcd82b6715480a4b34b
   - id: json
     backend_class: portable
     support: portable-storage
     status: offline_verified
-    evidence_hash: e7a1ac24c3fb15df02abecf2073e50b296a88ad03934a480da17359e5789204d
+    evidence_hash: 1eac69e87118dde8b45bfbd67cedddc41fb343a5704ae2b76a92094cca3f6d8d
   - id: jsonl
     backend_class: portable
     support: portable-storage
     status: offline_verified
-    evidence_hash: e7a1ac24c3fb15df02abecf2073e50b296a88ad03934a480da17359e5789204d
+    evidence_hash: c02700b35efcf7a2acb2119d7a63aa68233d31089d2085088ff86b95161ddc6d
   - id: sqlite
     backend_class: portable
     support: ots-eligible-offline
     status: offline_verified
-    evidence_hash: 311bec335a81bd4d88fbdbb970b99fce8fc3873c630dc85d161607a32efccc07
+    evidence_hash: 100ba66fad2d28938ceb2d610b925cd4211c631f682477ac9ae43bca696d39e1
   - id: postgres
     backend_class: portable
     support: portable-storage
     status: offline_verified
-    evidence_hash: b55b2502fcee64ef0dbcf46e8a44b688b333bd232f69c6ea14dbcbb9864c90ec
+    evidence_hash: 4e36d9f33ebf49f5d119a71bf0bc5c18e603ee22dd0f294ef8b73393568fc1e7
     configured_live_evidence_hash: null
   - id: excel
     backend_class: portable
     support: portable-storage
     status: offline_verified
-    evidence_hash: 48d5aa3b70e3a4639a7ae733a83d06f9333b0817bdd683c81d8e9b68643da3c1
+    evidence_hash: 6acc4797e10576db4bfbeb5402c26384f591e33fa0295ecdd6ece604cc72e8c6
   - id: maybe_sheet
     backend_class: portable
     support: import-export
     status: offline_verified
-    evidence_hash: 2d12843dfa5bebe2b06b8065d7d5240f3556c1e6109fc069fbc523038eb63411
+    evidence_hash: 3771e77ee0448c5532d09e3b2df03cbbfdb01a22eddda33c2ead80e025f47e8a
     configured_live_evidence_hash: null
   - id: clickhouse
     backend_class: native
