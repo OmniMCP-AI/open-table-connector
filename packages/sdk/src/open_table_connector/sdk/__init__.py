@@ -26,6 +26,7 @@ from .model import (
     TableMode,
 )
 from .predicates import PortablePredicate, PredicateKind, all_rows
+from .query import Query, QueryLane, SqlResourceLimits
 from .registry import ConfiguredPlugin, ConnectorRegistry, discover_configured_plugins
 from .result import (
     CommitState,
@@ -39,12 +40,32 @@ from .result import (
     ReconciliationReference,
     VerificationState,
 )
+from .sql import NativeSql, NativeSqlResourceLimits, PolarsPlanMapper, sql
 from .table import CapabilitySet, Table, TableBinding, TableInspection, TableTransaction
+from .temporal import (
+    AbortDisposition,
+    AggregateFunction,
+    AggregateMeasure,
+    CalendarBucket,
+    FillMode,
+    FillRule,
+    FixedBucket,
+    ManagedSnapshot,
+    ManagedStage,
+    TemporalConnectorExtension,
+    TemporalResourceLimits,
+    TemporalTableDescriptor,
+    TimeSeriesView,
+)
 
 __all__ = [
+    "AbortDisposition",
+    "AggregateFunction",
+    "AggregateMeasure",
     "BaseModeDestination",
     "BaseModeTableAddress",
     "CapabilitySet",
+    "CalendarBucket",
     "Client",
     "ClientConfig",
     "CommitState",
@@ -60,13 +81,23 @@ __all__ = [
     "ErrorCode",
     "ErrorInfo",
     "ExistingTableAddress",
+    "FillMode",
+    "FillRule",
+    "FixedBucket",
     "LegacyConnectorAdapterBridge",
+    "ManagedSnapshot",
+    "ManagedStage",
+    "NativeSql",
+    "NativeSqlResourceLimits",
     "OTCError",
     "OperationResult",
     "OperationWarning",
     "Outcome",
+    "PolarsPlanMapper",
     "PortablePredicate",
     "PredicateKind",
+    "Query",
+    "QueryLane",
     "QualifiedTableName",
     "Receipt",
     "ReconciliationReference",
@@ -74,13 +105,18 @@ __all__ = [
     "SheetModeDestination",
     "SheetModeTableAddress",
     "SheetRangeSource",
+    "SqlResourceLimits",
     "Table",
     "TableBinding",
     "TableConnector",
     "TableDestination",
     "TableInspection",
     "TableMode",
+    "TemporalConnectorExtension",
+    "TemporalResourceLimits",
+    "TemporalTableDescriptor",
     "TableTransaction",
+    "TimeSeriesView",
     "VerificationState",
     "all_rows",
     "apply_credential_overrides",
@@ -88,4 +124,5 @@ __all__ = [
     "load_client_config",
     "parse_credential_overrides",
     "resolve_config_path",
+    "sql",
 ]

@@ -114,6 +114,7 @@ class ErrorCode(StrEnum):
     PROTOCOL_FAILURE = "protocol_failure"
     ARTIFACT_INTEGRITY = "artifact_integrity"
     CLIENT_CLOSED = "client_closed"
+    CLIENT_AFFINITY_MISMATCH = "client_affinity_mismatch"
 
 
 @dataclass(frozen=True, slots=True)

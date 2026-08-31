@@ -303,6 +303,20 @@ class PostgresConnector(
         table, revision, options = self._read(request)
         return ArrowReadResult(table=table, receipt=self._receipt(request, table, revision, options, TABLE_READ_ARROW_CAPABILITY))
 
+    def read_native_sql(self, request: ExecutionRequest) -> ArrowReadResult:
+        """Run one SDK-policy-validated read-only statement with existing read evidence."""
+
+        return self.read_arrow(
+            PostgresTableReadRequest(
+                uri=request.uri,
+                resource_limits=request.resource_limits,
+                options=PostgresReadOptions(
+                    query=request.statement,
+                    parameters=request.parameters,
+                ),
+            )
+        )
+
     def read_polars(self, request: PostgresTableReadRequest) -> PolarsReadResult:
         table, revision, options = self._read(request)
         return PolarsReadResult(frame=pl.from_arrow(table), receipt=self._receipt(request, table, revision, options, TABLE_READ_POLARS_CAPABILITY))

@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from typing import Any
 
 import open_table_connector.sdk as otc
 import polars as pl
+import pyarrow as pa
 import pytest
 from open_table_connector.contract import (
     ArrowReadResult,
     BaseConvention,
     CapabilityIdentity,
+    ConnectorErrorCode,
     ConnectorIdentity,
+    ExecutionRequest,
+    ExecutionResult,
     NeutralReceipt,
     PluginDescriptor,
     TableURI,
@@ -22,6 +27,28 @@ from open_table_connector.contract import (
 )
 from open_table_connector.contract import (
     TableMode as LegacyTableMode,
+)
+from open_table_connector.timeseries import (
+    AbortDisposition as LegacyAbortDisposition,
+)
+from open_table_connector.timeseries import (
+    ManagedAbortReceipt,
+    ManagedCommitReceipt,
+    ManagedReadbackReceipt,
+    ManagedReadbackResult,
+    ManagedStageReceipt,
+    OrderDirection,
+    OrderKey,
+    PolarsTemporalExecutor,
+    ResourceBounds,
+    TemporalExtensionError,
+    TemporalReceipt,
+    VisibilityGuarantee,
+    temporal_descriptor_hash,
+)
+
+from packages.timeseries.tests.fixtures import (
+    MemoryTemporalSource,
 )
 
 
@@ -41,6 +68,191 @@ def make_receipt(
         mode=mode,
         details={} if row_count is None else {"row_count": row_count},
     )
+
+
+def _utc(timestamp: str) -> str:
+    return timestamp
+
+
+def _sha256(value: bytes) -> str:
+    return "sha256:" + hashlib.sha256(value).hexdigest()
+
+
+def _stage_id(seed: str) -> str:
+    return "stage:" + hashlib.sha256(seed.encode("utf-8")).hexdigest()
+
+
+def _frame_arrow_bytes(frame: pl.DataFrame) -> bytes:
+    table = frame.to_arrow()
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, table.schema) as writer:
+        writer.write_table(table)
+    return sink.getvalue().to_pybytes()
+
+
+def _temporal_receipt(
+    *,
+    operation: str,
+    descriptor_hash: str,
+    row_count: int,
+    returned_bytes: int,
+    target: str,
+    snapshot_reference: str | None = None,
+) -> TemporalReceipt:
+    return TemporalReceipt(
+        schema_version="otc.temporal-receipt/v1",
+        neutral_receipt=NeutralReceipt(
+            connector=ConnectorIdentity("fake", "0.1.0", "1.0"),
+            capability=CapabilityIdentity(operation, "1.0"),
+            operation_id=f"{operation}-1",
+            safe_uri=TableURI(target),
+            mode=LegacyTableMode.BASE,
+            source_revision="rev-temporal",
+            schema_fingerprint="schema-temporal",
+            content_fingerprint="content-temporal",
+            coordinate_convention=BaseConvention(key_fields=("symbol", "ts")),
+            row_count=row_count,
+            batch_count=1,
+        ),
+        descriptor_hash=descriptor_hash,
+        requested_range=None,
+        observed_range=None,
+        output_order=(OrderKey("symbol", OrderDirection.ASC), OrderKey("ts", OrderDirection.ASC)),
+        execution_location="connector",
+        resource_bounds=ResourceBounds(100_000, 128 * 1024 * 1024, 30_000),
+        examined_rows=row_count,
+        examined_bytes=returned_bytes,
+        returned_rows=row_count,
+        returned_bytes=returned_bytes,
+        elapsed_ms=1,
+        snapshot_reference=snapshot_reference,
+        plan_schema_version="otc.portable-temporal-plan/v1",
+        portable_plan_hash=_sha256(operation.encode("utf-8")),
+    )
+
+
+@dataclass
+class FakeTemporalExtension:
+    target_uri: str = "fake://warehouse/orders"
+    source: MemoryTemporalSource = field(default_factory=MemoryTemporalSource)
+    current_time_text: str = "2026-08-29T00:30:00.000000000Z"
+    ambiguous_commit: bool = False
+    append_calls: list[tuple[str, int]] = field(default_factory=list)
+    upsert_calls: list[tuple[str, int]] = field(default_factory=list)
+    staged_frames: dict[str, pl.DataFrame] = field(default_factory=dict)
+    committed_frames: dict[str, pl.DataFrame] = field(default_factory=dict)
+    committed_stage_ids: set[str] = field(default_factory=set)
+
+    def descriptor_hash_for(self, _binding, descriptor) -> str:
+        return temporal_descriptor_hash(descriptor, self.source.table.schema)
+
+    def executor_for(self, _binding, descriptor):
+        self.source.descriptor = descriptor
+        return PolarsTemporalExecutor(
+            self.source,
+            connector_identity=ConnectorIdentity("fake", "0.1.0", "1.0"),
+        )
+
+    def append_rows(self, _binding, descriptor, frame: pl.DataFrame, *, idempotency_key: str):
+        self.source.descriptor = descriptor
+        self.append_calls.append((idempotency_key, frame.height))
+        return otc.OperationResult(
+            value=frame.height,
+            outcome=otc.Outcome.SUCCEEDED,
+            commit=otc.CommitState.COMMITTED,
+            verification=otc.VerificationState.PASSED,
+            receipts=(
+                make_receipt("timeseries.append", uri=self.target_uri, row_count=frame.height),
+            ),
+        )
+
+    def upsert_rows(self, _binding, descriptor, frame: pl.DataFrame, *, idempotency_key: str):
+        self.source.descriptor = descriptor
+        self.upsert_calls.append((idempotency_key, frame.height))
+        return otc.OperationResult(
+            value=frame.height,
+            outcome=otc.Outcome.SUCCEEDED,
+            commit=otc.CommitState.COMMITTED,
+            verification=otc.VerificationState.PASSED,
+            receipts=(
+                make_receipt("timeseries.upsert", uri=self.target_uri, row_count=frame.height),
+            ),
+        )
+
+    def stage_rows(self, _binding, descriptor, frame: pl.DataFrame, *, idempotency_key: str):
+        self.source.descriptor = descriptor
+        stage_id = _stage_id(idempotency_key)
+        self.staged_frames[stage_id] = frame.clone()
+        arrow_bytes = _frame_arrow_bytes(frame)
+        return ManagedStageReceipt(
+            schema_version="otc.managed-stage-receipt/v1",
+            operation_id=f"stage-{idempotency_key}",
+            logical_target=TableURI(self.target_uri),
+            physical_target=TableURI(self.target_uri),
+            stage_id=stage_id,
+            idempotency_key=idempotency_key,
+            artifact_hash=_sha256(arrow_bytes),
+            descriptor_hash=self.descriptor_hash_for(_binding, descriptor),
+            staged_at=_utc("2026-08-29T00:20:00.000000000Z"),
+            visible=False,
+        )
+
+    def commit_stage(self, _binding, _descriptor, stage):
+        if self.ambiguous_commit:
+            raise TemporalExtensionError(
+                ConnectorErrorCode.VISIBILITY_INCOMPLETE,
+                "commit outcome is uncertain",
+                {"stage_id": stage.stage_id},
+            )
+        frame = self.staged_frames[stage.stage_id]
+        snapshot_id = _sha256(stage.stage_id.encode("utf-8"))
+        self.committed_frames[snapshot_id] = frame
+        self.committed_stage_ids.add(stage.stage_id)
+        return ManagedCommitReceipt(
+            schema_version="otc.managed-commit-receipt/v1",
+            operation_id=f"commit-{stage.stage_id}",
+            logical_target=stage.logical_target,
+            stage_id=stage.stage_id,
+            idempotency_key=stage.idempotency_key,
+            snapshot_id=snapshot_id,
+            snapshot_reference=f"snapshots/{stage.idempotency_key}.arrow",
+            committed_at=_utc("2026-08-29T00:21:00.000000000Z"),
+            visibility=VisibilityGuarantee.ATOMIC,
+        )
+
+    def readback_snapshot(self, _binding, _descriptor, snapshot):
+        frame = self.committed_frames[snapshot.snapshot_id]
+        table = frame.to_arrow()
+        return ManagedReadbackResult(
+            table=table,
+            artifact=None,
+            receipt=ManagedReadbackReceipt(
+                schema_version="otc.managed-readback-receipt/v1",
+                operation_id=f"readback-{snapshot.snapshot_id}",
+                snapshot_id=snapshot.snapshot_id,
+                observed_at=_utc("2026-08-29T00:22:00.000000000Z"),
+                observed_schema_hash=_sha256(table.schema.serialize().to_pybytes()),
+                observed_content_hash=_sha256(_frame_arrow_bytes(frame)),
+                observed_rows=table.num_rows,
+                observed_bytes=len(_frame_arrow_bytes(frame)),
+                observed_range=None,
+            ),
+        )
+
+    def abort_stage(self, _binding, _descriptor, stage):
+        disposition = (
+            LegacyAbortDisposition.ALREADY_COMMITTED
+            if stage.stage_id in self.committed_stage_ids
+            else LegacyAbortDisposition.ALREADY_ABSENT
+        )
+        return ManagedAbortReceipt(
+            schema_version="otc.managed-abort-receipt/v1",
+            operation_id=f"abort-{stage.stage_id}",
+            logical_target=stage.logical_target,
+            stage_id=stage.stage_id,
+            disposition=disposition,
+            aborted_at=_utc("2026-08-29T00:23:00.000000000Z"),
+        )
 
 
 @dataclass
@@ -111,6 +323,35 @@ class FakeSdkConnector:
         )
     )
     existing_destinations: set[str] = field(default_factory=lambda: {"fake://warehouse/existing"})
+    temporal_extension: FakeTemporalExtension = field(default_factory=FakeTemporalExtension)
+
+    def read_native_sql(self, request: ExecutionRequest) -> ArrowReadResult:
+        self.calls.append(("read_native_sql", request.statement))
+        table = self.frame.to_arrow()
+        return ArrowReadResult(
+            table=table,
+            receipt=NeutralReceipt(
+                connector=self.identity,
+                capability=CapabilityIdentity("native.sql.query", "1.0"),
+                operation_id="native-query-1",
+                safe_uri=request.uri,
+                mode=LegacyTableMode.BASE,
+                source_revision="native-query-rev-1",
+                schema_fingerprint="native-query-schema-1",
+                content_fingerprint="native-query-content-1",
+                coordinate_convention=BaseConvention(key_fields=("order_id",)),
+                row_count=table.num_rows,
+                batch_count=1,
+            ),
+        )
+
+    def execute(self, request: ExecutionRequest) -> ExecutionResult:
+        self.calls.append(("execute_sql", request.statement))
+        return ExecutionResult(
+            operation_id="native-execute-1",
+            status="completed",
+            affected_rows=2,
+        )
 
     def open_table(self, address: object) -> otc.OperationResult[otc.TableBinding]:
         self.calls.append(("open_table", address))
@@ -293,6 +534,12 @@ class FakeSdkConnector:
     def close(self) -> None:
         self.closed = True
         self.calls.append(("close", None))
+
+    def temporal_extension_for(self, binding: otc.TableBinding, descriptor):
+        self.calls.append(("temporal_extension_for", binding.uri.value))
+        self.temporal_extension.target_uri = binding.uri.value
+        self.temporal_extension.source.descriptor = descriptor
+        return self.temporal_extension
 
 
 class FakeLegacyAdapter:

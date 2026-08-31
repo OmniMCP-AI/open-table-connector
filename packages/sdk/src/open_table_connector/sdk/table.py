@@ -12,6 +12,8 @@ from open_table_connector.contract import TableURI
 from .model import TableMode
 
 if TYPE_CHECKING:
+    from open_table_connector.timeseries import TemporalTableDescriptor
+
     from .client import Client
 
 
@@ -205,6 +207,12 @@ class Table:
             self._binding
         )
         return TableTransaction(self, transaction)
+
+    def time_series(self, descriptor: TemporalTableDescriptor):
+        self._client._assert_open()
+        from .temporal import TimeSeriesView
+
+        return TimeSeriesView(self, descriptor)
 
 
 __all__ = [
