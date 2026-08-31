@@ -8,27 +8,29 @@ import sys
 import zipfile
 from pathlib import Path
 
+from open_table_connector.contract import PACKAGE_NAMESPACE
+
 _PUBLIC_IMPORTS = {
-    "open-table-connector-contract": "open_table_connector.contract",
-    "open-table-connector-timeseries": "open_table_connector.timeseries",
-    "open-table-connector-local-files": "open_table_connector.local_files",
-    "open-table-connector-sqlite": "open_table_connector.sqlite",
-    "open-table-connector-postgres": "open_table_connector.postgres",
-    "open-table-connector-google-sheets": "open_table_connector.google_sheets",
-    "open-table-connector-feishu-bitable": "open_table_connector.feishu_bitable",
-    "open-table-connector-maybe-sheet": "open_table_connector.maybe_sheet",
-    "open-table-connector-conformance": "open_table_connector.conformance",
-    "open-table-connector-process": "open_table_connector.process",
-    "open-table-connector-dbt": "open_table_connector.dbt",
-    "open-table-connector": "open_table_connector.cli",
+    "open-table-connector-contract": f"{PACKAGE_NAMESPACE}.contract",
+    "open-table-connector-timeseries": f"{PACKAGE_NAMESPACE}.timeseries",
+    "open-table-connector-local-files": f"{PACKAGE_NAMESPACE}.local_files",
+    "open-table-connector-sqlite": f"{PACKAGE_NAMESPACE}.sqlite",
+    "open-table-connector-postgres": f"{PACKAGE_NAMESPACE}.postgres",
+    "open-table-connector-google-sheets": f"{PACKAGE_NAMESPACE}.google_sheets",
+    "open-table-connector-feishu-bitable": f"{PACKAGE_NAMESPACE}.feishu_bitable",
+    "open-table-connector-maybe-sheet": f"{PACKAGE_NAMESPACE}.maybe_sheet",
+    "open-table-connector-conformance": f"{PACKAGE_NAMESPACE}.conformance",
+    "open-table-connector-process": f"{PACKAGE_NAMESPACE}.process",
+    "open-table-connector-dbt": f"{PACKAGE_NAMESPACE}.dbt",
+    "open-table-connector": f"{PACKAGE_NAMESPACE}.cli",
 }
 _PROVIDER_MODULES = (
-    "open_table_connector.local_files",
-    "open_table_connector.sqlite",
-    "open_table_connector.postgres",
-    "open_table_connector.google_sheets",
-    "open_table_connector.feishu_bitable",
-    "open_table_connector.maybe_sheet",
+    f"{PACKAGE_NAMESPACE}.local_files",
+    f"{PACKAGE_NAMESPACE}.sqlite",
+    f"{PACKAGE_NAMESPACE}.postgres",
+    f"{PACKAGE_NAMESPACE}.google_sheets",
+    f"{PACKAGE_NAMESPACE}.feishu_bitable",
+    f"{PACKAGE_NAMESPACE}.maybe_sheet",
 )
 _DISTRIBUTION_MODULES = {
     "open-table-connector-local-files": "open_table_connector.local_files",
@@ -68,8 +70,8 @@ def _uninstall_check(wheels: tuple[Path, ...], removed: str) -> str | None:
         "builtins.__import__=lambda n,*a,**k: (_ for _ in ()).throw(ModuleNotFoundError(name=n)) "
         "if any(n==x or n.startswith(x+'.') for x in blocked) else real(n,*a,**k); "
         "[__import__(m) for m in ("
-        "'open_table_connector.contract','open_table_connector.timeseries',"
-        "'open_table_connector.cli','open_table_connector.process')]"
+        f"'{PACKAGE_NAMESPACE}.contract','{PACKAGE_NAMESPACE}.timeseries',"
+        f"'{PACKAGE_NAMESPACE}.cli','{PACKAGE_NAMESPACE}.process')]"
     )
     result = subprocess.run(
         [sys.executable, "-I", "-c", code, *remaining],
