@@ -1,6 +1,16 @@
 """Neutral local-files Connector package."""
 
 from .bounded_reader import LocalBoundedReader
+from .cli_adapter import (
+    CsvCliAdapter,
+    ExcelCliAdapter,
+    LocalFilesCliAdapter,
+    MarkdownCliAdapter,
+    csv_cli_plugin,
+    excel_cli_plugin,
+    local_files_cli_plugin,
+    markdown_cli_plugin,
+)
 from .csv_connector import CsvConnector, CsvReadOptions, CsvTableReadRequest
 from .excel_connector import ExcelConnector, ExcelReadOptions, ExcelTableReadRequest
 from .excel_reader import read_excel_arrow
@@ -25,6 +35,14 @@ from .temporal_json import JsonManagedTemporalStore, JsonTemporalExecutor
 
 __all__ = [
     "CAPABILITY_MANIFEST",
+    "CsvCliAdapter",
+    "ExcelCliAdapter",
+    "LocalFilesCliAdapter",
+    "MarkdownCliAdapter",
+    "csv_cli_plugin",
+    "excel_cli_plugin",
+    "local_files_cli_plugin",
+    "markdown_cli_plugin",
     "CONNECTOR_IDENTITY",
     "CsvConnector",
     "CsvManagedTemporalStore",

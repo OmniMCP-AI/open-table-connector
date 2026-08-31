@@ -13,6 +13,13 @@ from open_table_connector.contract import (
     PluginDescriptor,
 )
 
+from .cli_adapter import (
+    csv_cli_plugin,
+    excel_cli_plugin,
+    local_files_cli_plugin,
+    markdown_cli_plugin,
+)
+
 
 def provider_plugin() -> PluginDescriptor:
     from .identity import CONNECTOR_IDENTITY
@@ -79,4 +86,13 @@ def _required_text(document: Mapping[str, object], field: str) -> str:
     return value
 
 
-__all__ = ["csv_process_plugin", "excel_process_plugin", "json_process_plugin", "provider_plugin"]
+__all__ = [
+    "csv_cli_plugin",
+    "csv_process_plugin",
+    "excel_cli_plugin",
+    "excel_process_plugin",
+    "json_process_plugin",
+    "local_files_cli_plugin",
+    "markdown_cli_plugin",
+    "provider_plugin",
+]
