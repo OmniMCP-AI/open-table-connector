@@ -2,38 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
-from open_table_connector.contract import (
-    HOST_MAYBE,
-    PROVIDER_MAYBE_SHEET,
-    SCHEME_HTTPS,
-    SCHEME_MAYBE,
-    PluginDescriptor,
-)
+from .cli_adapter import maybe_sheet_cli_plugin
 
-
-def provider_plugin() -> PluginDescriptor:
-    from .identity import CONNECTOR_IDENTITY
-
-    return PluginDescriptor(
-        PROVIDER_MAYBE_SHEET,
-        CONNECTOR_IDENTITY,
-        (SCHEME_MAYBE, SCHEME_HTTPS),
-        _provider_factory,
-        (HOST_MAYBE,),
-    )
-
-
-def _provider_factory(*, env: Mapping[str, str], transports: Mapping[str, Any]) -> Any:
-    from .connector import MaybeSheetConnector
-    from .process import SubprocessProcessClient
-
-    process = transports.get(PROVIDER_MAYBE_SHEET)
-    if process is None:
-        process = SubprocessProcessClient(environment=env)
-    return MaybeSheetConnector(process)
+provider_plugin = maybe_sheet_cli_plugin
 
 
 def process_plugin(**kwargs: Any) -> tuple[Any, None]:
@@ -53,4 +26,4 @@ def _required_text(document: dict[str, object], field: str) -> str:
     return value
 
 
-__all__ = ["process_plugin", "provider_plugin"]
+__all__ = ["maybe_sheet_cli_plugin", "process_plugin", "provider_plugin"]

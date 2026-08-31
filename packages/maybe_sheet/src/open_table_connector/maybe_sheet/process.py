@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import stat
 import subprocess
 from collections.abc import Mapping
@@ -65,8 +64,7 @@ class SubprocessProcessClient:
         command = tuple(argv)
         if not command or command[0] != self.binary:
             command = (self.binary, *command)
-        env = os.environ.copy()
-        env.update({str(key): str(value) for key, value in self.environment.items()})
+        env = {str(key): str(value) for key, value in self.environment.items()}
         env.update(_credential_environment(credentials or {}))
         try:
             completed = subprocess.run(
