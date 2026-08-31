@@ -228,7 +228,7 @@ def _local_path(endpoint: Endpoint) -> Path:
             "local endpoints require a filesystem path or stdout",
             {"endpoint": endpoint.raw},
         )
-    parsed = urlsplit(endpoint.uri.value)
+    parsed = urlsplit(endpoint.raw)
     if parsed.netloc.casefold() not in ("", "localhost"):
         raise ConnectorError(
             ConnectorErrorCode.INVALID_URI,

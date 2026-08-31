@@ -8,7 +8,7 @@ from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Protocol, TypeAlias, runtime_checkable
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import url2pathname
 
 import pyarrow as pa
@@ -27,6 +27,7 @@ from .names import (
     PROVIDER_JSON,
     PROVIDER_JSONL,
     SCHEME_FILE,
+    SCHEME_MD,
 )
 from .read import ArrowReadResult
 from .storage import TableWriteResult
@@ -226,7 +227,21 @@ def parse_adapter_endpoint(value: str) -> AdapterEndpoint:
             raise ValueError("file endpoint cannot contain a query or fragment")
         return AdapterEndpoint(raw=value, path=Path(url2pathname(file_uri.path)))
     if parsed.scheme:
-        return AdapterEndpoint(raw=value, uri=TableURI(value))
+        try:
+            return AdapterEndpoint(raw=value, uri=TableURI(value))
+        except ValueError:
+            if parsed.scheme.casefold() in {
+                PROVIDER_CSV,
+                PROVIDER_EXCEL,
+                PROVIDER_JSON,
+                PROVIDER_JSONL,
+                SCHEME_MD,
+            }:
+                sanitized = urlunsplit(
+                    (parsed.scheme, parsed.netloc, parsed.path, "", "")
+                )
+                return AdapterEndpoint(raw=value, uri=TableURI(sanitized))
+            raise
     return AdapterEndpoint(raw=value, path=Path(value))
 
 
