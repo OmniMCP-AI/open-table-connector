@@ -47,6 +47,7 @@ class BoundedReadReceipt:
     batches_emitted: int
     extent: ReadExtent
     next_token: str | None = None
+    operation_id: str = "bounded-read"
     schema_version: str = "otc.bounded-read-receipt/v2"
 
     def to_wire(self) -> dict[str, Any]:
@@ -63,6 +64,7 @@ class BoundedReadReceipt:
             "batches_emitted": self.batches_emitted,
             "extent": self.extent.value,
             "next_token": self.next_token,
+            "operation_id": self.operation_id,
         }
 
 
