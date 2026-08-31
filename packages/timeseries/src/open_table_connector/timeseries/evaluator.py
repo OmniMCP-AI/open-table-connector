@@ -373,6 +373,15 @@ def _gap_fill(
     if not operation.group_by:
         expanded = expanded.drop("__single_group")
     keys = [*operation.group_by, "bucket"]
+    outside_domain = aggregate.select(keys).join(
+        expanded.select(keys), on=keys, how="anti"
+    )
+    if outside_domain.height:
+        raise TemporalExtensionError(
+            TemporalErrorCode.PROTOCOL_INVALID,
+            "aggregate bucket is outside gap-fill domain",
+            {"rows": outside_domain.height},
+        )
     expanded = expanded.join(aggregate, on=keys, how="left").sort(keys)
     for fill in operation.fills:
         column = pl.col(fill.field)
@@ -389,6 +398,13 @@ def _gap_fill(
             if operation.group_by:
                 expression = expression.over(operation.group_by)
         expanded = expanded.with_columns(expression.alias(fill.field))
+    expanded_table = expanded.to_arrow()
+    _check_size_bounds(
+        expanded.height,
+        len(_arrow_ipc_bytes(expanded_table)),
+        bounds,
+        "gap-fill result",
+    )
     return expanded
 
 

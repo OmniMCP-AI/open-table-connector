@@ -67,7 +67,8 @@ def calendar_bucket_next(label: str, bucket: CalendarBucket) -> str:
         }[bucket.unit]
         advanced = _add_months(local, months)
     utc = advanced.replace(tzinfo=timezone).astimezone(UTC)
-    return _format_ns(_datetime_ns(utc) + bucket.offset_ns)
+    candidate = _format_ns(_datetime_ns(utc) + bucket.offset_ns)
+    return calendar_bucket_start(candidate, bucket)
 
 
 def _calendar_boundary(
