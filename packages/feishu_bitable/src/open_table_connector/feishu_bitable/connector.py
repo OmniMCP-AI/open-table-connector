@@ -156,7 +156,13 @@ class FeishuBitableConnector(URIResolver, TableInspector, ArrowTableReader, Pola
         return TableInspection(request.uri, TableMode.BASE, tuple(result.table.column_names), result.receipt.schema_fingerprint, result.table.num_rows, result.receipt.coordinate_convention, {"provider": "feishu_bitable"})
 
     def write(self, request: TableWriteRequest) -> TableWriteResult:
-        if request.if_exists not in {"append", "error"}:
+        if request.if_exists == "error":
+            raise ConnectorError(
+                ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+                "Feishu Bitable cannot enforce create-if-empty atomically",
+                {"if_exists": request.if_exists},
+            )
+        if request.if_exists not in {"append"}:
             raise ConnectorError(ConnectorErrorCode.UNSUPPORTED_CAPABILITY, "Feishu Bitable only supports append writes", {"if_exists": request.if_exists})
         resource = self.resolve(request.uri, ResolveContext()).resource
         records = [{"fields": {name: value for name, value in zip(request.frame.columns, row)}} for row in request.frame.rows()]

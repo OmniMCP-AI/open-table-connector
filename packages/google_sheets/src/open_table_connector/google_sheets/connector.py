@@ -108,12 +108,35 @@ class GoogleSheetsConnector(URIResolver, TableInspector, ArrowTableReader, Polar
                 spreadsheet_id = parts[parts.index("d") + 1]
             except (ValueError, IndexError):
                 raise ConnectorError(ConnectorErrorCode.INVALID_URI, "Google Sheets URI requires a spreadsheet ID", {}) from None
-            sheet = unquote(parsed.fragment.removeprefix("gid=")) if parsed.fragment.startswith("gid=") else "Sheet1"
+            if parsed.fragment.startswith("gid="):
+                raw_gid = unquote(parsed.fragment.removeprefix("gid="))
+                if not raw_gid.isdigit():
+                    raise ConnectorError(ConnectorErrorCode.INVALID_URI, "Google Sheets gid must be a non-negative integer", {})
+                sheet = self._sheet_title(spreadsheet_id, int(raw_gid))
+            else:
+                sheet = "Sheet1"
         else:
             raise ConnectorError(ConnectorErrorCode.INVALID_URI, "Google Sheets Connector requires a gsheets URI or Google Sheets URL", {"scheme": uri.scheme})
         if not spreadsheet_id or not sheet:
             raise ConnectorError(ConnectorErrorCode.INVALID_URI, "Google Sheets URI requires a spreadsheet and sheet", {})
         return ResolvedTable(uri, TableMode.SHEET, ResolvedGoogleSheet(spreadsheet_id, sheet))
+
+    def _sheet_title(self, spreadsheet_id: str, gid: int) -> str:
+        if isinstance(gid, bool) or not isinstance(gid, int) or gid < 0:
+            raise ConnectorError(ConnectorErrorCode.INVALID_URI, "Google Sheets gid must be a non-negative integer", {})
+        url = (
+            f"https://sheets.googleapis.com/v4/spreadsheets/{quote(spreadsheet_id, safe='')}"
+            "?fields=sheets(properties(sheetId,title))"
+        )
+        payload = self._transport.request("GET", url, headers=self._headers(), timeout=self._timeout)
+        matches = [
+            item.get("properties", {})
+            for item in payload.get("sheets", [])
+            if item.get("properties", {}).get("sheetId") == gid
+        ]
+        if len(matches) != 1 or not matches[0].get("title"):
+            raise ConnectorError(ConnectorErrorCode.INVALID_URI, "Google Sheets gid does not identify exactly one sheet", {})
+        return str(matches[0]["title"])
 
     def _headers(self) -> dict[str, str]:
         if not self._access_token:
@@ -154,6 +177,12 @@ class GoogleSheetsConnector(URIResolver, TableInspector, ArrowTableReader, Polar
         return TableInspection(request.uri, TableMode.SHEET, tuple(result.table.column_names), result.receipt.schema_fingerprint, result.table.num_rows, result.receipt.coordinate_convention, {"provider": "google_sheets"})
 
     def write(self, request: TableWriteRequest) -> TableWriteResult:
+        if request.if_exists == "error":
+            raise ConnectorError(
+                ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+                "Google Sheets cannot enforce create-if-empty atomically",
+                {"if_exists": request.if_exists},
+            )
         if request.if_exists not in {"error", "append", "replace"}:
             raise ConnectorError(ConnectorErrorCode.INVALID_URI, "if_exists must be error, append, or replace", {})
         resource = self.resolve(request.uri, ResolveContext()).resource
@@ -162,7 +191,7 @@ class GoogleSheetsConnector(URIResolver, TableInspector, ArrowTableReader, Polar
         body = {"range": value_range, "majorDimension": "ROWS", "values": values}
         method = "POST" if request.if_exists == "append" else "PUT"
         suffix = ":append" if method == "POST" else ""
-        url = f"https://sheets.googleapis.com/v4/spreadsheets/{quote(resource.spreadsheet_id, safe='')}/values/{quote(value_range, safe='')}{suffix}?valueInputOption=USER_ENTERED&includeValuesInResponse=true"
+        url = f"https://sheets.googleapis.com/v4/spreadsheets/{quote(resource.spreadsheet_id, safe='')}/values/{quote(value_range, safe='')}{suffix}?valueInputOption=RAW&includeValuesInResponse=true"
         payload = self._transport.request(method, url, headers=self._headers(), body=body, timeout=self._timeout)
         revision = "sha256:" + sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
         table = pa.Table.from_pydict({name: request.frame.get_column(name).to_list() for name in request.frame.columns})

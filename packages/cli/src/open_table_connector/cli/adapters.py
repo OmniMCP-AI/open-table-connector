@@ -145,15 +145,11 @@ class GoogleSheetsAdapter:
             )
         if options.if_exists != "error":
             return
-        result = self._connector(options).read_arrow(
-            GoogleSheetsTableReadRequest(
-                _uri(endpoint),
-                _limits(options),
-                GoogleSheetsReadOptions(range=options.target),
-            )
+        raise ConnectorError(
+            ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+            "Google Sheets cannot enforce create-if-empty atomically",
+            {"if_exists": options.if_exists},
         )
-        if result.table.num_rows:
-            raise _conflict(endpoint)
 
     def read(self, endpoint: Endpoint, options: CliOptions) -> ArrowReadResult:
         request = GoogleSheetsTableReadRequest(
@@ -195,13 +191,11 @@ class FeishuBitableAdapter:
             )
         if options.if_exists != "error":
             return
-        result = self._connector(options).read_arrow(
-            FeishuBitableTableReadRequest(
-                _uri(endpoint), _limits(options), FeishuBitableReadOptions()
-            )
+        raise ConnectorError(
+            ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+            "Feishu Bitable cannot enforce create-if-empty atomically",
+            {"if_exists": options.if_exists},
         )
-        if result.table.num_rows:
-            raise _conflict(endpoint)
 
     def read(self, endpoint: Endpoint, options: CliOptions) -> ArrowReadResult:
         request = FeishuBitableTableReadRequest(

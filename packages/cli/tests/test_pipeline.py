@@ -431,7 +431,7 @@ def test_feishu_replace_is_rejected_before_source_read_or_destination_write() ->
     assert transport.calls == []
 
 
-def test_feishu_error_policy_conflicts_before_source_read_when_destination_has_rows() -> None:
+def test_feishu_error_policy_rejected_before_any_provider_io() -> None:
     source_adapter = RecordingAdapter()
     transport = RecordingTransport({
         "GET": {"code": 0, "data": {"items": [{"record_id": "r1", "fields": {"id": "1"}}]}},
@@ -448,12 +448,12 @@ def test_feishu_error_policy_conflicts_before_source_read_when_destination_has_r
             CliOptions(if_exists="error"),
         )
 
-    assert error.value.code is ConnectorErrorCode.CONFLICT
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
     assert source_adapter.read_calls == 0
-    assert [call.method for call in transport.calls] == ["GET"]
+    assert transport.calls == []
 
 
-def test_feishu_empty_destination_allows_error_policy_write() -> None:
+def test_feishu_error_policy_rejected_even_for_empty_destination() -> None:
     source_adapter = RecordingAdapter()
     transport = RecordingTransport({
         "GET": {"code": 0, "data": {"items": [], "has_more": False}},
@@ -464,17 +464,17 @@ def test_feishu_empty_destination_allows_error_policy_write() -> None:
     )
     registry.register(source_adapter)
 
-    summary = import_endpoint(
-        parse_endpoint("fake://book/Orders"), parse_endpoint("feishu://app/table"), registry,
-        CliOptions(if_exists="error"),
-    )
+    with pytest.raises(ConnectorError) as error:
+        import_endpoint(
+            parse_endpoint("fake://book/Orders"), parse_endpoint("feishu://app/table"), registry,
+            CliOptions(if_exists="error"),
+        )
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+    assert source_adapter.read_calls == 0
+    assert transport.calls == []
 
-    assert summary.rows_read == 1
-    assert source_adapter.read_calls == 1
-    assert [call.method for call in transport.calls] == ["GET", "POST"]
 
-
-def test_google_error_policy_conflicts_before_source_read_when_destination_has_rows() -> None:
+def test_google_error_policy_rejected_before_any_provider_io() -> None:
     source_adapter = RecordingAdapter()
     transport = RecordingTransport({
         "GET": {"values": [["id"], ["existing"]]},
@@ -491,12 +491,12 @@ def test_google_error_policy_conflicts_before_source_read_when_destination_has_r
             CliOptions(if_exists="error"),
         )
 
-    assert error.value.code is ConnectorErrorCode.CONFLICT
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
     assert source_adapter.read_calls == 0
-    assert [call.method for call in transport.calls] == ["GET"]
+    assert transport.calls == []
 
 
-def test_google_empty_destination_allows_error_policy_write() -> None:
+def test_google_error_policy_rejected_even_for_empty_destination() -> None:
     source_adapter = RecordingAdapter()
     transport = RecordingTransport({"GET": {"values": []}, "PUT": {"updatedRows": 1}})
     registry = build_default_registry(
@@ -504,14 +504,14 @@ def test_google_empty_destination_allows_error_policy_write() -> None:
     )
     registry.register(source_adapter)
 
-    summary = import_endpoint(
-        parse_endpoint("fake://book/Orders"), parse_endpoint("gsheets://book/Orders"), registry,
-        CliOptions(if_exists="error"),
-    )
-
-    assert summary.rows_read == 1
-    assert source_adapter.read_calls == 1
-    assert [call.method for call in transport.calls] == ["GET", "PUT"]
+    with pytest.raises(ConnectorError) as error:
+        import_endpoint(
+            parse_endpoint("fake://book/Orders"), parse_endpoint("gsheets://book/Orders"), registry,
+            CliOptions(if_exists="error"),
+        )
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+    assert source_adapter.read_calls == 0
+    assert transport.calls == []
 
 
 def test_google_invalid_policy_is_rejected_before_source_read_or_destination_write() -> None:

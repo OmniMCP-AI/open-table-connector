@@ -96,6 +96,15 @@ def test_feishu_writes_batch_records() -> None:
     assert result.receipt.vendor_receipt_ref is None
 
 
+def test_feishu_error_policy_rejected_before_provider_io() -> None:
+    transport = FakeTransport()
+    connector = FeishuBitableConnector(transport=transport, tenant_access_token="tenant-token")
+    with pytest.raises(ConnectorError) as raised:
+        connector.write(TableWriteRequest(TableURI("feishu://app-token/table-id"), pl.DataFrame({"id": [1]}), if_exists="error"))
+    assert raised.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+    assert transport.calls == []
+
+
 def test_feishu_inspection_reports_base_identity() -> None:
     inspection = FeishuBitableConnector(transport=FakeTransport(), tenant_access_token="tenant-token").inspect(
         InspectRequest(TableURI("feishu://app-token/table-id"))

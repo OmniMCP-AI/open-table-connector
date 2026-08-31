@@ -16,13 +16,13 @@ that disposition with `verified`, `invalid`, or `superseded`.
 | A3 | SQLite precision mismatch | P0 | Correctness 3 | non-ns fixtures | verified | dbcabdf |
 | A4 | Postgres isolation after DDL | P0 | Correctness 4 | live/recording SQL test | verified | 47175b9 |
 | A5 | SQL observed range assumes ns | P0 | Correctness 4 | precision receipt tests | verified | dbcabdf |
-| A6 | Hosted if_exists=error overwrites/appends | P0 | Correctness 6–7 | provider write tests | hypothesis | pending |
+| A6 | Hosted if_exists=error overwrites/appends | P0 | Correctness 6–7 | provider write tests | verified | pending |
 | A7 | CLI CSV uses Markdown escaping | P0 | Packaging 4–5 | delimiter/newline tests | hypothesis | pending |
 | A8 | IPC fingerprint depends on chunking | P1 | Correctness 5 | chunk invariance test | hypothesis | pending |
 | A9 | Receipt counts/identity fabricated | P1 | Correctness 1 | receipt evidence tests | hypothesis | pending |
 | A10 | --from-format ignored for paths | P1 | Packaging 4 | CLI routing tests | hypothesis | pending |
 | A11 | Qualified SQLite names fail | P0 | Correctness 3 | reader tests | hypothesis | pending |
-| A12 | Google gid treated as title | P1 | Correctness 6 | URL parsing tests | hypothesis | pending |
+| A12 | Google gid treated as title | P1 | Correctness 6 | URL parsing tests | verified | pending |
 | A13 | output_order fields unchecked | P1 | Specification 1 | plan validation tests | hypothesis | pending |
 | A14 | SQLite in-memory state resets | P0 | Correctness 4 | lifecycle test | hypothesis | pending |
 | A15 | SQLite bucket arithmetic truncates | P0 | Correctness 3 | pre-origin tests | verified | dbcabdf |
@@ -43,7 +43,7 @@ that disposition with `verified`, `invalid`, or `superseded`.
 | C9 | Receipt defs copy-pasted | P1 | Specification 3 | shared-ref schema tests | hypothesis | pending |
 | C10 | Cross-framework manifest ignored | P1 | Specification 6 | manifest execution test | hypothesis | pending |
 | C11 | Schema misses semantic invariants | P1 | Specification 1, 3 | normative/schema tests | hypothesis | pending |
-| D1 | USER_ENTERED enables formulas | P1 | Correctness 6 | write option test | hypothesis | pending |
+| D1 | USER_ENTERED enables formulas | P1 | Correctness 6 | write option test | verified | pending |
 | D2 | Postgres read gate allows writes | P1 | Correctness 4 | read-only transaction test | hypothesis | pending |
 | D3 | URI scrubbing misses empty/fragments | P1 | Process 3 | URI security tests | hypothesis | pending |
 | D4 | ResolveContext repr leaks credentials | P1 | Process 3 | repr/redaction test | hypothesis | pending |

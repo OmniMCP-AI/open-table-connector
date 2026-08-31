@@ -411,10 +411,8 @@ def test_table_writes_report_exact_affected_rows(
 @pytest.mark.parametrize(
     ("case_name", "policy"),
     (
-        pytest.param("google_sheets", "error", id="google-sheets:error"),
         pytest.param("google_sheets", "append", id="google-sheets:append"),
         pytest.param("google_sheets", "replace", id="google-sheets:replace"),
-        pytest.param("feishu_bitable", "error", id="feishu-bitable:error"),
         pytest.param("feishu_bitable", "append", id="feishu-bitable:append"),
         pytest.param("maybe_sheet", "append", id="maybe_sheet:append"),
     ),
@@ -436,6 +434,8 @@ def test_table_writes_accept_each_supported_policy(
     ("case_name", "policy"),
     (
         pytest.param("feishu_bitable", "replace", id="feishu-bitable:replace"),
+        pytest.param("feishu_bitable", "error", id="feishu-bitable:error"),
+        pytest.param("google_sheets", "error", id="google-sheets:error"),
         pytest.param("maybe_sheet", "error", id="maybe_sheet:error"),
         pytest.param("maybe_sheet", "replace", id="maybe_sheet:replace"),
     ),
@@ -481,7 +481,7 @@ def test_google_sheets_write_records_range_method_body_timeout_and_credentials(
     suffix = ":append" if policy == "append" else ""
     assert request.url == (
         "https://sheets.googleapis.com/v4/spreadsheets/fixture-spreadsheet/"
-        f"values/Orders%21A1%3AC5{suffix}?valueInputOption=USER_ENTERED&"
+        f"values/Orders%21A1%3AC5{suffix}?valueInputOption=RAW&"
         "includeValuesInResponse=true"
     )
     assert request.timeout == 30

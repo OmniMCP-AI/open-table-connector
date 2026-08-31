@@ -15,6 +15,8 @@ class FakeTransport:
     def request(self, method, url, *, headers, body=None, timeout=None):
         self.calls.append((method, url, headers, body))
         if method == "GET":
+            if "fields=sheets" in url:
+                return {"sheets": [{"properties": {"sheetId": 0, "title": "Orders"}}]}
             return {"range": "Orders!A1:B3", "values": [["id", "amount"], ["a", 1], ["b", 2]]}
         return {"updatedRange": "Orders!A1:B2", "updatedRows": 2, "updatedColumns": 2}
 
@@ -80,6 +82,23 @@ def test_google_sheets_read_applies_max_rows_to_table_and_receipt() -> None:
     assert result.receipt.row_count == 1
 
 
+def test_google_gid_resolves_to_sheet_title() -> None:
+    transport = FakeTransport()
+    connector = GoogleSheetsConnector(transport=transport, access_token="token")
+    connector.read_arrow(TableReadRequest(TableURI("https://docs.google.com/spreadsheets/d/sheet-123/edit#gid=0")))
+    assert "Orders" in transport.calls[1][1]
+    assert "gid=0" not in transport.calls[1][1]
+
+
+def test_google_error_policy_rejected_before_provider_io() -> None:
+    transport = FakeTransport()
+    connector = GoogleSheetsConnector(transport=transport, access_token="token")
+    with pytest.raises(ConnectorError) as raised:
+        connector.write(TableWriteRequest(TableURI("gsheets://sheet-123/Orders"), pl.DataFrame({"id": [1]}), if_exists="error"))
+    assert raised.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+    assert transport.calls == []
+
+
 def test_google_sheets_uses_credentials_and_writes_values() -> None:
     transport = FakeTransport()
     connector = GoogleSheetsConnector(transport=transport, access_token="token")
@@ -93,6 +112,7 @@ def test_google_sheets_uses_credentials_and_writes_values() -> None:
     method, url, headers, body = transport.calls[0]
     assert method == "PUT"
     assert "Orders%21A1" in url
+    assert "valueInputOption=RAW" in url
     assert headers["Authorization"] == "Bearer token"
     assert body == {"range": "Orders!A1", "majorDimension": "ROWS", "values": [["id", "amount"], ["a", 3]]}
     assert result.receipt.vendor_receipt_ref is None
