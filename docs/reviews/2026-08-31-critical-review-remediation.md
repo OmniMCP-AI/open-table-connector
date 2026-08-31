@@ -29,8 +29,8 @@ that disposition with `verified`, `invalid`, or `superseded`.
 | B1 | Frame header short-read unsafe | P0 | Process 4 | framing tests | verified | c7c0c67 |
 | B2 | Serialization failures disappear/leak | P0 | Process 2–6 | failure envelope tests | verified | pending |
 | B3 | Process state/backlog unbounded | P1 | Process 2, 7 | bounded stress tests | verified | pending |
-| B4 | Cancel callback holds global lock | P1 | Process 2 | concurrency test | hypothesis | pending |
-| B5 | `ok` key sniffs direction | P1 | Process 4, 6 | closed envelope fixtures | hypothesis | pending |
+| B4 | Cancel callback holds global lock | P1 | Process 2 | concurrency test | verified | pending |
+| B5 | `ok` key sniffs direction | P1 | Process 4, 6 | closed envelope fixtures | verified | pending |
 | B6 | Retry/NACK/diagnostics lifecycle gaps | P1 | Process 2, 7 | protocol lifecycle tests | hypothesis | pending |
 | C1 | No normative semantics | P1 | Specification 1 | semantics document | verified | 4e1372b |
 | C2 | Runtime oracle computes expected values | P1 | Specification 2 | fixture loader tests | hypothesis | pending |

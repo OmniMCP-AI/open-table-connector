@@ -97,6 +97,7 @@ class ConnectorProcessServer:
     def handle(self, envelope: ConnectorProcessEnvelope) -> ConnectorProcessEnvelope:
         if not isinstance(envelope, ConnectorProcessEnvelope):
             raise TypeError("envelope must be a ConnectorProcessEnvelope")
+        cancel_callback = None
         with self._state_lock:
             if envelope.message_id in self._messages:
                 raise ProcessError("protocol_invalid", "message_id has already been used")
@@ -107,8 +108,20 @@ class ConnectorProcessServer:
                 result = self._hello(envelope)
                 return self._response(envelope, result)
             if envelope.operation is ProcessOperation.CANCEL:
-                result = self._cancel(envelope)
-                return self._response(envelope, result)
+                result, cancel_callback = self._cancel(envelope)
+        if cancel_callback is not None:
+            try:
+                cancel_callback(envelope.payload["target_session_id"])
+            except Exception:
+                result = ProcessResult(
+                    {
+                        "cancelled": bool(result.payload.get("cancelled")),
+                        "target_session_id": envelope.payload["target_session_id"],
+                        "callback_failed": True,
+                    }
+                )
+        if envelope.operation is ProcessOperation.CANCEL:
+            return self._response(envelope, result)
         try:
             result = self._dispatch(envelope)
             with self._state_lock:
@@ -242,7 +255,7 @@ class ConnectorProcessServer:
         finally:
             lease.dispose()
 
-    def _cancel(self, envelope: ConnectorProcessEnvelope) -> ProcessResult:
+    def _cancel(self, envelope: ConnectorProcessEnvelope) -> tuple[ProcessResult, object | None]:
         target = envelope.payload.get("target_session_id")
         if not isinstance(target, str) or not target:
             raise ProcessError("protocol_invalid", "cancel requires target_session_id")
@@ -252,12 +265,7 @@ class ConnectorProcessServer:
         self._cancelled.add(target)
         result = ProcessResult({"cancelled": True, "target_session_id": target})
         callback = getattr(session.registration.handler, "abort_session", None)
-        if callback is not None:
-            try:
-                callback(target)
-            except Exception:
-                return result
-        return result
+        return result, callback
 
     def _session(self, session_id: str) -> _ProcessSession:
         if session_id in self._cancelled:
@@ -464,7 +472,7 @@ def run_server(
             if wire is None:
                 return 0
             try:
-                envelope = ConnectorProcessEnvelope.from_wire(wire)
+                envelope = ConnectorProcessEnvelope.from_request_wire(wire)
             except (TypeError, ValueError) as exc:
                 diagnostics.write(f"rejected envelope error: {exc}")
                 continue

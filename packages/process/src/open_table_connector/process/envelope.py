@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Mapping
 
 from open_table_connector.timeseries import ArrowArtifactReference, ResourceBounds
-
 
 PROCESS_PROTOCOL = "otc.connector-process/v1"
 PORTABLE_PLAN_VERSION = "otc.portable-temporal-plan/v1"
@@ -163,8 +162,28 @@ class ConnectorProcessEnvelope:
         }
 
     @classmethod
-    def from_wire(cls, value: object) -> "ConnectorProcessEnvelope":
+    def from_wire(cls, value: object) -> ConnectorProcessEnvelope:
+        """Deprecated alias for request decoding."""
+        return cls.from_request_wire(value)
+
+    @classmethod
+    def from_request_wire(cls, value: object) -> ConnectorProcessEnvelope:
+        return cls._from_wire(value, response=False)
+
+    @classmethod
+    def from_response_wire(cls, value: object) -> ConnectorProcessEnvelope:
+        return cls._from_wire(value, response=True)
+
+    @classmethod
+    def _from_wire(cls, value: object, *, response: bool) -> ConnectorProcessEnvelope:
         item = _closed_mapping(value, _FIELDS, "envelope")
+        payload = item.get("payload")
+        if not isinstance(payload, Mapping):
+            raise TypeError("envelope payload must be an object")
+        if response and "ok" not in payload:
+            raise ValueError("response payload requires ok")
+        if not response and "ok" in payload:
+            raise ValueError("request payload cannot contain ok")
         return cls(**item)
 
 

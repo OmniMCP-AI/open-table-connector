@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from io import BytesIO
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
+from io import BytesIO
+from pathlib import Path
 
 from open_table_connector.local_files import encode_json_table
 from open_table_connector.process import ConnectorProcessEnvelope, ProcessOperation
@@ -89,8 +89,12 @@ def test_configured_json_executable_completes_hello_and_execute(tmp_path: Path) 
 
     assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
     responses = BytesIO(completed.stdout)
-    hello_response = ConnectorProcessEnvelope.from_wire(read_frame(responses, 16 * 1024 * 1024))
-    execute_response = ConnectorProcessEnvelope.from_wire(read_frame(responses, 16 * 1024 * 1024))
+    hello_response = ConnectorProcessEnvelope.from_response_wire(
+        read_frame(responses, 16 * 1024 * 1024)
+    )
+    execute_response = ConnectorProcessEnvelope.from_response_wire(
+        read_frame(responses, 16 * 1024 * 1024)
+    )
     assert read_frame(responses, 16 * 1024 * 1024) is None
     assert hello_response.payload["result"]["capability_versions"] == {
         "timeseries.scan.range": "1.0"

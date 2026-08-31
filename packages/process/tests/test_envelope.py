@@ -5,9 +5,7 @@ from pathlib import Path
 
 import jsonschema
 import pytest
-
 from open_table_connector.process import ConnectorProcessEnvelope, ProcessOperation
-
 
 ROOT = Path(__file__).parents[3]
 ENVELOPE_KEYS = {
@@ -122,3 +120,25 @@ def test_execute_payload_with_ok_is_rejected_by_closed_schema() -> None:
     )
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.Draft202012Validator(schema).validate(wire)
+
+
+def test_request_and_response_decoders_have_distinct_payload_contexts() -> None:
+    request = envelope_wire(
+        operation="execute",
+        payload={
+            "target": "json:///ticks.json",
+            "portable_plan": {"schema_version": "otc.portable-temporal-plan/v1"},
+            "ok": True,
+        },
+    )
+    with pytest.raises(ValueError, match="cannot contain ok"):
+        ConnectorProcessEnvelope.from_request_wire(request)
+
+    response = envelope_wire(
+        payload={"ok": True, "result": {"accepted": True}},
+    )
+    decoded = ConnectorProcessEnvelope.from_response_wire(response)
+    assert decoded.payload["ok"] is True
+
+    with pytest.raises(ValueError, match="requires ok"):
+        ConnectorProcessEnvelope.from_response_wire(envelope_wire())
