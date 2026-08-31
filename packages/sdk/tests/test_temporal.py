@@ -212,19 +212,16 @@ def test_temporal_sql_lowers_scan_latest_bucket_and_gapfill_to_existing_queries(
     series = (
         client.open("fake://warehouse/orders").require_value().time_series(temporal_descriptor())
     )
-    parameters = {
-        "1": "2026-08-29T00:00:00.000000000Z",
-        "2": "2026-08-29T00:10:00.000000000Z",
-        "3": "2026-08-29T00:15:00.000000000Z",
-    }
-
     scan = series.sql(
         """
         SELECT ts, symbol, price FROM series
         WHERE ts >= $1 AND ts < $2
         ORDER BY symbol, ts LIMIT 100
         """,
-        parameters=parameters,
+        parameters={
+            "1": "2026-08-29T00:00:00.000000000Z",
+            "2": "2026-08-29T00:10:00.000000000Z",
+        },
     )
     latest = series.sql(
         """
@@ -232,7 +229,7 @@ def test_temporal_sql_lowers_scan_latest_bucket_and_gapfill_to_existing_queries(
         WHERE ts <= $2 GROUP BY symbol
         ORDER BY symbol LIMIT 100
         """,
-        parameters=parameters,
+        parameters={"2": "2026-08-29T00:15:00.000000000Z"},
     )
     aggregate = series.sql(
         """
@@ -241,7 +238,10 @@ def test_temporal_sql_lowers_scan_latest_bucket_and_gapfill_to_existing_queries(
         FROM series WHERE ts >= $1 AND ts < $2
         GROUP BY bucket, symbol ORDER BY symbol, bucket LIMIT 100
         """,
-        parameters=parameters,
+        parameters={
+            "1": "2026-08-29T00:00:00.000000000Z",
+            "2": "2026-08-29T00:10:00.000000000Z",
+        },
     )
     gap_fill = series.sql(
         """
@@ -250,7 +250,10 @@ def test_temporal_sql_lowers_scan_latest_bucket_and_gapfill_to_existing_queries(
         FROM series WHERE ts >= $1 AND ts < $3
         GROUP BY bucket, symbol ORDER BY symbol, bucket LIMIT 100
         """,
-        parameters=parameters,
+        parameters={
+            "1": "2026-08-29T00:00:00.000000000Z",
+            "3": "2026-08-29T00:15:00.000000000Z",
+        },
     )
 
     assert client.collect(scan).require_value().height == 4

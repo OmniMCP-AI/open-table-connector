@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import polars as pl
@@ -433,9 +434,24 @@ def _descriptor_hash(table: Table, descriptor: TemporalTableDescriptor) -> str:
 def _temporal_parameter(node: exp.Expression, parameters: Mapping[str, Any]) -> Any:
     if isinstance(node, exp.Parameter):
         name = _required_text(node.name, "parameter")
+        if not name.isdecimal() or name == "0" or name.startswith("0"):
+            raise ValueError("temporal SQL parameters must use canonical positive indexes")
         if name not in parameters:
             raise ValueError(f"missing temporal SQL parameter ${name}")
-        return parameters[name]
+        value = parameters[name]
+        if isinstance(value, datetime):
+            if value.tzinfo is None or value.utcoffset() != UTC.utcoffset(value):
+                raise ValueError("temporal timestamps must be UTC")
+            return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f000Z")
+        if isinstance(value, Decimal):
+            if not value.is_finite() or len(value.as_tuple().digits) > 38:
+                raise ValueError("temporal Decimal parameters must be finite Decimal128 values")
+            return format(value, "f")
+        if isinstance(value, float):
+            raise ValueError("temporal SQL parameters do not accept float values")
+        if not isinstance(value, (str, int, bool)):
+            raise ValueError("temporal SQL parameter type is unsupported")
+        return value
     if isinstance(node, exp.Literal):
         return node.to_py()
     raise ValueError("temporal SQL values must be numbered parameters or literals")
@@ -470,6 +486,8 @@ def _temporal_predicates(
             field = _column_name(predicate.this)
             if field != descriptor.time_field:
                 raise ValueError("temporal range comparisons may target only the event-time field")
+            if not isinstance(predicate.expression, exp.Parameter):
+                raise ValueError("temporal bounds must use typed numbered parameters")
             value = _temporal_parameter(predicate.expression, parameters)
             if not isinstance(value, str):
                 raise ValueError("temporal bounds must be UTC timestamp strings")
@@ -632,6 +650,9 @@ def _lower_temporal_sql(
     if len(parsed) != 1 or not isinstance(parsed[0], exp.Select):
         raise ValueError("temporal SQL accepts exactly one SELECT")
     expression = parsed[0]
+    used_parameters = {node.name for node in expression.find_all(exp.Parameter)}
+    if set(parameters) != used_parameters:
+        raise ValueError("temporal SQL parameters must match the statement exactly")
     for key in ("joins", "with", "having", "distinct", "offset"):
         if expression.args.get(key):
             raise ValueError(f"temporal SQL does not support {key.upper()}")
