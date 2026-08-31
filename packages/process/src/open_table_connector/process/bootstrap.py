@@ -9,24 +9,6 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from open_table_connector.contract import TableURI
-from open_table_connector.local_files import (
-    CsvManagedTemporalStore,
-    CsvTemporalExecutor,
-    ExcelManagedTemporalStore,
-    ExcelTemporalExecutor,
-    JsonManagedTemporalStore,
-    JsonTemporalExecutor,
-)
-from open_table_connector.maybe_sheet import (
-    MaybeSheetTemporalExecutor,
-    SubprocessProcessClient,
-    _absolute_executable,
-)
-from open_table_connector.postgres import (
-    PostgresManagedTemporalStore,
-    PostgresTemporalExecutor,
-)
-from open_table_connector.sqlite import SQLiteManagedTemporalStore, SQLiteTemporalExecutor
 from open_table_connector.timeseries import (
     TemporalExecutionRequest,
     TemporalExecutionResult,
@@ -35,6 +17,7 @@ from open_table_connector.timeseries import (
 )
 
 from .credentials import CredentialResolver
+from .plugins import discover_process_binding
 from .registry import ConnectorProcessRegistry
 from .timeseries import TemporalProcessHandler, temporal_registration
 
@@ -113,35 +96,13 @@ def _provider_binding(
     descriptor: TemporalTableDescriptor,
     root: Path,
 ):
-    managed = bool(document["managed"])
-    if provider == "csv":
-        store = CsvManagedTemporalStore(root, descriptor) if managed else None
-        return CsvTemporalExecutor(descriptor, store), store
-    if provider in {"json", "jsonl"}:
-        store = JsonManagedTemporalStore(provider, root, descriptor) if managed else None
-        return JsonTemporalExecutor(descriptor, store), store
-    if provider == "excel":
-        worksheet = _required_text(document, "worksheet")
-        store = (
-            ExcelManagedTemporalStore(root, descriptor, worksheet=worksheet)
-            if managed
-            else None
-        )
-        return ExcelTemporalExecutor(descriptor, worksheet=worksheet, managed_store=store), store
-    if provider == "sqlite":
-        table = _required_text(document, "physical_table")
-        store = SQLiteManagedTemporalStore(target, root, descriptor) if managed else None
-        return SQLiteTemporalExecutor(descriptor, table, managed_store=store), store
-    if provider == "postgres":
-        table = _required_text(document, "physical_table")
-        store = PostgresManagedTemporalStore(target, root, descriptor) if managed else None
-        return PostgresTemporalExecutor(descriptor, table, managed_store=store), store
-    if managed:
-        raise ValueError("MaybeSheet managed storage requires live capability proof")
-    client = SubprocessProcessClient(
-        binary=_absolute_executable(_required_text(document, "maybe_sheet_binary"))
+    return discover_process_binding(
+        provider=provider,
+        document=document,
+        target=target,
+        descriptor=descriptor,
+        root=root,
     )
-    return MaybeSheetTemporalExecutor(client, descriptor), None
 
 
 def _required_text(document: Mapping[str, object], field: str) -> str:
