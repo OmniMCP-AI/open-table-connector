@@ -7,14 +7,14 @@ import hashlib
 import inspect
 import json
 import os
-from pathlib import Path
 import stat
-from threading import Lock
-from typing import Callable, Mapping
 import weakref
+from collections.abc import Callable, Mapping
+from contextlib import suppress
+from pathlib import Path
+from threading import Lock
 
 import pyarrow as pa
-
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode, TableURI
 from open_table_connector.timeseries import (
     ManagedAbortReceipt,
@@ -50,10 +50,9 @@ from open_table_connector.timeseries.capabilities import (
     STORAGE_STAGE,
     STORAGE_VISIBILITY_ATOMIC,
 )
-from .identity import CONNECTOR_IDENTITY
 
 from .connector import ProcessClient
-
+from .identity import CONNECTOR_IDENTITY
 
 _SEMANTIC_CAPABILITIES = {
     DESCRIBE,
@@ -101,7 +100,7 @@ _PROBE_FIELDS = {
     "commands",
     "visibility",
 }
-_CACHE: dict[int, tuple[weakref.ReferenceType | None, frozenset[str]]] = {}
+_CACHE: weakref.WeakKeyDictionary[object, frozenset[str]] = weakref.WeakKeyDictionary()
 _CACHE_LOCK = Lock()
 
 
@@ -112,11 +111,15 @@ def probe_temporal_capabilities(client: ProcessClient) -> frozenset[str]:
 
 
 def _probe(client: ProcessClient) -> frozenset[str]:
-    identity = id(client)
+    cacheable = True
     with _CACHE_LOCK:
-        cached = _CACHE.get(identity)
-        if cached is not None and (cached[0] is None or cached[0]() is client):
-            return cached[1]
+        try:
+            cached = _CACHE.get(client)
+        except TypeError:
+            cacheable = False
+            cached = None
+        if cached is not None:
+            return cached
     description = _run(
         client,
         ("mbs", "timeseries", "describe", "--format", "json"),
@@ -125,18 +128,10 @@ def _probe(client: ProcessClient) -> frozenset[str]:
         timeout=5,
     )
     result = _capabilities(description)
-    try:
-        reference = weakref.ref(client, lambda _ref, key=identity: _drop_cache(key))
-    except TypeError:
-        reference = None
-    with _CACHE_LOCK:
-        _CACHE[identity] = (reference, result)
+    if cacheable:
+        with _CACHE_LOCK, suppress(TypeError):
+            _CACHE[client] = result
     return result
-
-
-def _drop_cache(identity: int) -> None:
-    with _CACHE_LOCK:
-        _CACHE.pop(identity, None)
 
 
 def _capabilities(description: Mapping) -> frozenset[str]:

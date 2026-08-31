@@ -47,7 +47,7 @@ that disposition with `verified`, `invalid`, or `superseded`.
 | D2 | Postgres read gate allows writes | P1 | Correctness 4 | read-only transaction test | verified | pending |
 | D3 | URI scrubbing misses empty/fragments | P1 | Process 3 | URI security tests | verified | pending |
 | D4 | ResolveContext repr leaks credentials | P1 | Process 3 | repr/redaction test | verified | pending |
-| D5 | maybe_sheet env/cache collisions | P1 | Process 3 | key/cache tests | hypothesis | pending |
+| D5 | maybe_sheet env/cache collisions | P1 | Process 3 | key/cache tests | verified | pending |
 | D6 | Bootstrap TOCTOU/PATH/env leakage | P1 | Process 3 | bootstrap security tests | hypothesis | pending |
 | D7 | Redaction over/under-matches | P1 | Process 6 | structured redaction tests | hypothesis | pending |
 | E1 | CLI output flag conflates destination | P2 | Packaging 4 | codec routing tests | hypothesis | pending |

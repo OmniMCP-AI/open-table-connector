@@ -1,13 +1,26 @@
 import json
 import subprocess
 
-import pytest
-
 import polars as pl
-
-from open_table_connector.contract import ConnectorError, ConnectorErrorCode, ResourceLimits, TableMode, TableURI, TableWriteRequest
-from open_table_connector.contract.fingerprints import arrow_content_fingerprint, arrow_schema_fingerprint
-from open_table_connector.maybe_sheet import MaybeSheetConnector, MaybeSheetReadRequest, SubprocessProcessClient
+import pytest
+from open_table_connector.contract import (
+    ConnectorError,
+    ConnectorErrorCode,
+    ResourceLimits,
+    TableMode,
+    TableURI,
+    TableWriteRequest,
+)
+from open_table_connector.contract.fingerprints import (
+    arrow_content_fingerprint,
+    arrow_schema_fingerprint,
+)
+from open_table_connector.maybe_sheet import (
+    MaybeSheetConnector,
+    MaybeSheetReadRequest,
+    SubprocessProcessClient,
+)
+from open_table_connector.maybe_sheet.process import _credential_environment
 
 
 class Process:
@@ -100,6 +113,12 @@ def test_maybe_sheet_subprocess_transport_redacts_diagnostics_and_prefixes_crede
     assert seen["env"]["MAYBE_SHEET_ACCESS_TOKEN"] == "hidden"
     assert seen["input"] == '{"id":"1"}\n'
     assert "stderr" not in repr(seen)
+
+
+def test_credential_environment_rejects_normalized_collision() -> None:
+    with pytest.raises(ConnectorError) as raised:
+        _credential_environment({"api-key": "one", "api_key": "two"})
+    assert raised.value.code is ConnectorErrorCode.CONFLICT
 
 
 def test_maybe_sheet_write_sends_jsonl_to_process() -> None:

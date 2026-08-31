@@ -2,13 +2,35 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
 import os
 import subprocess
-from typing import Any, Mapping
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Any
 
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode
+
+
+def _credential_environment(credentials: Mapping[str, str]) -> dict[str, str]:
+    """Translate credential keys while rejecting normalized-name collisions."""
+    normalized: dict[str, str] = {}
+    originals: dict[str, str] = {}
+    for raw_key, value in credentials.items():
+        original = str(raw_key)
+        safe_key = "MAYBE_SHEET_" + "".join(
+            character if character.isalnum() else "_" for character in original.upper()
+        )
+        previous = originals.get(safe_key)
+        if previous is not None and previous != original:
+            raise ConnectorError(
+                ConnectorErrorCode.CONFLICT,
+                "credential names collide after environment normalization",
+                {"key": safe_key},
+            )
+        originals[safe_key] = original
+        normalized[safe_key] = str(value)
+    return normalized
 
 
 @dataclass(frozen=True)
@@ -33,12 +55,7 @@ class SubprocessProcessClient:
             command = (self.binary, *command)
         env = os.environ.copy()
         env.update({str(key): str(value) for key, value in self.environment.items()})
-        for key, value in (credentials or {}).items():
-            safe_key = "MAYBE_SHEET_" + "".join(
-                character if character.isalnum() else "_"
-                for character in str(key).upper()
-            )
-            env[safe_key] = str(value)
+        env.update(_credential_environment(credentials or {}))
         try:
             completed = subprocess.run(
                 list(command),
@@ -78,4 +95,4 @@ class SubprocessProcessClient:
         return payload
 
 
-__all__ = ["SubprocessProcessClient"]
+__all__ = ["SubprocessProcessClient", "_credential_environment"]
