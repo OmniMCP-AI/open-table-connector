@@ -228,7 +228,7 @@ class ConfiguredConnectorRegistry:
             )
         return _LazyAdapter(self, self._plugin_for(endpoint))
 
-    def require_capability(self, endpoint: AdapterEndpoint, capability_id: str) -> PluginDescriptor:
+    def require_capability(self, endpoint: AdapterEndpoint, capability_id: str):
         if self._plugins and not isinstance(self._plugins[0], ConfiguredPlugin):
             adapter = self.connector_for(endpoint)
             if capability_id not in {
@@ -240,7 +240,8 @@ class ConfiguredConnectorRegistry:
                     {"capability": capability_id},
                 )
             return adapter  # type: ignore[return-value]
-        descriptor = self.descriptor_for(endpoint)
+        plugin = self._plugin_for(endpoint)
+        descriptor = plugin.descriptor
         if capability_id not in {
             capability.capability_id for capability in descriptor.capabilities
         }:
@@ -252,7 +253,7 @@ class ConfiguredConnectorRegistry:
                     "capability": capability_id,
                 },
             )
-        return descriptor
+        return _LazyAdapter(self, plugin)
 
     def _plugin_for(self, endpoint: AdapterEndpoint) -> ConfiguredPlugin:
         if self._plugins and not isinstance(self._plugins[0], ConfiguredPlugin):
