@@ -29,6 +29,14 @@ EXIT_CODES = {
 }
 
 
+class CliUsageError(ValueError):
+    """Credential-safe, actionable command-input failure."""
+
+    def __init__(self, message: str, safe_details: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.safe_details = dict(safe_details or {})
+
+
 def _wire(value: Any) -> Any:
     """Convert contract values to JSON without exposing arbitrary exceptions."""
     if isinstance(value, Enum):
@@ -236,6 +244,13 @@ def emit_error(error: BaseException, err: TextIO) -> int:
     if isinstance(error, ConnectorError):
         payload = error.to_wire()
         code = EXIT_CODES.get(error.code, 5)
+    elif isinstance(error, CliUsageError):
+        payload = {
+            "code": "usage",
+            "message": "invalid command input",
+            "safe_details": error.safe_details,
+        }
+        code = 2
     elif isinstance(error, ValueError):
         payload = {"code": "usage", "message": "invalid command input", "safe_details": {}}
         code = 2
@@ -250,6 +265,7 @@ def emit_error(error: BaseException, err: TextIO) -> int:
 
 
 __all__ = [
+    "CliUsageError",
     "emit_error",
     "emit_csv",
     "emit_read",

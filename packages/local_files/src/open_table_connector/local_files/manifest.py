@@ -25,4 +25,7 @@ def capability_manifest(*, connector, uri_schemes: tuple[str, ...]) -> Capabilit
     )
 
 
-CAPABILITY_MANIFEST = capability_manifest(connector=CONNECTOR_IDENTITY, uri_schemes=("file",))
+CAPABILITY_MANIFEST = capability_manifest(
+    connector=CONNECTOR_IDENTITY,
+    uri_schemes=("file", "json", "jsonl"),
+)

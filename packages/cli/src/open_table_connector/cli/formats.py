@@ -45,7 +45,7 @@ def infer_format(endpoint: Endpoint, explicit: FormatName) -> FormatName:
         return explicit
     if endpoint.uri is not None and endpoint.uri.scheme in _LOCAL_FORMAT_SCHEMES:
         return _LOCAL_FORMAT_SCHEMES[endpoint.uri.scheme]
-    if endpoint.path is None:
+    if endpoint.path is None and endpoint.uri is None:
         return explicit
     suffix = endpoint.path.suffix.casefold()
     if suffix == ".csv":
@@ -137,19 +137,20 @@ def _read_text(endpoint: Endpoint, stream: TextIO | None) -> str:
     if endpoint.is_stdio:
         handle = stream if stream is not None else sys.stdin
         return handle.read()
-    if endpoint.path is None:
+    if endpoint.path is None and endpoint.uri is None:
         raise ConnectorError(
             ConnectorErrorCode.INVALID_URI,
             "local endpoints require a filesystem path or stdin",
             {"endpoint": endpoint.raw},
         )
+    path = endpoint.path if endpoint.path is not None else _local_path(endpoint)
     try:
-        return endpoint.path.read_text(encoding="utf-8")
+        return path.read_text(encoding="utf-8")
     except OSError as exc:
         raise ConnectorError(
             ConnectorErrorCode.EXECUTION_FAILED,
             "local input could not be read",
-            {"path": str(endpoint.path), "reason": exc.strerror or str(exc)},
+            {"path": str(path), "reason": exc.strerror or str(exc)},
         ) from None
 
 

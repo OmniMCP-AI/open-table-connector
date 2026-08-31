@@ -65,6 +65,7 @@ from .model import CliOptions, Endpoint, FormatName
 
 class ConnectorAdapter(Protocol):
     schemes: tuple[str, ...]
+    hosts: tuple[str, ...]
     identity: ConnectorIdentity
     capabilities: tuple[CapabilityIdentity, ...]
     modes: tuple[TableMode, ...]
@@ -127,6 +128,7 @@ class GoogleSheetsAdapter:
     transport: Any = None
     environment_token: str | None = None
     schemes: tuple[str, ...] = ("gsheets", "https")
+    hosts: tuple[str, ...] = ("docs.google.com",)
     identity: ConnectorIdentity = ConnectorIdentity("google_sheets", "0.1.0", "1.0")
     capabilities: tuple[CapabilityIdentity, ...] = ()
 
@@ -214,6 +216,7 @@ class FeishuBitableAdapter:
 class MaybeSheetAdapter:
     connector: MaybeSheetConnector
     schemes: tuple[str, ...] = ("maybe", "https")
+    hosts: tuple[str, ...] = ("www.maybe.ai",)
     identity: ConnectorIdentity = ConnectorIdentity("maybe_sheet", "0.1.0", "1.0")
     modes: tuple[TableMode, ...] = (TableMode.BASE,)
     capabilities: tuple[CapabilityIdentity, ...] = (
@@ -385,7 +388,8 @@ class MarkdownAdapter:
 @dataclass
 class LocalAdapter:
     connector: LocalFilesConnector = field(default_factory=LocalFilesConnector)
-    schemes: tuple[str, ...] = ("file",)
+    schemes: tuple[str, ...] = ("file", "json", "jsonl")
+    hosts: tuple[str, ...] = ()
     identity: ConnectorIdentity = LocalFilesConnector.identity
     modes: tuple[TableMode, ...] = tuple(LocalFilesConnector.manifest.modes)
     capabilities: tuple[CapabilityIdentity, ...] = tuple(LocalFilesConnector.manifest.capabilities)

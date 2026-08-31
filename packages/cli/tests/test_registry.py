@@ -38,6 +38,24 @@ def test_registry_dispatches_google_sheet_uri() -> None:
     assert adapter.identity.connector_id == "google_sheets"
 
 
+@pytest.mark.parametrize("scheme", ["json", "jsonl"])
+def test_registry_dispatches_local_json_schemes(scheme: str, tmp_path) -> None:
+    path = tmp_path / f"rows.{scheme}"
+    path.write_text('{"id": 1}\n' if scheme == "jsonl" else '[{"id": 1}]')
+    endpoint = parse_endpoint(f"{scheme}://{path}")
+    adapter = build_default_registry(env={}).connector_for(endpoint)
+    assert adapter.identity.connector_id == "local_files"
+    assert adapter.read(endpoint, CliOptions()).table.num_rows == 1
+
+
+def test_duplicate_route_registration_is_rejected() -> None:
+    registry = build_default_registry(env={})
+    adapter = registry.list()[-1]
+    with pytest.raises(ConnectorError) as raised:
+        registry.register(adapter)
+    assert raised.value.code is ConnectorErrorCode.CONFLICT
+
+
 def test_registry_reports_unsupported_capability_before_writing() -> None:
     registry = build_default_registry(env={})
     with pytest.raises(ConnectorError) as error:

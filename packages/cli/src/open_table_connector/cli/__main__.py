@@ -48,6 +48,14 @@ class _ArgumentParser(argparse.ArgumentParser):
 
 
 def _safe_parser_details(message: str) -> dict[str, list[str]]:
+    invalid_choice = re.search(
+        r"argument (--[a-z][a-z0-9-]*): invalid choice: '([^']+)'", message
+    )
+    if invalid_choice and invalid_choice.group(1) in _PARSER_FLAGS:
+        return {
+            "option": invalid_choice.group(1).removeprefix("--"),
+            "value": invalid_choice.group(2),
+        }
     flags = list(
         dict.fromkeys(
             flag for flag in re.findall(r"--[a-z][a-z0-9-]*", message) if flag in _PARSER_FLAGS

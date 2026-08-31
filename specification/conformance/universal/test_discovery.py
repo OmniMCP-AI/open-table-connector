@@ -93,7 +93,7 @@ _EXPECTED_METADATA = {
             ("table.read.polars", "1.0"),
         ),
         modes=("sheet",),
-        schemes=("file",),
+        schemes=("file", "json", "jsonl"),
     ),
     "google_sheets": _ExpectedConnectorMetadata(
         connector_id="google_sheets",
