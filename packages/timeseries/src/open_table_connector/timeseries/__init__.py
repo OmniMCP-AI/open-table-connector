@@ -11,7 +11,7 @@ from .descriptor import (
     descriptor_from_wire,
     temporal_descriptor_hash,
 )
-from .evaluator import PolarsTemporalExecutor, TemporalSource
+from .evaluator import ArrowEvidence, PolarsTemporalExecutor, TemporalSource, build_arrow_evidence
 from .lowering import PreparedTemporalQuery
 from .plan import (
     AggregateFunction,
@@ -70,6 +70,7 @@ __all__ = [
     "AggregateFunction",
     "AggregateMeasure",
     "ArrowArtifactReference",
+    "ArrowEvidence",
     "VerifiedArtifact",
     "AsOf",
     "BucketAggregate",
@@ -121,6 +122,7 @@ __all__ = [
     "validate_plan_for_descriptor",
     "validate_stage_retry",
     "read_verified_artifact",
+    "build_arrow_evidence",
     "arrow_time_bounds",
     "storage_to_timestamp",
     "timestamp_to_storage",

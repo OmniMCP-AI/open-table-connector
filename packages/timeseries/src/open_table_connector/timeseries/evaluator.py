@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
 
 import polars as pl
 import pyarrow as pa
-
 from open_table_connector.contract import (
     BaseConvention,
     CapabilityIdentity,
@@ -18,14 +18,18 @@ from open_table_connector.contract import (
     TableMode,
     TableURI,
 )
+from open_table_connector.contract.fingerprints import (
+    arrow_content_fingerprint,
+    arrow_schema_fingerprint,
+)
 
+from .buckets import calendar_bucket_next, calendar_bucket_start, fixed_bucket_start
 from .descriptor import (
     DuplicatePolicy,
     TemporalTableDescriptor,
     TimestampPrecision,
     temporal_descriptor_hash,
 )
-from .buckets import calendar_bucket_next, calendar_bucket_start, fixed_bucket_start
 from .plan import (
     AggregateFunction,
     AggregateMeasure,
@@ -52,6 +56,26 @@ from .storage import (
     TemporalExecutionResult,
     TemporalExtensionError,
 )
+
+
+@dataclass(frozen=True)
+class ArrowEvidence:
+    table: pa.Table
+    ipc_bytes: bytes
+    schema_fingerprint: str
+    content_fingerprint: str
+
+
+def build_arrow_evidence(table: pa.Table) -> ArrowEvidence:
+    if not isinstance(table, pa.Table):
+        raise TypeError("table must be a pyarrow.Table")
+    ipc_bytes = _arrow_ipc_bytes(table)
+    return ArrowEvidence(
+        table=table,
+        ipc_bytes=ipc_bytes,
+        schema_fingerprint=arrow_schema_fingerprint(table.schema),
+        content_fingerprint=arrow_content_fingerprint(table),
+    )
 
 
 @runtime_checkable
