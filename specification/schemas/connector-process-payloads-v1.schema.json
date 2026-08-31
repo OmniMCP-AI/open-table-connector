@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-connectors.dev/schemas/connector-process-payloads-v1.schema.json",
+  "title": "Connector process payloads v1",
+  "$defs": {
+    "emptyRequest": {"type":"object", "additionalProperties":false},
+    "helloRequest": {
+      "type":"object", "additionalProperties":false,
+      "required":["portable_plan_version","capability_versions"],
+      "properties":{"portable_plan_version":{"const":"otc.portable-temporal-plan/v1"},"capability_versions":{"type":"object","additionalProperties":{"type":"string","minLength":1}}}
+    },
+    "executeRequest": {
+      "type":"object", "additionalProperties":false,
+      "required":["target","portable_plan"],
+      "properties":{"target":{"type":"string","minLength":1},"portable_plan":{"type":"object"},"snapshot_reference":{"type":["string","null"]},"capability":{"type":"string","minLength":1}}
+    },
+    "stageRequest": {
+      "type":"object", "additionalProperties":false,
+      "required":["operation_id","descriptor_hash","logical_target","physical_target","idempotency_key"],
+      "properties":{"operation_id":{"type":"string","minLength":1},"descriptor_hash":{"$ref":"#/$defs/hash"},"logical_target":{"type":"string","minLength":1},"physical_target":{"type":"string","minLength":1},"idempotency_key":{"type":"string","minLength":1}}
+    },
+    "commitRequest": {
+      "type":"object", "additionalProperties":false,
+      "required":["operation_id","logical_target","stage_id","idempotency_key"],
+      "properties":{"operation_id":{"type":"string","minLength":1},"logical_target":{"type":"string","minLength":1},"stage_id":{"type":"string","pattern":"^stage:[0-9a-f]{64}$"},"idempotency_key":{"type":"string","minLength":1}}
+    },
+    "readbackRequest": {
+      "type":"object", "additionalProperties":false,
+      "required":["operation_id","logical_target","snapshot_id","snapshot_reference"],
+      "properties":{"operation_id":{"type":"string","minLength":1},"logical_target":{"type":"string","minLength":1},"snapshot_id":{"$ref":"#/$defs/hash"},"snapshot_reference":{"type":"string","minLength":1}}
+    },
+    "abortRequest": {
+      "type":"object", "additionalProperties":false,
+      "required":["operation_id","logical_target","stage_id"],
+      "properties":{"operation_id":{"type":"string","minLength":1},"logical_target":{"type":"string","minLength":1},"stage_id":{"type":"string","pattern":"^stage:[0-9a-f]{64}$"}}
+    },
+    "cancelRequest": {
+      "type":"object", "additionalProperties":false,
+      "required":["target_session_id"],
+      "properties":{"target_session_id":{"type":"string","minLength":1}}
+    },
+    "response": {
+      "oneOf":[
+        {"type":"object","additionalProperties":false,"required":["ok","result"],"properties":{"ok":{"const":true},"result":{"type":"object"}}},
+        {"type":"object","additionalProperties":false,"required":["ok","error"],"properties":{"ok":{"const":false},"error":{"$ref":"#/$defs/error"}}}
+      ]
+    },
+    "error": {
+      "type":"object", "additionalProperties":false,
+      "required":["code","message","safe_details"],
+      "properties":{"code":{"enum":["invalid_uri","unsupported_capability","authentication","conflict","timeout","cancelled","execution_failed","readback_mismatch","protocol_invalid","protocol_version_unsupported","resource_limit_exceeded","snapshot_unavailable","idempotency_conflict","visibility_incomplete"]},"message":{"type":"string","minLength":1},"safe_details":{"type":"object"}}
+    },
+    "hash":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"}
+  },
+  "oneOf":[
+    {"$ref":"#/$defs/emptyRequest"},
+    {"$ref":"#/$defs/helloRequest"},
+    {"$ref":"#/$defs/executeRequest"},
+    {"$ref":"#/$defs/stageRequest"},
+    {"$ref":"#/$defs/commitRequest"},
+    {"$ref":"#/$defs/readbackRequest"},
+    {"$ref":"#/$defs/abortRequest"},
+    {"$ref":"#/$defs/cancelRequest"},
+    {"$ref":"#/$defs/response"}
+  ]
+}

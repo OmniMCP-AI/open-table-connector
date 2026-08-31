@@ -45,13 +45,24 @@
       }
     },
     "credential_reference": {"type": ["string", "null"], "minLength": 1},
-    "payload": {"type": "object"},
+    "payload": {
+      "oneOf": [
+        {"$ref": "#/$defs/responsePayload"},
+        {"type": "object", "not": {"required": ["ok"]}}
+      ]
+    },
     "artifact_references": {
       "type": "array",
       "items": {"$ref": "#/$defs/artifact"}
     }
   },
   "$defs": {
+    "responsePayload": {
+      "oneOf": [
+        {"type":"object","additionalProperties":false,"required":["ok","result"],"properties":{"ok":{"const":true},"result":{"type":"object"}}},
+        {"type":"object","additionalProperties":false,"required":["ok","error"],"properties":{"ok":{"const":false},"error":{"type":"object"}}}
+      ]
+    },
     "artifact": {
       "type": "object",
       "additionalProperties": false,

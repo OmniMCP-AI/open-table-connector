@@ -106,3 +106,19 @@ def test_execute_snapshot_is_transport_metadata_outside_portable_plan() -> None:
 
     assert first.payload["portable_plan"] == second.payload["portable_plan"]
     assert "snapshot_reference" not in first.payload["portable_plan"]
+
+
+def test_execute_payload_with_ok_is_rejected_by_closed_schema() -> None:
+    wire = envelope_wire(
+        operation="execute",
+        payload={
+            "target": "json:///ticks.json",
+            "portable_plan": {"schema_version": "otc.portable-temporal-plan/v1"},
+            "ok": True,
+        },
+    )
+    schema = json.loads(
+        (ROOT / "specification/schemas/connector-process-envelope-v1.schema.json").read_text()
+    )
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.Draft202012Validator(schema).validate(wire)
