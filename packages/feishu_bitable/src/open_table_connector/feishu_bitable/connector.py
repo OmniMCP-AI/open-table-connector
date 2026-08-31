@@ -43,7 +43,10 @@ from open_table_connector.contract.fingerprints import (
     operation_identity,
 )
 
+from .identity import FEISHU_RECORD_ID_FIELD
+
 CONNECTOR_IDENTITY = ConnectorIdentity(PROVIDER_FEISHU_BITABLE, "0.1.0", "1.0")
+FEISHU_API_ENDPOINT = "https://open.feishu.cn/open-apis/bitable/v1"
 URI_RESOLVER_CAPABILITY = CapabilityIdentity("uri.resolve", "1.0")
 TABLE_INSPECT_CAPABILITY = CapabilityIdentity("table.inspect", "1.0")
 TABLE_READ_ARROW_CAPABILITY = CapabilityIdentity("table.read.arrow", "1.0")
@@ -107,7 +110,7 @@ class ResolvedFeishuBitable:
 
 
 def _arrow_from_records(records: list[Mapping[str, Any]], field_names: tuple[str, ...] = ()) -> pa.Table:
-    names = ["_record_id"]
+    names = [FEISHU_RECORD_ID_FIELD]
     selected = set(field_names)
     for record in records:
         for name in dict(record.get("fields", {})):
@@ -115,7 +118,7 @@ def _arrow_from_records(records: list[Mapping[str, Any]], field_names: tuple[str
                 names.append(str(name))
     columns: dict[str, list[Any]] = {name: [] for name in names}
     for record in records:
-        columns["_record_id"].append(record.get("record_id"))
+        columns[FEISHU_RECORD_ID_FIELD].append(record.get("record_id"))
         fields = record.get("fields", {})
         for name in names[1:]:
             value = fields.get(name)
@@ -135,10 +138,21 @@ class FeishuBitableConnector(URIResolver, TableInspector, ArrowTableReader, Pola
     identity = CONNECTOR_IDENTITY
     manifest = CAPABILITY_MANIFEST
 
-    def __init__(self, transport: FeishuTransport | None = None, *, tenant_access_token: str | None = None, timeout: int = 30):
+    def __init__(
+        self,
+        transport: FeishuTransport | None = None,
+        *,
+        tenant_access_token: str | None = None,
+        timeout: int = 30,
+        api_endpoint: str = FEISHU_API_ENDPOINT,
+    ):
         self._transport = transport or UrllibFeishuTransport()
         self._tenant_access_token = tenant_access_token
         self._timeout = timeout
+        self._api_endpoint = api_endpoint.rstrip("/")
+
+    def _url(self, suffix: str) -> str:
+        return f"{self._api_endpoint}/{suffix.lstrip('/') }"
 
     def resolve(self, uri: TableURI, context: ResolveContext) -> ResolvedTable:
         parsed = urlsplit(uri.value)
@@ -162,7 +176,10 @@ class FeishuBitableConnector(URIResolver, TableInspector, ArrowTableReader, Pola
             query = "page_size=500"
             if page_token:
                 query += "&page_token=" + quote(page_token, safe="")
-            url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{quote(resource.app_token, safe='')}/tables/{quote(resource.table_id, safe='')}/records?{query}"
+            url = self._url(
+                f"apps/{quote(resource.app_token, safe='')}/tables/"
+                f"{quote(resource.table_id, safe='')}/records?{query}"
+            )
             payload = self._transport.request("GET", url, headers=self._headers(), timeout=request.resource_limits.timeout_seconds or self._timeout)
             if payload.get("code", 0) != 0:
                 raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "Feishu Bitable read failed", {"code": payload.get("code")})
@@ -185,7 +202,19 @@ class FeishuBitableConnector(URIResolver, TableInspector, ArrowTableReader, Pola
         content = arrow_content_fingerprint(table)
         operation = operation_identity(connector=CONNECTOR_IDENTITY, capability=TABLE_READ_ARROW_CAPABILITY, uri=request.uri, source_revision=revision, schema_fingerprint=schema, content_fingerprint=content, parameters={"fields": request.options.field_names})
         from open_table_connector.contract import NeutralReceipt
-        return NeutralReceipt(CONNECTOR_IDENTITY, capability, operation, request.uri, TableMode.BASE, revision, schema, content, BaseConvention(record_id_field="_record_id", ordinal_snapshot_id=revision), table.num_rows, 1)
+        return NeutralReceipt(
+            CONNECTOR_IDENTITY,
+            capability,
+            operation,
+            request.uri,
+            TableMode.BASE,
+            revision,
+            schema,
+            content,
+            BaseConvention(record_id_field=FEISHU_RECORD_ID_FIELD, ordinal_snapshot_id=revision),
+            table.num_rows,
+            1,
+        )
 
     def read_arrow(self, request):
         request = request if isinstance(request, FeishuBitableTableReadRequest) else FeishuBitableTableReadRequest(request.uri, request.resource_limits)
@@ -219,7 +248,10 @@ class FeishuBitableConnector(URIResolver, TableInspector, ArrowTableReader, Pola
             }
             for row in request.frame.rows()
         ]
-        url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{quote(resource.app_token, safe='')}/tables/{quote(resource.table_id, safe='')}/records/batch_create"
+        url = self._url(
+            f"apps/{quote(resource.app_token, safe='')}/tables/"
+            f"{quote(resource.table_id, safe='')}/records/batch_create"
+        )
         payloads: list[Mapping[str, Any]] = []
         for start in range(0, len(records), FEISHU_BATCH_CREATE_LIMIT):
             payload = self._transport.request(
