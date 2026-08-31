@@ -501,6 +501,9 @@ class ExcelCliAdapter(CsvCliAdapter):
             options=ExcelReadOptions(sheet=options.sheet),
         )
 
+    def inspect(self, endpoint: Endpoint, options: AdapterOptions) -> TableInspection:
+        return self.connector.inspect(self._request(endpoint, options))
+
     def write(
         self, endpoint: Endpoint, table: pa.Table, options: AdapterOptions
     ) -> TableWriteResult:
