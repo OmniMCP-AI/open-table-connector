@@ -1,21 +1,31 @@
 import json
 from dataclasses import dataclass
 
+import open_table_connector.sdk as otc
+import polars as pl
 import pyarrow as pa
 import pytest
-
+from open_table_connector.cli.configuration import CliConfig
+from open_table_connector.cli.configured_registry import ConfiguredConnectorRegistry
+from open_table_connector.cli.credentials import EnvironmentCredentialResolver
 from open_table_connector.cli.model import CliOptions, FormatName, parse_endpoint
-from open_table_connector.cli.pipeline import convert_endpoint, import_endpoint, inspect_endpoint, read_endpoint
+from open_table_connector.cli.pipeline import (
+    convert_endpoint,
+    import_endpoint,
+    inspect_endpoint,
+    read_endpoint,
+)
 from open_table_connector.cli.registry import ConnectorRegistry, build_default_registry
 from open_table_connector.contract import (
     CapabilityIdentity,
     ConnectorError,
     ConnectorErrorCode,
     ConnectorIdentity,
-    NeutralReceipt,
-    TableMode,
-    TableURI,
+    PluginDescriptor,
     TableWriteResult,
+)
+from open_table_connector.contract import (
+    TableMode as LegacyTableMode,
 )
 from open_table_connector.contract.fingerprints import arrow_content_fingerprint
 
@@ -93,6 +103,7 @@ class RecordingAdapter:
         self.write_calls = 0
         self.inspection_calls = 0
         self.tables: list[pa.Table] = []
+        self.write_option_types: list[type[object]] = []
         self.receipt = object()
 
     def read(self, endpoint, options):
@@ -106,6 +117,7 @@ class RecordingAdapter:
     def write(self, endpoint, table, options):
         self.write_calls += 1
         self.tables.append(table)
+        self.write_option_types.append(type(options))
         return TableWriteResult(self.receipt, table.num_rows)
 
 
@@ -117,6 +129,178 @@ class RecordingRegistry(ConnectorRegistry):
     def require_capability(self, endpoint, capability_id):
         self.capability_checked = True
         return super().require_capability(endpoint, capability_id)
+
+
+class SdkDestinationAdapter:
+    provider_owned_fields: tuple[str, ...] = ()
+
+
+class SdkRecordingConnector:
+    identity = ConnectorIdentity("sdk_fake", "1", "1")
+    schemes = ("sdk-fake",)
+    hosts = ()
+    capabilities = (CapabilityIdentity("table.write", "1"), CapabilityIdentity("table.read", "1"))
+    modes = (otc.TableMode.BASE_MODE,)
+    local = False
+    handles_paths = False
+
+    def __init__(self) -> None:
+        self.read_calls = 0
+        self.create_calls = 0
+        self.inspect_calls = 0
+
+    def open_table(self, address):
+        uri = otc.DirectTableAddress(address).uri if isinstance(address, str) else address.uri
+        return otc.OperationResult(
+            value=otc.TableBinding(
+                uri=uri,
+                mode=otc.TableMode.BASE_MODE,
+                schema={"id": pl.String},
+                observed_revision="rev-open",
+                connector_id=self.identity.connector_id,
+            ),
+            outcome=otc.Outcome.SUCCEEDED,
+            commit=otc.CommitState.NOT_APPLICABLE,
+            verification=otc.VerificationState.PASSED,
+            receipts=(
+                otc.Receipt(
+                    kind="physical",
+                    operation="table.open",
+                    safe_target=uri,
+                    mode=otc.TableMode.BASE_MODE,
+                ),
+            ),
+        )
+
+    def inspect_table(self, binding):
+        self.inspect_calls += 1
+        return otc.OperationResult(
+            value=otc.TableInspection(
+                uri=binding.uri,
+                mode=binding.mode,
+                schema=binding.schema,
+                row_count=1,
+            ),
+            outcome=otc.Outcome.SUCCEEDED,
+            commit=otc.CommitState.NOT_APPLICABLE,
+            verification=otc.VerificationState.PASSED,
+            receipts=(),
+        )
+
+    def capabilities_for(self, binding):
+        del binding
+        return otc.OperationResult(
+            value=otc.CapabilitySet(
+                capability_ids=("table.read", "table.write"),
+                modes=(otc.TableMode.BASE_MODE,),
+            ),
+            outcome=otc.Outcome.SUCCEEDED,
+            commit=otc.CommitState.NOT_APPLICABLE,
+            verification=otc.VerificationState.PASSED,
+            receipts=(),
+        )
+
+    def read_table(self, binding, *, limit=None, continuation=None):
+        del binding, continuation
+        self.read_calls += 1
+        frame = pl.DataFrame({"id": ["a"]})
+        if limit is not None:
+            frame = frame.head(limit)
+        return otc.OperationResult(
+            value=frame,
+            outcome=otc.Outcome.SUCCEEDED,
+            commit=otc.CommitState.NOT_APPLICABLE,
+            verification=otc.VerificationState.PASSED,
+            receipts=(
+                otc.Receipt(
+                    kind="physical",
+                    operation="table.read",
+                    mode=otc.TableMode.BASE_MODE,
+                ),
+            ),
+        )
+
+    def insert_rows(self, binding, frame):
+        del binding, frame
+        raise NotImplementedError
+
+    def update_rows(self, binding, frame, *, keys):
+        del binding, frame, keys
+        raise NotImplementedError
+
+    def delete_rows(self, binding, *, where, parameters=None):
+        del binding, where, parameters
+        raise NotImplementedError
+
+    def drop_table(self, binding):
+        del binding
+        raise NotImplementedError
+
+    def begin_transaction(self, binding):
+        del binding
+        raise NotImplementedError
+
+    def create_table(self, source, destination):
+        del destination
+        self.create_calls += 1
+        frame = source if isinstance(source, pl.DataFrame) else source.read().require_value()
+        return otc.OperationResult(
+            value=otc.TableBinding(
+                uri=otc.DirectDestination("sdk-fake://book/Orders").uri,
+                mode=otc.TableMode.BASE_MODE,
+                schema=frame.schema,
+                observed_revision="rev-write",
+                connector_id=self.identity.connector_id,
+            ),
+            outcome=otc.Outcome.SUCCEEDED,
+            commit=otc.CommitState.COMMITTED,
+            verification=otc.VerificationState.PASSED,
+            receipts=(
+                otc.Receipt(
+                    kind="physical",
+                    operation="table.create",
+                    mode=otc.TableMode.BASE_MODE,
+                ),
+            ),
+        )
+
+    def close(self):
+        return None
+
+
+class SdkPipelineRegistry:
+    _use_sdk_pipeline = True
+
+    def __init__(self, connector: SdkRecordingConnector) -> None:
+        self._connector = connector
+        self._destination = SdkDestinationAdapter()
+
+    def list(self):
+        return (self._connector,)
+
+    def connector_for(self, endpoint):
+        del endpoint
+        return self._destination
+
+    def require_capability(self, endpoint, capability_id):
+        del endpoint, capability_id
+        return self._destination
+
+
+def _configured_sdk_registry(connector: SdkRecordingConnector) -> ConfiguredConnectorRegistry:
+    descriptor = PluginDescriptor(
+        connector.identity.connector_id,
+        connector.identity,
+        connector.schemes,
+        lambda context, instance=connector: instance,
+        capabilities=connector.capabilities,
+        modes=(LegacyTableMode.BASE,),
+    )
+    return ConfiguredConnectorRegistry.from_descriptors(
+        (descriptor,),
+        CliConfig.empty(),
+        resolver=EnvironmentCredentialResolver(CliConfig.empty(), {}),
+    )
 
 
 def test_import_uses_destination_adapter_and_returns_both_receipts(tmp_path) -> None:
@@ -137,6 +321,45 @@ def test_import_uses_destination_adapter_and_returns_both_receipts(tmp_path) -> 
     assert summary.rows_written == 1
     assert summary.source_receipt is adapter.receipt
     assert summary.destination_receipt is adapter.receipt
+    assert adapter.write_option_types == [CliOptions]
+
+
+def test_import_can_delegate_write_through_sdk_bridge() -> None:
+    connector = SdkRecordingConnector()
+    registry = SdkPipelineRegistry(connector)
+
+    summary = import_endpoint(
+        parse_endpoint("sdk-fake://book/Orders"),
+        parse_endpoint("sdk-fake://book/Orders"),
+        registry,
+        CliOptions(token="token"),
+    )
+
+    assert summary.rows_read == 1
+    assert summary.rows_written == 1
+    assert connector.read_calls == 1
+    assert connector.create_calls == 1
+
+
+def test_inspect_uses_sdk_pipeline_for_descriptor_backed_registry() -> None:
+    connector = SdkRecordingConnector()
+    registry = _configured_sdk_registry(connector)
+
+    result = inspect_endpoint(parse_endpoint("sdk-fake://book/Orders"), registry, CliOptions())
+
+    assert result.row_count == 1
+    assert connector.inspect_calls == 1
+    assert connector.read_calls == 0
+
+
+def test_read_uses_sdk_pipeline_for_descriptor_backed_registry() -> None:
+    connector = SdkRecordingConnector()
+    registry = _configured_sdk_registry(connector)
+
+    result = read_endpoint(parse_endpoint("sdk-fake://book/Orders"), registry, CliOptions())
+
+    assert result.table.column_names == ["id"]
+    assert connector.read_calls == 1
 
 
 def test_inspect_delegates_to_adapter_without_cli_read() -> None:
@@ -147,6 +370,52 @@ def test_inspect_delegates_to_adapter_without_cli_read() -> None:
 
     assert result is adapter.receipt
     assert adapter.inspection_calls == 1
+    assert adapter.read_calls == 0
+
+
+def test_read_falls_back_only_for_explicit_sdk_compatibility_errors(monkeypatch) -> None:
+    adapter = RecordingAdapter()
+    registry = RecordingRegistry(adapter)
+    registry._use_sdk_pipeline = True
+
+    def compatibility_failure(_registry):
+        result = otc.OperationResult[None](
+            value=None,
+            outcome=otc.Outcome.REJECTED,
+            commit=otc.CommitState.NOT_STARTED,
+            verification=otc.VerificationState.SKIPPED,
+            receipts=(),
+            error=otc.ErrorInfo(
+                code=otc.ErrorCode.UNSUPPORTED_CAPABILITY,
+                message="sdk bridge is unavailable",
+            ),
+        )
+        raise otc.OTCError("sdk bridge is unavailable", result)
+
+    monkeypatch.setattr(
+        "open_table_connector.cli.pipeline._client_from_registry",
+        compatibility_failure,
+    )
+
+    result = read_endpoint(parse_endpoint("fake://book/Orders"), registry, CliOptions())
+
+    assert result.table.num_rows == 1
+    assert adapter.read_calls == 1
+
+
+def test_read_does_not_suppress_unexpected_client_construction_failures(monkeypatch) -> None:
+    adapter = RecordingAdapter()
+    registry = RecordingRegistry(adapter)
+    registry._use_sdk_pipeline = True
+
+    def explode(_registry):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("open_table_connector.cli.pipeline._client_from_registry", explode)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        read_endpoint(parse_endpoint("fake://book/Orders"), registry, CliOptions())
+
     assert adapter.read_calls == 0
 
 
@@ -293,23 +562,41 @@ def test_google_sheets_to_maybe_sheet_import_sends_jsonl_to_process(tmp_path) ->
     assert "explicit-write-token" not in process.stdin_payload
     assert "explicit-write-token" not in repr(summary.destination_receipt.to_wire())
     assert process.calls[0][0] == (
-        "mbs", "db-table", "write", "--uri", "maybe://doc/R_orders",
-        "--target", "R_orders", "--input", "-",
+        "mbs",
+        "db-table",
+        "write",
+        "--uri",
+        "maybe://doc/R_orders",
+        "--target",
+        "R_orders",
+        "--input",
+        "-",
     )
     assert process.stdin_payload == '{"id":"a"}\n'
 
 
 def test_feishu_to_jsonl_preserves_record_id(tmp_path) -> None:
     destination = tmp_path / "records.jsonl"
-    transport = RecordingTransport({
-        "GET": {"code": 0, "data": {"items": [{"record_id": "rec_1", "fields": {"name": "Ada"}}], "has_more": False}}
-    })
+    transport = RecordingTransport(
+        {
+            "GET": {
+                "code": 0,
+                "data": {
+                    "items": [{"record_id": "rec_1", "fields": {"name": "Ada"}}],
+                    "has_more": False,
+                },
+            }
+        }
+    )
     registry = build_default_registry(
         env={"FEISHU_TENANT_ACCESS_TOKEN": "token"}, transports={"feishu_bitable": transport}
     )
 
     summary = convert_endpoint(
-        parse_endpoint("feishu://app/table"), parse_endpoint(str(destination)), registry, CliOptions()
+        parse_endpoint("feishu://app/table"),
+        parse_endpoint(str(destination)),
+        registry,
+        CliOptions(),
     )
 
     assert summary.rows_read == 1
@@ -322,24 +609,26 @@ def test_feishu_to_jsonl_preserves_record_id(tmp_path) -> None:
 
 
 def test_feishu_to_feishu_import_removes_destination_owned_record_id() -> None:
-    transport = RecordingTransport({
-        "GET": {
-            "code": 0,
-            "data": {
-                "items": [
-                    {
-                        "record_id": "rec_source_1",
-                        "fields": {"name": "Ada", "score": 10},
-                    }
-                ],
-                "has_more": False,
+    transport = RecordingTransport(
+        {
+            "GET": {
+                "code": 0,
+                "data": {
+                    "items": [
+                        {
+                            "record_id": "rec_source_1",
+                            "fields": {"name": "Ada", "score": 10},
+                        }
+                    ],
+                    "has_more": False,
+                },
             },
-        },
-        "POST": {
-            "code": 0,
-            "data": {"records": [{"record_id": "rec_destination_1"}]},
-        },
-    })
+            "POST": {
+                "code": 0,
+                "data": {"records": [{"record_id": "rec_destination_1"}]},
+            },
+        }
+    )
     registry = build_default_registry(
         env={"FEISHU_TENANT_ACCESS_TOKEN": "tenant-token"},
         transports={"feishu_bitable": transport},
@@ -358,29 +647,35 @@ def test_feishu_to_feishu_import_removes_destination_owned_record_id() -> None:
         "https://open.feishu.cn/open-apis/bitable/v1/apps/destination-app/"
         "tables/destination-table/records/batch_create"
     )
-    assert transport.calls[1].headers == {
-        "Authorization": "Bearer tenant-token"
-    }
-    assert transport.calls[1].body == {
-        "records": [{"fields": {"name": "Ada", "score": 10}}]
-    }
+    assert transport.calls[1].headers == {"Authorization": "Bearer tenant-token"}
+    assert transport.calls[1].body == {"records": [{"fields": {"name": "Ada", "score": 10}}]}
 
 
 def test_row_limit_is_applied_before_destination_write(tmp_path) -> None:
-    transport = RecordingTransport({
-        "GET": {"code": 0, "data": {"items": [
-            {"record_id": "rec_1", "fields": {"id": "a"}},
-            {"record_id": "rec_2", "fields": {"id": "b"}},
-        ], "has_more": False}},
-        "PUT": {"updatedRows": 1},
-    })
+    transport = RecordingTransport(
+        {
+            "GET": {
+                "code": 0,
+                "data": {
+                    "items": [
+                        {"record_id": "rec_1", "fields": {"id": "a"}},
+                        {"record_id": "rec_2", "fields": {"id": "b"}},
+                    ],
+                    "has_more": False,
+                },
+            },
+            "PUT": {"updatedRows": 1},
+        }
+    )
     registry = build_default_registry(
         env={"FEISHU_TENANT_ACCESS_TOKEN": "token", "GOOGLE_SHEETS_ACCESS_TOKEN": "token"},
         transports={"feishu_bitable": transport, "google_sheets": transport},
     )
 
     summary = import_endpoint(
-        parse_endpoint("feishu://app/table"), parse_endpoint("gsheets://book/Orders"), registry,
+        parse_endpoint("feishu://app/table"),
+        parse_endpoint("gsheets://book/Orders"),
+        registry,
         CliOptions(limit=1, if_exists="replace"),
     )
 
@@ -388,7 +683,8 @@ def test_row_limit_is_applied_before_destination_write(tmp_path) -> None:
     assert summary.rows_written == 1
     assert transport.calls[0].method == "GET"
     assert transport.calls[1].body == {
-        "range": "Orders", "majorDimension": "ROWS",
+        "range": "Orders",
+        "majorDimension": "ROWS",
         "values": [["_record_id", "id"], ["rec_1", "a"]],
     }
 
@@ -401,7 +697,9 @@ def test_maybe_sheet_unsupported_policy_is_rejected_before_source_read() -> None
 
     with pytest.raises(ConnectorError) as error:
         import_endpoint(
-            parse_endpoint("fake://book/Orders"), parse_endpoint("maybe://doc/R_orders"), registry,
+            parse_endpoint("fake://book/Orders"),
+            parse_endpoint("maybe://doc/R_orders"),
+            registry,
             CliOptions(if_exists="error"),
         )
 
@@ -421,7 +719,9 @@ def test_feishu_replace_is_rejected_before_source_read_or_destination_write() ->
 
     with pytest.raises(ConnectorError) as error:
         import_endpoint(
-            parse_endpoint("fake://book/Orders"), parse_endpoint("feishu://app/table"), registry,
+            parse_endpoint("fake://book/Orders"),
+            parse_endpoint("feishu://app/table"),
+            registry,
             CliOptions(if_exists="replace"),
         )
 
@@ -433,10 +733,12 @@ def test_feishu_replace_is_rejected_before_source_read_or_destination_write() ->
 
 def test_feishu_error_policy_rejected_before_any_provider_io() -> None:
     source_adapter = RecordingAdapter()
-    transport = RecordingTransport({
-        "GET": {"code": 0, "data": {"items": [{"record_id": "r1", "fields": {"id": "1"}}]}},
-        "POST": {},
-    })
+    transport = RecordingTransport(
+        {
+            "GET": {"code": 0, "data": {"items": [{"record_id": "r1", "fields": {"id": "1"}}]}},
+            "POST": {},
+        }
+    )
     registry = build_default_registry(
         env={"FEISHU_TENANT_ACCESS_TOKEN": "token"}, transports={"feishu_bitable": transport}
     )
@@ -444,7 +746,9 @@ def test_feishu_error_policy_rejected_before_any_provider_io() -> None:
 
     with pytest.raises(ConnectorError) as error:
         import_endpoint(
-            parse_endpoint("fake://book/Orders"), parse_endpoint("feishu://app/table"), registry,
+            parse_endpoint("fake://book/Orders"),
+            parse_endpoint("feishu://app/table"),
+            registry,
             CliOptions(if_exists="error"),
         )
 
@@ -455,10 +759,12 @@ def test_feishu_error_policy_rejected_before_any_provider_io() -> None:
 
 def test_feishu_error_policy_rejected_even_for_empty_destination() -> None:
     source_adapter = RecordingAdapter()
-    transport = RecordingTransport({
-        "GET": {"code": 0, "data": {"items": [], "has_more": False}},
-        "POST": {"data": {}},
-    })
+    transport = RecordingTransport(
+        {
+            "GET": {"code": 0, "data": {"items": [], "has_more": False}},
+            "POST": {"data": {}},
+        }
+    )
     registry = build_default_registry(
         env={"FEISHU_TENANT_ACCESS_TOKEN": "token"}, transports={"feishu_bitable": transport}
     )
@@ -466,7 +772,9 @@ def test_feishu_error_policy_rejected_even_for_empty_destination() -> None:
 
     with pytest.raises(ConnectorError) as error:
         import_endpoint(
-            parse_endpoint("fake://book/Orders"), parse_endpoint("feishu://app/table"), registry,
+            parse_endpoint("fake://book/Orders"),
+            parse_endpoint("feishu://app/table"),
+            registry,
             CliOptions(if_exists="error"),
         )
     assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
@@ -476,10 +784,12 @@ def test_feishu_error_policy_rejected_even_for_empty_destination() -> None:
 
 def test_google_error_policy_rejected_before_any_provider_io() -> None:
     source_adapter = RecordingAdapter()
-    transport = RecordingTransport({
-        "GET": {"values": [["id"], ["existing"]]},
-        "PUT": {},
-    })
+    transport = RecordingTransport(
+        {
+            "GET": {"values": [["id"], ["existing"]]},
+            "PUT": {},
+        }
+    )
     registry = build_default_registry(
         env={"GOOGLE_SHEETS_ACCESS_TOKEN": "token"}, transports={"google_sheets": transport}
     )
@@ -487,7 +797,9 @@ def test_google_error_policy_rejected_before_any_provider_io() -> None:
 
     with pytest.raises(ConnectorError) as error:
         import_endpoint(
-            parse_endpoint("fake://book/Orders"), parse_endpoint("gsheets://book/Orders"), registry,
+            parse_endpoint("fake://book/Orders"),
+            parse_endpoint("gsheets://book/Orders"),
+            registry,
             CliOptions(if_exists="error"),
         )
 
@@ -506,7 +818,9 @@ def test_google_error_policy_rejected_even_for_empty_destination() -> None:
 
     with pytest.raises(ConnectorError) as error:
         import_endpoint(
-            parse_endpoint("fake://book/Orders"), parse_endpoint("gsheets://book/Orders"), registry,
+            parse_endpoint("fake://book/Orders"),
+            parse_endpoint("gsheets://book/Orders"),
+            registry,
             CliOptions(if_exists="error"),
         )
     assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
@@ -524,7 +838,9 @@ def test_google_invalid_policy_is_rejected_before_source_read_or_destination_wri
 
     with pytest.raises(ConnectorError) as error:
         import_endpoint(
-            parse_endpoint("fake://book/Orders"), parse_endpoint("gsheets://book/Orders"), registry,
+            parse_endpoint("fake://book/Orders"),
+            parse_endpoint("gsheets://book/Orders"),
+            registry,
             CliOptions(if_exists="merge"),
         )
 
@@ -541,7 +857,9 @@ def test_local_source_limit_is_reflected_in_import_summary_and_destination_table
     registry.register(destination_adapter)
 
     summary = import_endpoint(
-        parse_endpoint(str(source)), parse_endpoint("fake://book/Orders"), registry,
+        parse_endpoint(str(source)),
+        parse_endpoint("fake://book/Orders"),
+        registry,
         CliOptions(from_format="json", limit=2, if_exists="append"),
     )
 
@@ -551,9 +869,11 @@ def test_local_source_limit_is_reflected_in_import_summary_and_destination_table
 
 
 def test_google_source_limit_is_reflected_in_import_summary_and_destination_table() -> None:
-    transport = RecordingTransport({
-        "GET": {"values": [["id"], ["a"], ["b"], ["c"]]},
-    })
+    transport = RecordingTransport(
+        {
+            "GET": {"values": [["id"], ["a"], ["b"], ["c"]]},
+        }
+    )
     destination_adapter = RecordingAdapter()
     registry = build_default_registry(
         env={"GOOGLE_SHEETS_ACCESS_TOKEN": "token"}, transports={"google_sheets": transport}
@@ -561,7 +881,9 @@ def test_google_source_limit_is_reflected_in_import_summary_and_destination_tabl
     registry.register(destination_adapter)
 
     summary = import_endpoint(
-        parse_endpoint("gsheets://book/Orders"), parse_endpoint("fake://book/Orders"), registry,
+        parse_endpoint("gsheets://book/Orders"),
+        parse_endpoint("fake://book/Orders"),
+        registry,
         CliOptions(limit=2, if_exists="append"),
     )
 
