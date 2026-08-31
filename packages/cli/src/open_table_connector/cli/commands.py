@@ -7,7 +7,14 @@ from contextlib import redirect_stdout
 from typing import Any, TextIO
 
 from .model import CliOptions, FormatName, parse_endpoint, parse_format
-from .output import _wire, emit_error, emit_read, emit_record, emit_records, emit_summary, emit_table
+from .output import (
+    _wire,
+    emit_error,
+    emit_read,
+    emit_record,
+    emit_records,
+    emit_summary,
+)
 from .pipeline import convert_endpoint, import_endpoint, inspect_endpoint, read_endpoint
 from .registry import ConnectorRegistry
 
@@ -64,8 +71,17 @@ def _emit_list(
 ) -> None:
     payloads = []
     for adapter in registry.list():
-        manifest, capabilities, modes, schemes = _manifest(adapter)
-        identity = getattr(manifest, "connector", getattr(adapter, "identity", None))
+        if hasattr(adapter, "descriptor"):
+            adapter = adapter.descriptor
+        if hasattr(adapter, "identity") and hasattr(adapter, "schemes"):
+            manifest = None
+            capabilities = tuple(getattr(adapter, "capabilities", ()))
+            modes = tuple(getattr(adapter, "modes", ()))
+            schemes = tuple(getattr(adapter, "schemes", ()))
+            identity = adapter.identity
+        else:
+            manifest, capabilities, modes, schemes = _manifest(adapter)
+            identity = getattr(manifest, "connector", getattr(adapter, "identity", None))
         payload = {
             "connector_id": identity.connector_id,
             "schemes": list(schemes),
@@ -100,7 +116,7 @@ def run_command(args: Namespace, registry: ConnectorRegistry, out: TextIO, err: 
             _emit_list(registry, out, _format(args, "output_format", FormatName.JSONL))
             return 0
         options = _options(args)
-        source = parse_endpoint(getattr(args, "from_value"))
+        source = parse_endpoint(args.from_value)
         if command == "inspect":
             inspection = inspect_endpoint(source, registry, options)
             payload = {
@@ -117,7 +133,7 @@ def run_command(args: Namespace, registry: ConnectorRegistry, out: TextIO, err: 
             result = read_endpoint(source, registry, options)
             emit_read(result, options.output_format, out)
         elif command in ("convert", "import"):
-            destination = parse_endpoint(getattr(args, "to_value"))
+            destination = parse_endpoint(args.to_value)
             operation = convert_endpoint if command == "convert" else import_endpoint
             if command == "convert" and destination.is_stdio:
                 with redirect_stdout(out):

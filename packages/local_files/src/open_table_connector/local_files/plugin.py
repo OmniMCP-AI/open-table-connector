@@ -22,14 +22,7 @@ from .cli_adapter import (
 
 
 def provider_plugin() -> PluginDescriptor:
-    from .identity import CONNECTOR_IDENTITY
-
-    return PluginDescriptor(
-        PROVIDER_LOCAL_FILES,
-        CONNECTOR_IDENTITY,
-        (SCHEME_FILE, PROVIDER_JSON, PROVIDER_JSONL),
-        _provider_factory,
-    )
+    return local_files_cli_plugin()
 
 
 def _provider_factory(*, env: Mapping[str, str], transports: Mapping[str, Any]) -> Any:

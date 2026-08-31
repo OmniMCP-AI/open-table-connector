@@ -8,8 +8,25 @@ from .credentials import (
     apply_credential_overrides,
     parse_credential_overrides,
 )
-from .formats import infer_format, read_local, write_local
 from .model import CliOptions, Endpoint, FormatName, PipelineSummary, parse_endpoint, parse_format
+
+
+def infer_format(*args, **kwargs):
+    from open_table_connector.local_files.cli_adapter import infer_format as infer
+
+    return infer(*args, **kwargs)
+
+
+def read_local(*args, **kwargs):
+    from open_table_connector.local_files.cli_adapter import read_local as read
+
+    return read(*args, **kwargs)
+
+
+def write_local(*args, **kwargs):
+    from open_table_connector.local_files.cli_adapter import write_local as write
+
+    return write(*args, **kwargs)
 
 
 def build_parser():

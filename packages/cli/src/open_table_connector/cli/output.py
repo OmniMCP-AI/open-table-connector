@@ -2,20 +2,35 @@
 
 from __future__ import annotations
 
-import json
 import csv
+import json
+from collections.abc import Iterable, Sequence
 from dataclasses import fields, is_dataclass
 from enum import Enum
-from collections.abc import Iterable, Sequence
 from typing import Any, TextIO
 
 import pyarrow as pa
-
 from open_table_connector.contract import ArrowReadResult, ConnectorError, ConnectorErrorCode
 
-from .formats import json_safe_value, write_local, write_markdown_table
 from .model import FormatName, PipelineSummary
 
+
+def json_safe_value(value):
+    from open_table_connector.local_files.cli_adapter import json_safe_value as convert
+
+    return convert(value)
+
+
+def write_local(*args, **kwargs):
+    from open_table_connector.local_files.cli_adapter import write_local as write
+
+    return write(*args, **kwargs)
+
+
+def write_markdown_table(*args, **kwargs):
+    from open_table_connector.local_files.cli_adapter import write_markdown_table as write
+
+    return write(*args, **kwargs)
 
 EXIT_CODES = {
     ConnectorErrorCode.INVALID_URI: 2,

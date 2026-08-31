@@ -33,6 +33,40 @@ class ConfiguredPlugin:
     config: ProviderConfig
 
 
+class _LazyAdapter:
+    """Descriptor-backed adapter that activates a provider for each operation."""
+
+    def __init__(self, registry: ConfiguredConnectorRegistry, plugin: ConfiguredPlugin) -> None:
+        self._registry = registry
+        self._plugin = plugin
+        descriptor = plugin.descriptor
+        self.identity = descriptor.identity
+        self.schemes = descriptor.schemes
+        self.hosts = descriptor.hosts
+        self.capabilities = descriptor.capabilities
+        self.modes = descriptor.modes
+        self.local = descriptor.local
+        self.handles_paths = descriptor.handles_paths
+
+    def read(self, endpoint: AdapterEndpoint, options):
+        with self._registry.open_adapter(endpoint) as adapter:
+            return adapter.read(endpoint, options)
+
+    def inspect(self, endpoint: AdapterEndpoint, options):
+        with self._registry.open_adapter(endpoint) as adapter:
+            return adapter.inspect(endpoint, options)
+
+    def write(self, endpoint: AdapterEndpoint, table, options):
+        with self._registry.open_adapter(endpoint) as adapter:
+            return adapter.write(endpoint, table, options)
+
+    def preflight_write(self, endpoint: AdapterEndpoint, options) -> None:
+        with self._registry.open_adapter(endpoint) as adapter:
+            preflight = getattr(adapter, "preflight_write", None)
+            if callable(preflight):
+                preflight(endpoint, options)
+
+
 def discover_configured_plugins(
     config: CliConfig,
     *,
@@ -146,13 +180,66 @@ class ConfiguredConnectorRegistry:
         return self._diagnostics
 
     def list(self) -> tuple[PluginDescriptor, ...]:
+        if self._plugins and not isinstance(self._plugins[0], ConfiguredPlugin):
+            return tuple(self._plugins)  # type: ignore[return-value]
         return tuple(plugin.descriptor for plugin in self._plugins)
 
     def descriptor_for(self, endpoint: AdapterEndpoint) -> PluginDescriptor:
+        if self._plugins and not isinstance(self._plugins[0], ConfiguredPlugin):
+            adapter = self.connector_for(endpoint)
+            return PluginDescriptor(
+                adapter.identity.connector_id,
+                adapter.identity,
+                adapter.schemes,
+                lambda context: adapter,
+                getattr(adapter, "hosts", ()),
+                capabilities=getattr(adapter, "capabilities", ()),
+                modes=getattr(adapter, "modes", ()),
+                local=getattr(adapter, "local", False),
+                handles_paths=getattr(adapter, "handles_paths", False),
+            )
         plugin = self._plugin_for(endpoint)
         return plugin.descriptor
 
+    def connector_for(self, endpoint: AdapterEndpoint) -> _LazyAdapter:
+        if self._plugins and not isinstance(self._plugins[0], ConfiguredPlugin):
+            if endpoint.is_stdio or endpoint.path is not None:
+                for adapter in self._plugins:
+                    if SCHEME_FILE in adapter.schemes or getattr(adapter, "handles_paths", False):
+                        return adapter
+            else:
+                assert endpoint.uri is not None
+                scheme = endpoint.uri.scheme.casefold()
+                parsed = urlsplit(endpoint.uri.value)
+                host = (
+                    parsed.hostname.casefold()
+                    if scheme == SCHEME_HTTPS and parsed.hostname
+                    else None
+                )
+                for adapter in self._plugins:
+                    if scheme in {item.casefold() for item in adapter.schemes} and (
+                        not host or not getattr(adapter, "hosts", ()) or host in adapter.hosts
+                    ):
+                        return adapter
+            raise ConnectorError(
+                ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+                "no connector advertises this endpoint scheme",
+                {},
+            )
+        return _LazyAdapter(self, self._plugin_for(endpoint))
+
     def require_capability(self, endpoint: AdapterEndpoint, capability_id: str) -> PluginDescriptor:
+        if self._plugins and not isinstance(self._plugins[0], ConfiguredPlugin):
+            adapter = self.connector_for(endpoint)
+            if capability_id not in {
+                capability.capability_id for capability in adapter.capabilities
+            }:
+                raise ConnectorError(
+                    ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+                    "connector does not support the requested capability",
+                    {"capability": capability_id},
+                )
+            return adapter  # type: ignore[return-value]
         descriptor = self.descriptor_for(endpoint)
         if capability_id not in {
             capability.capability_id for capability in descriptor.capabilities
@@ -168,6 +255,8 @@ class ConfiguredConnectorRegistry:
         return descriptor
 
     def _plugin_for(self, endpoint: AdapterEndpoint) -> ConfiguredPlugin:
+        if self._plugins and not isinstance(self._plugins[0], ConfiguredPlugin):
+            raise TypeError("legacy registry does not expose configured plugins")
         if endpoint.is_stdio or endpoint.path is not None:
             if self._path_plugin is None:
                 raise ConnectorError(

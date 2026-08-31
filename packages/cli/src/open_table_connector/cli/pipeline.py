@@ -6,23 +6,28 @@ from collections.abc import Iterable
 
 import pyarrow as pa
 from open_table_connector.contract import (
-    PROVIDER_CSV,
-    PROVIDER_EXCEL,
-    PROVIDER_FEISHU_BITABLE,
-    PROVIDER_JSON,
-    PROVIDER_JSONL,
     SCHEME_FILE,
-    SCHEME_MD,
     ArrowReadResult,
+    ConnectorAdapter,
     ConnectorError,
     ConnectorErrorCode,
     TableInspection,
 )
 
-from .adapters import ConnectorAdapter
-from .formats import infer_format, write_local
 from .model import CliOptions, Endpoint, FormatName, PipelineSummary
 from .registry import ConnectorRegistry
+
+
+def infer_format(*args, **kwargs):
+    from open_table_connector.local_files.cli_adapter import infer_format as infer
+
+    return infer(*args, **kwargs)
+
+
+def write_local(*args, **kwargs):
+    from open_table_connector.local_files.cli_adapter import write_local as write
+
+    return write(*args, **kwargs)
 
 
 def read_endpoint(
@@ -30,7 +35,7 @@ def read_endpoint(
 ) -> ArrowReadResult:
     """Read one endpoint into Arrow, preserving the adapter's receipt."""
 
-    _validate_source_format(endpoint, options)
+    _validate_source_format(endpoint, options, registry)
     adapter = registry.connector_for(endpoint)
     return adapter.read(endpoint, options)
 
@@ -40,7 +45,7 @@ def inspect_endpoint(
 ) -> TableInspection:
     """Delegate inspection to the selected adapter."""
 
-    _validate_source_format(endpoint, options)
+    _validate_source_format(endpoint, options, registry)
     return registry.connector_for(endpoint).inspect(endpoint, options)
 
 
@@ -52,7 +57,7 @@ def convert_endpoint(
 ) -> PipelineSummary:
     """Read once from ``source`` and write once to a local destination."""
 
-    if not _is_local(destination):
+    if not _is_local(destination, registry):
         raise _unsupported(destination, "convert destinations must be local files or stdout")
 
     destination_format = infer_format(destination, options.to_format)
@@ -73,7 +78,7 @@ def convert_endpoint(
             {"scheme": SCHEME_FILE, "format": destination_format.value},
         )
 
-    _validate_source_format(source, options)
+    _validate_source_format(source, options, registry)
     result = read_endpoint(source, registry, options)
     write_local(result.table, destination, destination_format, sheet=options.sheet)
     return PipelineSummary(
@@ -92,10 +97,10 @@ def import_endpoint(
 ) -> PipelineSummary:
     """Read once from Arrow and write once through a writable connector."""
 
-    if _is_local(destination):
+    if _is_local(destination, registry):
         raise _unsupported(destination, "import destinations must be writable connectors")
 
-    _validate_source_format(source, options)
+    _validate_source_format(source, options, registry)
 
     # Validate before reading so unsupported imports cannot cause provider I/O.
     destination_adapter = registry.require_capability(destination, "table.write")
@@ -114,20 +119,19 @@ def import_endpoint(
     )
 
 
-def _is_local(endpoint: Endpoint) -> bool:
-    return (
-        endpoint.is_stdio
-        or endpoint.path is not None
-        or (
-            endpoint.uri is not None
-            and endpoint.uri.scheme
-            in {PROVIDER_CSV, PROVIDER_EXCEL, PROVIDER_JSON, PROVIDER_JSONL, SCHEME_MD}
-        )
-    )
+def _is_local(endpoint: Endpoint, registry: ConnectorRegistry) -> bool:
+    if endpoint.is_stdio or endpoint.path is not None:
+        return True
+    try:
+        return bool(getattr(registry.connector_for(endpoint), "local", False))
+    except Exception:
+        return False
 
 
-def _validate_source_format(endpoint: Endpoint, options: CliOptions) -> None:
-    if _is_local(endpoint) or options.from_format is FormatName.AUTO:
+def _validate_source_format(
+    endpoint: Endpoint, options: CliOptions, registry: ConnectorRegistry
+) -> None:
+    if _is_local(endpoint, registry) or options.from_format is FormatName.AUTO:
         return
     raise ConnectorError(
         ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
@@ -158,14 +162,11 @@ def _table_for_destination(
     preserves every Arrow column, including Feishu's ``_record_id``.
     """
 
-    source_identity = getattr(getattr(receipt, "connector", None), "connector_id", None)
-    if source_identity != PROVIDER_FEISHU_BITABLE or "_record_id" not in table.column_names:
-        return table
-
     owned = getattr(destination_adapter, "provider_owned_fields", ())
-    if not isinstance(owned, Iterable) or "_record_id" not in owned:
+    if not isinstance(owned, Iterable):
         return table
-    return table.drop(["_record_id"])
+    owned_fields = set(str(field) for field in owned)
+    return table.drop([field for field in table.column_names if field in owned_fields])
 
 
 __all__ = ["convert_endpoint", "import_endpoint", "inspect_endpoint", "read_endpoint"]

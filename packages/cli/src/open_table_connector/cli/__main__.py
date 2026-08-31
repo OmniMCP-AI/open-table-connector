@@ -10,6 +10,11 @@ import sys
 from collections.abc import Sequence
 
 from open_table_connector.contract import (
+    FORMAT_AUTO,
+    FORMAT_TABLE,
+    IF_EXISTS_APPEND,
+    IF_EXISTS_ERROR,
+    IF_EXISTS_REPLACE,
     PROVIDER_CSV,
     PROVIDER_EXCEL,
     PROVIDER_JSON,
@@ -20,8 +25,8 @@ from .commands import run_command
 from .output import emit_error
 from .registry import build_default_registry
 
-_FORMATS = ("auto", PROVIDER_CSV, PROVIDER_EXCEL, PROVIDER_JSON, PROVIDER_JSONL, "table")
-_OUTPUT_FORMATS = (PROVIDER_CSV, PROVIDER_JSON, PROVIDER_JSONL, "table")
+_FORMATS = (FORMAT_AUTO, PROVIDER_CSV, PROVIDER_EXCEL, PROVIDER_JSON, PROVIDER_JSONL, FORMAT_TABLE)
+_OUTPUT_FORMATS = (PROVIDER_CSV, PROVIDER_JSON, PROVIDER_JSONL, FORMAT_TABLE)
 _PARSER_FLAGS = frozenset(
     {
         "--from",
@@ -35,11 +40,11 @@ _PARSER_FLAGS = frozenset(
         "--sheet",
         "--range",
         "--field-name",
-        "--token",
+        "--credential-key",
         "--target",
     }
 )
-_KNOWN_VALUES = (*_FORMATS, "append", "replace", "error")
+_KNOWN_VALUES = (*_FORMATS, IF_EXISTS_APPEND, IF_EXISTS_REPLACE, IF_EXISTS_ERROR)
 
 
 class _ParserError(Exception):
@@ -115,12 +120,14 @@ def _add_options(
     parser.add_argument("--sheet")
     parser.add_argument("--range")
     parser.add_argument("--field-name", action="append", default=None)
-    parser.add_argument("--token")
+    parser.add_argument("--credential-key", action="append", default=[])
     parser.add_argument("--target")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = _ArgumentParser(prog="otc", description="Move and inspect tables through Open Connectors.")
+    parser = _ArgumentParser(
+        prog="otc", description="Move and inspect tables through Open Connectors."
+    )
     subparsers = parser.add_subparsers(dest="command", required=True, parser_class=_ArgumentParser)
 
     list_parser = subparsers.add_parser("list", help="list available connectors")
@@ -155,7 +162,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return int(error.code)
 
     try:
-        registry = build_default_registry(env=os.environ)
+        from .credentials import parse_credential_overrides
+
+        overrides = parse_credential_overrides(getattr(args, "credential_key", ()))
+        registry = build_default_registry(env=os.environ, credential_overrides=overrides)
         result = run_command(args, registry, sys.stdout, sys.stderr)
         sys.stdout.flush()
         sys.stderr.flush()

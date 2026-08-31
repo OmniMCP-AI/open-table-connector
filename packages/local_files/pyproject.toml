@@ -28,6 +28,9 @@ local_files = "open_table_connector.local_files.plugin:provider_plugin"
 
 [project.entry-points."open_table_connector.cli_adapters"]
 local_files = "open_table_connector.local_files.plugin:provider_plugin"
+csv = "open_table_connector.local_files.plugin:csv_cli_plugin"
+excel = "open_table_connector.local_files.plugin:excel_cli_plugin"
+markdown = "open_table_connector.local_files.plugin:markdown_cli_plugin"
 
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }

@@ -3,86 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
-from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
-from urllib.request import url2pathname
 
 from open_table_connector.contract import (
-    PROVIDER_CSV,
-    PROVIDER_EXCEL,
-    PROVIDER_JSON,
-    PROVIDER_JSONL,
-    SCHEME_FILE,
-    TableURI,
+    AdapterEndpoint,
+    AdapterFormat,
+    parse_adapter_endpoint,
+    parse_adapter_format,
 )
 
-
-class FormatName(StrEnum):
-    AUTO = "auto"
-    CSV = PROVIDER_CSV
-    EXCEL = PROVIDER_EXCEL
-    JSON = PROVIDER_JSON
-    JSONL = PROVIDER_JSONL
-    TABLE = "table"
-
-
-@dataclass(frozen=True)
-class Endpoint:
-    raw: str
-    uri: TableURI | None
-    path: Path | None
-    is_stdio: bool
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.raw, str) or not self.raw:
-            raise ValueError("raw must be a non-empty string")
-        if self.is_stdio:
-            if self.uri is not None or self.path is not None:
-                raise ValueError("stdio endpoints cannot carry a uri or path")
-            return
-        if self.uri is None and self.path is None:
-            raise ValueError("endpoint must have either a uri or a path")
-        if self.uri is not None and self.path is not None:
-            raise ValueError("endpoint cannot have both a uri and a path")
-
-
-def _looks_like_windows_drive_path(value: str) -> bool:
-    return len(value) >= 2 and value[1] == ":" and value[0].isalpha()
-
-
-def parse_endpoint(value: str) -> Endpoint:
-    if value == "-":
-        return Endpoint(raw=value, uri=None, path=None, is_stdio=True)
-
-    if _looks_like_windows_drive_path(value):
-        return Endpoint(raw=value, uri=None, path=Path(value), is_stdio=False)
-
-    parsed = urlsplit(value)
-    if parsed.scheme:
-        if parsed.scheme.casefold() == SCHEME_FILE:
-            validated = TableURI(value)
-            file_uri = urlsplit(validated.value)
-            if file_uri.netloc.casefold() not in ("", "localhost"):
-                raise ValueError("file endpoint authority must be empty or localhost")
-            if file_uri.query or file_uri.fragment:
-                raise ValueError("file endpoint cannot contain a query or fragment")
-            path = Path(url2pathname(file_uri.path))
-            return Endpoint(raw=value, uri=None, path=path, is_stdio=False)
-        return Endpoint(raw=value, uri=TableURI(value), path=None, is_stdio=False)
-
-    return Endpoint(raw=value, uri=None, path=Path(value), is_stdio=False)
-
-
-def parse_format(value: str | None) -> FormatName:
-    if value is None:
-        return FormatName.AUTO
-    normalized = value.casefold()
-    try:
-        return FormatName(normalized)
-    except ValueError as exc:
-        raise ValueError(f"unsupported format: {value}") from exc
+Endpoint = AdapterEndpoint
+FormatName = AdapterFormat
+parse_endpoint = parse_adapter_endpoint
+parse_format = parse_adapter_format
 
 
 @dataclass(frozen=True)
