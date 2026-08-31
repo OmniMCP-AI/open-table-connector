@@ -16,7 +16,10 @@ from open_table_connector.feishu_bitable import (
     FeishuBitableReadOptions,
     FeishuBitableTableReadRequest,
 )
-from open_table_connector.feishu_bitable.connector import UrllibFeishuTransport
+from open_table_connector.feishu_bitable.connector import (
+    FEISHU_MAX_RESPONSE_BYTES,
+    UrllibFeishuTransport,
+)
 
 
 class FakeTransport:
@@ -65,6 +68,24 @@ def test_feishu_transport_redacts_credentials_from_provider_errors(
         "reason": "unexpected transport exception"
     }
     assert credential not in repr(raised.value.to_wire())
+
+
+def test_feishu_transport_bounds_response_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, size):
+            assert size == FEISHU_MAX_RESPONSE_BYTES + 1
+            return b"x" * size
+
+    monkeypatch.setattr("open_table_connector.feishu_bitable.connector.urlopen", lambda *_args, **_kwargs: Response())
+    with pytest.raises(ConnectorError) as raised:
+        UrllibFeishuTransport().request("GET", "https://example.test", headers={})
+    assert raised.value.code is ConnectorErrorCode.RESOURCE_LIMIT_EXCEEDED
 
 
 def test_feishu_reads_records_and_preserves_record_ids() -> None:

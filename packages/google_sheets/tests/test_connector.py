@@ -5,7 +5,10 @@ import pytest
 
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode, InspectRequest, ResourceLimits, ResolveContext, TableReadRequest, TableURI, TableWriteRequest
 from open_table_connector.google_sheets import GoogleSheetsConnector, GoogleSheetsReadOptions
-from open_table_connector.google_sheets.connector import UrllibSheetsTransport
+from open_table_connector.google_sheets.connector import (
+    GOOGLE_SHEETS_MAX_RESPONSE_BYTES,
+    UrllibSheetsTransport,
+)
 
 
 class FakeTransport:
@@ -47,6 +50,24 @@ def test_google_sheets_transport_redacts_credentials_from_provider_errors(
         "reason": "unexpected transport exception"
     }
     assert credential not in repr(raised.value.to_wire())
+
+
+def test_google_sheets_transport_bounds_response_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, size):
+            assert size == GOOGLE_SHEETS_MAX_RESPONSE_BYTES + 1
+            return b"x" * size
+
+    monkeypatch.setattr("open_table_connector.google_sheets.connector.urlopen", lambda *_args, **_kwargs: Response())
+    with pytest.raises(ConnectorError) as raised:
+        UrllibSheetsTransport().request("GET", "https://example.test", headers={})
+    assert raised.value.code is ConnectorErrorCode.RESOURCE_LIMIT_EXCEEDED
 
 
 def test_google_sheets_reads_values_and_builds_receipt() -> None:

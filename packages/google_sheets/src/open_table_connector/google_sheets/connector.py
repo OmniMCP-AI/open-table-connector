@@ -5,6 +5,7 @@ from hashlib import sha256
 import json
 from typing import Any, Mapping, Protocol
 from urllib.parse import quote, unquote, urlsplit
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import polars as pl
@@ -24,6 +25,7 @@ TABLE_INSPECT_CAPABILITY = CapabilityIdentity("table.inspect", "1.0")
 TABLE_READ_ARROW_CAPABILITY = CapabilityIdentity("table.read.arrow", "1.0")
 TABLE_READ_POLARS_CAPABILITY = CapabilityIdentity("table.read.polars", "1.0")
 TABLE_WRITE_CAPABILITY = CapabilityIdentity("table.write", "1.0")
+GOOGLE_SHEETS_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 CAPABILITY_MANIFEST = CapabilityManifest(CONNECTOR_IDENTITY, (URI_RESOLVER_CAPABILITY, TABLE_INSPECT_CAPABILITY, TABLE_READ_ARROW_CAPABILITY, TABLE_READ_POLARS_CAPABILITY, TABLE_WRITE_CAPABILITY), (TableMode.SHEET,), ("gsheets", "https"))
 
 
@@ -37,7 +39,25 @@ class UrllibSheetsTransport:
         request = Request(url, data=data, headers={**headers, "Content-Type": "application/json"}, method=method)
         try:
             with urlopen(request, timeout=timeout) as response:
-                return json.loads(response.read())
+                payload = response.read(GOOGLE_SHEETS_MAX_RESPONSE_BYTES + 1)
+                if len(payload) > GOOGLE_SHEETS_MAX_RESPONSE_BYTES:
+                    raise ConnectorError(
+                        ConnectorErrorCode.RESOURCE_LIMIT_EXCEEDED,
+                        "Google Sheets response exceeded the configured byte limit",
+                        {"max_bytes": GOOGLE_SHEETS_MAX_RESPONSE_BYTES},
+                    )
+                return json.loads(payload)
+        except HTTPError as exc:
+            code = (
+                ConnectorErrorCode.AUTHENTICATION
+                if exc.code in {401, 403}
+                else ConnectorErrorCode.EXECUTION_FAILED
+            )
+            raise ConnectorError(code, "Google Sheets request failed", {"status": exc.code}) from None
+        except TimeoutError:
+            raise ConnectorError(ConnectorErrorCode.TIMEOUT, "Google Sheets request timed out", {}) from None
+        except ConnectorError:
+            raise
         except Exception:
             raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "Google Sheets request failed", {"reason": "unexpected transport exception"}) from None
 
