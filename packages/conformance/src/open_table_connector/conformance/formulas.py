@@ -241,6 +241,12 @@ def assert_formula_security_safe(case: FormulaProviderCase) -> FormulaSecurityPr
 
     if case.security_expression is None:
         raise ValueError(f"{case.provider_id}: security_expression is required for a security probe")
+    set_capability = otf.GRID_SET if case.target_kind == "grid" else otf.FIELD_SET
+    if set_capability not in case.static_capabilities:
+        raise ValueError(
+            f"{case.provider_id}: security probe requires advertised "
+            f"{set_capability.to_reference()} capability"
+        )
     extension = case.extension_factory()
     target_factory = case.grid_target_factory if case.target_kind == "grid" else case.field_target_factory
     if target_factory is None:
@@ -292,6 +298,11 @@ def assert_formula_security_safe(case: FormulaProviderCase) -> FormulaSecurityPr
         result,
         context=f"{case.provider_id}: security probe",
         forbidden_texts=forbidden_texts,
+    )
+    _assert_security_result_safe(
+        normalized,
+        forbidden_texts=forbidden_texts,
+        context=f"{case.provider_id}: security probe",
     )
     probe = FormulaSecurityProbe(
         result=normalized,
@@ -685,6 +696,39 @@ def _require_result(
         _assert_safe_surface(repr(result.error), tuple(forbidden_texts), context=f"{context} error repr")
     assert_formula_receipt_safe(result.receipts, forbidden_texts=forbidden_texts)
     return result
+
+
+def _assert_security_result_safe(
+    result: otf.FormulaExtensionResult[Any],
+    *,
+    forbidden_texts: Iterable[str],
+    context: str,
+) -> None:
+    forbidden = tuple(forbidden_texts)
+    value = result.value
+    result_repr = repr(result)
+    if value is None:
+        _assert_safe_surface(result_repr, forbidden, context=f"{context} result repr")
+        return
+
+    value_repr = repr(value)
+    result_without_value = result_repr.replace(value_repr, "<typed formula value>", 1)
+    _assert_safe_surface(result_without_value, forbidden, context=f"{context} result repr")
+    allowed_formula_texts = _typed_formula_texts(value)
+    for formula_text in allowed_formula_texts:
+        value_repr = value_repr.replace(repr(formula_text), "<typed formula text>")
+        value_repr = value_repr.replace(formula_text, "<typed formula text>")
+    _assert_safe_surface(value_repr, forbidden, context=f"{context} value repr")
+
+
+def _typed_formula_texts(value: object) -> tuple[str, ...]:
+    if isinstance(value, otf.FormulaMutation):
+        value = value.formula_observation
+    if isinstance(value, otf.GridFormulaObservation):
+        return tuple(cell.expression.text for cell in value.formulas)
+    if isinstance(value, otf.FieldFormulaObservation):
+        return (value.expression.text,)
+    return ()
 
 
 def _require_success(

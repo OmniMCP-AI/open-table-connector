@@ -249,9 +249,21 @@ class BrokenBehavior:
     security_leak_channel: str | None = None
     reject_grid_read: bool = False
     reject_field_read: bool = False
+    reject_grid_set: bool = False
+    reject_field_set: bool = False
 
 
 DEFAULT_BROKEN = BrokenBehavior()
+
+
+class _LeakyFormulaExtensionResult(otf.FormulaExtensionResult[Any]):
+    def __repr__(self) -> str:
+        return f"FormulaExtensionResult(safe_result={SECURITY_MARKERS[0]!r})"
+
+
+class _LeakyFormulaMutation(otf.FormulaMutation):
+    def __repr__(self) -> str:
+        return f"FormulaMutation(safe_value={SECURITY_MARKERS[0]!r})"
 
 
 def _receipt_target(
@@ -277,6 +289,22 @@ def _unsupported_result(target_kind: str, capability: str) -> otf.FormulaExtensi
             message="formula capability is not available for this target kind",
             safe_details={"target_kind": target_kind, "capability": capability},
         ),
+    )
+
+
+def _maybe_leak_result_repr(
+    result: otf.FormulaExtensionResult[Any],
+    broken: BrokenBehavior,
+) -> otf.FormulaExtensionResult[Any]:
+    if broken.security_leak_channel != "result_repr":
+        return result
+    return _LeakyFormulaExtensionResult(
+        value=result.value,
+        outcome=result.outcome,
+        commit=result.commit,
+        verification=result.verification,
+        receipts=result.receipts,
+        error=result.error,
     )
 
 
@@ -458,6 +486,8 @@ class FakeFormulaExtension:
         self,
         request: otf.GridFormulaSetRequest,
     ) -> otf.FormulaExtensionResult[otf.FormulaMutation]:
+        if self.broken.reject_grid_set:
+            raise AssertionError("unadvertised grid set was called")
         if otf.GRID_SET.to_reference() in self.broken.unsupported_capabilities:
             return _unsupported_result(target_kind="grid", capability=otf.GRID_SET.to_reference())
         if (
@@ -524,6 +554,14 @@ class FakeFormulaExtension:
             revision_before=request.expected_revision or HASH_A,
             revision_after=observation.observed_revision,
         )
+        if self.broken.security_leak_channel == "value_repr":
+            mutation = _LeakyFormulaMutation(
+                target_kind=mutation.target_kind,
+                affected_count=mutation.affected_count,
+                formula_observation=mutation.formula_observation,
+                revision_before=mutation.revision_before,
+                revision_after=mutation.revision_after,
+            )
         receipt = otf.FormulaReceiptDetails.for_grid_set(
             target=_receipt_target(
                 request.target.grid.value,
@@ -596,12 +634,15 @@ class FakeFormulaExtension:
                     safe_details={"target_kind": "grid"},
                 ),
             )
-        return otf.FormulaExtensionResult(
-            value=mutation,
-            outcome=otf.FormulaOutcome.SUCCEEDED,
-            commit=otf.FormulaCommitState.COMMITTED,
-            verification=otf.FormulaVerificationState.PASSED,
-            receipts=(receipt,),
+        return _maybe_leak_result_repr(
+            otf.FormulaExtensionResult(
+                value=mutation,
+                outcome=otf.FormulaOutcome.SUCCEEDED,
+                commit=otf.FormulaCommitState.COMMITTED,
+                verification=otf.FormulaVerificationState.PASSED,
+                receipts=(receipt,),
+            ),
+            self.broken,
         )
 
     def read_grid_values(
@@ -714,6 +755,8 @@ class FakeFormulaExtension:
         self,
         request: otf.FieldFormulaSetRequest[FakeTable],
     ) -> otf.FormulaExtensionResult[otf.FormulaMutation]:
+        if self.broken.reject_field_set:
+            raise AssertionError("unadvertised field set was called")
         if request.expected_revision != self.store.field_revision and not self.broken.accept_stale_revision:
             return otf.FormulaExtensionResult(
                 value=None,
@@ -770,6 +813,14 @@ class FakeFormulaExtension:
             revision_before=request.expected_revision,
             revision_after=observation.observed_revision,
         )
+        if self.broken.security_leak_channel == "value_repr":
+            mutation = _LeakyFormulaMutation(
+                target_kind=mutation.target_kind,
+                affected_count=mutation.affected_count,
+                formula_observation=mutation.formula_observation,
+                revision_before=mutation.revision_before,
+                revision_after=mutation.revision_after,
+            )
         receipt = otf.FormulaReceiptDetails.for_field_set(
             target=_receipt_target(
                 request.target.table.uri.value,
@@ -842,12 +893,15 @@ class FakeFormulaExtension:
                     safe_details={"target_kind": "field"},
                 ),
             )
-        return otf.FormulaExtensionResult(
-            value=mutation,
-            outcome=otf.FormulaOutcome.SUCCEEDED,
-            commit=otf.FormulaCommitState.COMMITTED,
-            verification=otf.FormulaVerificationState.PASSED,
-            receipts=(receipt,),
+        return _maybe_leak_result_repr(
+            otf.FormulaExtensionResult(
+                value=mutation,
+                outcome=otf.FormulaOutcome.SUCCEEDED,
+                commit=otf.FormulaCommitState.COMMITTED,
+                verification=otf.FormulaVerificationState.PASSED,
+                receipts=(receipt,),
+            ),
+            self.broken,
         )
 
     def read_field_values(
