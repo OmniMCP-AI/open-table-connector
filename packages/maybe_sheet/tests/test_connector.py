@@ -196,7 +196,7 @@ def test_maybe_sheet_subprocess_transport_redacts_diagnostics_and_prefixes_crede
     )
 
     assert payload == {"ok": True}
-    assert seen["env"]["MAYBE_SHEET_ACCESS_TOKEN"] == "hidden"
+    assert seen["env"]["MAYBEAI_API_TOKEN"] == "hidden"
     assert seen["input"] == '{"id":"1"}\n'
     assert "stderr" not in repr(seen)
 

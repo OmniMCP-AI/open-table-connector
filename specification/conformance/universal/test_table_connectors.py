@@ -683,6 +683,7 @@ def test_maybe_sheet_process_timeouts_map_to_safe_stable_errors(
             "FEISHU_TENANT_ACCESS_TOKEN",
             "GOOGLE_SHEETS_ACCESS_TOKEN",
             "MAYBE_SHEET_ACCESS_TOKEN",
+            "MAYBEAI_API_TOKEN",
         }
     }
     assert seen["command"] == ["mbs", "db-table", "read"]
@@ -691,7 +692,7 @@ def test_maybe_sheet_process_timeouts_map_to_safe_stable_errors(
     assert seen["text"] is True
     assert seen["input"] is None
     assert seen["timeout"] == 2.5
-    assert provider_credentials == {"MAYBE_SHEET_ACCESS_TOKEN": "fixture-token"}
+    assert provider_credentials == {"MAYBEAI_API_TOKEN": "fixture-token"}
 
     cause = raised.value.__cause__
     assert isinstance(cause, subprocess.TimeoutExpired)

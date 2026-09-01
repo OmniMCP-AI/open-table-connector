@@ -19,9 +19,12 @@ def _credential_environment(credentials: Mapping[str, str]) -> dict[str, str]:
     originals: dict[str, str] = {}
     for raw_key, value in credentials.items():
         original = str(raw_key)
-        safe_key = "MAYBE_SHEET_" + "".join(
-            character if character.isalnum() else "_" for character in original.upper()
-        )
+        if original.lower() == "access_token":
+            safe_key = "MAYBEAI_API_TOKEN"
+        else:
+            safe_key = "MAYBE_SHEET_" + "".join(
+                character if character.isalnum() else "_" for character in original.upper()
+            )
         previous = originals.get(safe_key)
         if previous is not None and previous != original:
             raise ConnectorError(

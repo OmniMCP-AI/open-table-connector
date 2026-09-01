@@ -22,5 +22,5 @@ def test_process_environment_is_explicit_and_scoped(monkeypatch) -> None:
     child_environment = captured["env"]
     assert child_environment == {
         "MAYBE_SHEET_REGION": "test",
-        "MAYBE_SHEET_ACCESS_TOKEN": "secret",
+        "MAYBEAI_API_TOKEN": "secret",
     }
