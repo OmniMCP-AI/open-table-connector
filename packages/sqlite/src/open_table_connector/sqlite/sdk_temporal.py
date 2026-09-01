@@ -47,6 +47,7 @@ from open_table_connector.timeseries import (
     ArrowArtifactReference,
     ManagedAbortRequest,
     ManagedCommitRequest,
+    ManagedCurrentRequest,
     ManagedReadbackRequest,
     ManagedStageRequest,
     ResourceBounds,
@@ -321,6 +322,17 @@ class SQLiteSdkTemporalExtension:
                 snapshot_id=snapshot.snapshot_id,
                 snapshot_reference=snapshot.snapshot_reference,
                 resource_bounds=_DEFAULT_BOUNDS,
+            )
+        )
+
+    def current_snapshot(
+        self, binding: TableBinding, descriptor: TemporalTableDescriptor
+    ):
+        self._assert_binding(binding, descriptor)
+        return self._managed_store(descriptor).current(
+            ManagedCurrentRequest(
+                logical_target=self._database_uri,
+                descriptor_hash=self.descriptor_hash_for(binding, descriptor),
             )
         )
 

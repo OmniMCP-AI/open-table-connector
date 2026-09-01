@@ -29,6 +29,8 @@ from open_table_connector.timeseries import (
     ManagedAbortRequest,
     ManagedCommitReceipt,
     ManagedCommitRequest,
+    ManagedCurrentRequest,
+    ManagedCurrentResult,
     ManagedReadbackReceipt,
     ManagedReadbackRequest,
     ManagedReadbackResult,
@@ -64,6 +66,11 @@ _SUPPORTED_AGGREGATES = {
     AggregateFunction.SUM,
     AggregateFunction.AVG,
 }
+_CURRENT_BOUNDS = ResourceBounds(
+    max_rows=100_000,
+    max_bytes=128 * 1024 * 1024,
+    max_duration_ms=30_000,
+)
 
 
 def lower_sqlite(
@@ -408,7 +415,7 @@ class SQLiteManagedTemporalStore:
                 _check_deadline(started, request.resource_bounds, "SQLite commit")
                 return receipt
             stage = connection.execute(
-                "SELECT idempotency_key, arrow_blob, artifact_hash FROM _otc_ts_stages "
+                "SELECT idempotency_key, arrow_blob, artifact_hash, descriptor_hash FROM _otc_ts_stages "
                 "WHERE stage_id = ? AND logical_target = ?",
                 (request.stage_id, request.logical_target.value),
             ).fetchone()
@@ -449,7 +456,8 @@ class SQLiteManagedTemporalStore:
             connection.execute(
                 "INSERT INTO _otc_ts_commits "
                 "(logical_target, idempotency_key, operation_id, stage_id, snapshot_id, "
-                "snapshot_reference, committed_at, current) VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
+                "snapshot_reference, committed_at, descriptor_hash, current) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
                 (
                     request.logical_target.value,
                     request.idempotency_key,
@@ -458,6 +466,7 @@ class SQLiteManagedTemporalStore:
                     snapshot_id,
                     snapshot_reference,
                     committed_at,
+                    stage[3],
                 ),
             )
             connection.execute(
@@ -478,6 +487,60 @@ class SQLiteManagedTemporalStore:
             self._record_receipt(connection, request.operation_id, "commit", receipt.to_wire())
             _check_deadline(started, request.resource_bounds, "SQLite commit")
             return receipt
+
+    def current(self, request: ManagedCurrentRequest) -> ManagedCurrentResult | None:
+        started = time.monotonic()
+        if not isinstance(request, ManagedCurrentRequest):
+            raise TypeError("request must be a ManagedCurrentRequest")
+        self._bind_target(request.logical_target)
+        with self._connection(immediate=False) as connection:
+            rows = connection.execute(
+                "SELECT snapshot_id, snapshot_reference, committed_at, descriptor_hash "
+                "FROM _otc_ts_commits WHERE logical_target = ? AND current = 1",
+                (request.logical_target.value,),
+            ).fetchall()
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise TemporalExtensionError(
+                TemporalErrorCode.PROTOCOL_INVALID,
+                "SQLite managed current pointer is ambiguous",
+                {},
+            )
+        snapshot_id, snapshot_reference, committed_at, descriptor_hash = rows[0]
+        if descriptor_hash != request.descriptor_hash:
+            raise TemporalExtensionError(
+                TemporalErrorCode.PROTOCOL_INVALID,
+                "SQLite managed current descriptor does not match",
+                {},
+            )
+        if not isinstance(descriptor_hash, str) or not isinstance(snapshot_id, str):
+            raise TemporalExtensionError(
+                TemporalErrorCode.PROTOCOL_INVALID,
+                "SQLite managed current metadata is corrupt",
+                {},
+            )
+        table = self.read_snapshot(
+            request.logical_target,
+            snapshot_reference,
+            _CURRENT_BOUNDS,
+            snapshot_id=snapshot_id,
+        )
+        schema = table.select(list(self.descriptor.declared_fields)).schema
+        if temporal_descriptor_hash(self.descriptor, schema) != request.descriptor_hash:
+            raise TemporalExtensionError(
+                TemporalErrorCode.PROTOCOL_INVALID,
+                "SQLite managed current artifact schema does not match",
+                {},
+            )
+        _check_deadline(started, _CURRENT_BOUNDS, "SQLite current snapshot")
+        return ManagedCurrentResult(
+            snapshot_id=snapshot_id,
+            snapshot_reference=snapshot_reference,
+            committed_at=committed_at,
+            descriptor_hash=descriptor_hash,
+            schema=schema,
+        )
 
     def readback(self, request: ManagedReadbackRequest) -> ManagedReadbackResult:
         table = self.read_snapshot(
@@ -603,9 +666,15 @@ class SQLiteManagedTemporalStore:
             "CREATE TABLE IF NOT EXISTS _otc_ts_commits ("
             "logical_target TEXT NOT NULL, idempotency_key TEXT NOT NULL, operation_id TEXT NOT NULL, "
             "stage_id TEXT NOT NULL, snapshot_id TEXT NOT NULL, snapshot_reference TEXT NOT NULL, "
-            "committed_at TEXT NOT NULL, current INTEGER NOT NULL, "
+            "committed_at TEXT NOT NULL, descriptor_hash TEXT, current INTEGER NOT NULL, "
             "PRIMARY KEY(logical_target, idempotency_key), UNIQUE(logical_target, stage_id))"
         )
+        columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(_otc_ts_commits)").fetchall()
+        }
+        if "descriptor_hash" not in columns:
+            connection.execute("ALTER TABLE _otc_ts_commits ADD COLUMN descriptor_hash TEXT")
         connection.execute(
             "CREATE TABLE IF NOT EXISTS _otc_ts_receipts ("
             "operation_id TEXT PRIMARY KEY, kind TEXT NOT NULL, document TEXT NOT NULL)"
