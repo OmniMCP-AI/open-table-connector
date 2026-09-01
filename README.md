@@ -190,10 +190,12 @@ stabilized. The portable lane accepts a closed typed plan and supports bounded
 range scans, latest/as-of lookup, bucket aggregation, and gap fill.
 
 The provider inventory is explicit: CSV, JSON, JSONL, SQLite, PostgreSQL, and
-Excel expose only their certified portable capabilities; MaybeSheet remains
-import/export-only unless a live command probe and receipts prove more. JSON
-and JSONL always use `json://` and `jsonl://`; managed snapshot selection is
-request metadata, never a `managed+` URI.
+Excel expose only their certified portable capabilities. Formula extensions
+are a separate provider-native surface: Google Sheets, direct Excel, and
+MaybeSheet expose only their proven grid identities, while field identities
+remain capability-selected by the field-provider plan. JSON and JSONL always
+use `json://` and `jsonl://`; managed snapshot selection is request metadata,
+never a `managed+` URI.
 
 See the [OTC architecture specification](docs/superpowers/specs/2026-08-29-portable-time-series-storage-design.md),
 the [implementation plan](docs/superpowers/plans/2026-08-29-portable-time-series-storage.md),

@@ -65,14 +65,13 @@ field.set(
 ).require_value()
 ```
 
-Both examples describe the typed API; they do not imply that the referenced
-provider currently advertises Formula support.
+Both examples describe the typed API. Google Sheets, Maybe Sheet, and direct
+Excel now advertise only their proven grid identities; field identities remain
+capability-selected by the field-provider plan.
 
-## Disabled core checkpoint
+## Capability-selected providers
 
-This package publishes the core contract only. At this checkpoint no real
-provider advertises a Formula capability identity. The grid-provider and
-field-provider plans must each install, exercise, and pass their focused
-conformance gate before enabling the identities for that provider. A missing
-or unproven capability remains unsupported rather than falling back to a
-normal Table write.
+This package publishes the core contract and shared conformance assertions.
+Provider packages install, exercise, and pass their focused conformance gate
+before enabling each identity. A missing or unproven capability remains
+unsupported rather than falling back to a normal Table write.

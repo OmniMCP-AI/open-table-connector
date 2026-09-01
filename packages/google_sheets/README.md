@@ -20,7 +20,7 @@ grid = client.formulas(
         "gsheets://spreadsheet-id",
         otc.WorksheetRef(name="Model"),
     )
-)
+).require_value()
 grid.read("B2:C4")
 grid.set("D2:F4", otc.FormulaExpression("=B2+$C$1", "google-sheets-a1"))
 grid.read_values("D2:F4")

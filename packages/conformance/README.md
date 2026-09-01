@@ -21,6 +21,6 @@ shared assertions do not make Formula capabilities available by themselves;
 provider packages must opt in only after their adapter passes the focused
 conformance suite.
 
-At the core checkpoint, the real provider descriptors intentionally advertise
-no Formula identities. The grid-provider and field-provider plans are the
-follow-on boundaries where proven capabilities may be enabled.
+Google Sheets, Maybe Sheet, and direct Excel descriptors advertise only their
+proven grid identities. Field identities remain disabled until their provider
+adapters pass the focused field conformance gate.

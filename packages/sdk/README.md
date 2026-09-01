@@ -112,11 +112,12 @@ formula text. Formula activation is explicit: only a `FormulaExpression`
 passed to a Formula view's `set()` method can activate a formula. Ordinary
 `Table` writes remain value-only and do not gain formula behavior.
 
-The Formula Extension is disabled for real providers at this core checkpoint.
-No provider capability is available until its corresponding grid-provider or
-field-provider plan is installed and its focused conformance gate passes.
-Effective capabilities may still be a subset of a future provider's static
-declaration. Unsupported Formula operations fail before provider I/O.
+The Formula Extension is capability-selected for real providers. Google
+Sheets, Maybe Sheet, and direct Excel currently expose their proven grid
+identities; field identities remain disabled until the field-provider plan's
+focused conformance gate passes. Effective capabilities may still be a subset
+of a provider's static declaration. Unsupported Formula operations fail before
+provider I/O.
 
 ## SQL lanes
 

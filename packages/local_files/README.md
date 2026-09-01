@@ -19,7 +19,7 @@ grid = client.formulas(
         "excel:///absolute/path/model.xlsx#sheet=Model",
         otc.WorksheetRef(name="Model"),
     )
-)
+).require_value()
 grid.read("B2:C4")
 grid.set("D2:F4", otc.FormulaExpression("=B2+$C$1", "excel-a1"))
 ```
