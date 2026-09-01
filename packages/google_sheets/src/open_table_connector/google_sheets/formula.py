@@ -17,7 +17,12 @@ from typing import Any
 from urllib.parse import quote, unquote, urlsplit
 
 import open_table_connector.formulas as otf
-from open_table_connector.contract import ConnectorError, ConnectorErrorCode, TableURI
+from open_table_connector.contract import (
+    SCHEME_GSHEETS,
+    ConnectorError,
+    ConnectorErrorCode,
+    TableURI,
+)
 
 from .connector import GoogleSheetsConnector, SheetsTransport
 
@@ -27,6 +32,7 @@ _MAX_EXPRESSION_BYTES = 50_000
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _DEFAULT_LEDGER_LIMIT = 1024
 _CELL_REFERENCE = re.compile(r"(?P<column>\$?[A-Za-z]{1,3})(?P<row>\$?[1-9]\d*)")
+_SIMPLE_A1_TITLE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _GRID_FIELDS = (
     "sheets(properties(sheetId,title),data(startRow,startColumn,"
     "rowData(values(userEnteredValue,effectiveValue,effectiveFormat(numberFormat)))))"
@@ -162,6 +168,12 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
             title = item.get("title")
             if isinstance(sheet_id, bool) or not isinstance(sheet_id, int) or sheet_id < 0 or not isinstance(title, str) or not title:
                 return _failed(otf.FormulaErrorCode.PROTOCOL_FAILURE, "Google Sheets metadata was malformed")
+            target_title = self._worksheet_name(request.target.grid)
+            if target_title is not None and target_title != title:
+                return _rejected(
+                    otf.FormulaErrorCode.TARGET_NOT_FOUND,
+                    "Google Sheets worksheet name and ID do not match",
+                )
             grid_properties = item.get("gridProperties")
             row_count = grid_properties.get("rowCount") if isinstance(grid_properties, Mapping) else None
             column_count = grid_properties.get("columnCount") if isinstance(grid_properties, Mapping) else None
@@ -205,7 +217,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
         try:
             rectangle = self._validated_range(request.cell_range, request.limits)
             self._check_dimensions(request.target, rectangle)
-            response, title = self._grid_request(request.target, rectangle)
+            response, title = self._grid_request(request.target, rectangle, request.limits)
             observation, _ = self._parse_grid_response(response, request.target, rectangle, title)
             receipt = otf.FormulaReceiptDetails.for_grid_read(
                 target=request.target.grid.value,
@@ -234,7 +246,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
         try:
             rectangle = self._validated_range(request.cell_range, request.limits)
             self._check_dimensions(request.target, rectangle)
-            response, title = self._grid_request(request.target, rectangle)
+            response, title = self._grid_request(request.target, rectangle, request.limits)
             _, cells = self._parse_grid_response(response, request.target, rectangle, title)
             values = tuple(
                 otf.FormulaValueCell(address, value)
@@ -283,6 +295,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
 
     def set_grid(self, request: otf.GridFormulaSetRequest) -> otf.FormulaExtensionResult[otf.FormulaMutation]:
         ledger_context: tuple[str, str, str] | None = None
+        post_dispatched = False
         try:
             rectangle = self._validated_range(request.cell_range, request.limits)
             self._check_dimensions(request.target, rectangle)
@@ -344,23 +357,26 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
                     }
                 }],
                 "includeSpreadsheetInResponse": True,
-                "responseRanges": [f"{self._title_for(request.target)}!{request.cell_range}"],
+                "responseRanges": [f"{self._a1_title(self._title_for(request.target))}!{request.cell_range}"],
                 "responseIncludeGridData": True,
             }
             url = self._url(
                 f"/v4/spreadsheets/{quote(self._spreadsheet_id(request.target.grid), safe='')}:batchUpdate"
             )
             try:
+                headers = self._connector._headers()
+                post_dispatched = True
                 response = self._connector._transport.request(
-                    "POST", url, headers=self._connector._headers(), body=body, timeout=self._connector._timeout
+                    "POST", url, headers=headers, body=body, timeout=self._connector._timeout
                 )
             except ConnectorError as exc:
                 if exc.code is ConnectorErrorCode.TIMEOUT and exc.safe_details.get("before_dispatch") is True:
                     self._fail_ledger(request, target_hash, selector_hash, payload_hash)
+                    post_dispatched = False
                     return _rejected(otf.FormulaErrorCode.TIMEOUT, "formula provider request timed out before dispatch")
                 if exc.code is ConnectorErrorCode.EXECUTION_FAILED and exc.safe_details.get("status") == 400:
-                    self._fail_ledger(request, target_hash, selector_hash, payload_hash)
-                    return _rejected(otf.FormulaErrorCode.INVALID_FORMULA, "formula provider rejected the expression", {"provider_status_code": 400})
+                    self._mark_unknown_ledger(request, target_hash, selector_hash, payload_hash)
+                    return self._provider_400_result(exc)
                 reconciled = self._reconcile_after_uncertain(
                     request, rectangle, request.expression, before.observed_revision,
                     target_hash, selector_hash, payload_hash,
@@ -369,6 +385,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
 
             if not isinstance(response, Mapping):
                 raise _ProtocolFailure
+            self._check_response_size(response, request.limits)
             updated = response.get("updatedSpreadsheet", response)
             if not isinstance(updated, Mapping):
                 raise _ProtocolFailure
@@ -376,7 +393,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
                 updated, request.target, rectangle, self._title_for(request.target)
             )
             if len(expected.formulas) != rectangle.cell_count:
-                self._fail_ledger(request, target_hash, selector_hash, payload_hash)
+                self._mark_unknown_ledger(request, target_hash, selector_hash, payload_hash)
                 if not expected.formulas:
                     return _failed(otf.FormulaErrorCode.PARTIAL_EFFECT, "formula provider returned a partial mutation response")
                 partial_mutation = otf.FormulaMutation(
@@ -398,7 +415,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
                     ),
                 )
             if self._formula_map(expected) != self._expected_formula_map(rectangle, request.expression):
-                self._fail_ledger(request, target_hash, selector_hash, payload_hash)
+                self._mark_unknown_ledger(request, target_hash, selector_hash, payload_hash)
                 return _failed(
                     otf.FormulaErrorCode.PROTOCOL_FAILURE,
                     "Google Sheets returned non-conforming copy-fill formulas",
@@ -411,7 +428,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
                 return _unknown(otf.FormulaErrorCode.UNCERTAIN_MUTATION, "formula commit state could not be determined")
             readback = readback_result.value
             if self._formula_map(readback) != self._formula_map(expected):
-                self._fail_ledger(request, target_hash, selector_hash, payload_hash)
+                self._mark_unknown_ledger(request, target_hash, selector_hash, payload_hash)
                 return _failed(
                     otf.FormulaErrorCode.READBACK_MISMATCH,
                     "formula text readback did not match the requested mutation",
@@ -458,23 +475,23 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
                     self._completed[operation_hash] = result
             return result
         except _LimitFailure as exc:
-            self._fail_ledger_if_started(request, ledger_context)
+            self._finish_ledger_failure(request, ledger_context, post_dispatched=post_dispatched)
             return _rejected(otf.FormulaErrorCode.RESOURCE_LIMIT, str(exc), {"limit": exc.limit})
         except _ProtocolFailure:
-            self._fail_ledger_if_started(request, ledger_context)
+            self._finish_ledger_failure(request, ledger_context, post_dispatched=post_dispatched)
             return _failed(otf.FormulaErrorCode.PROTOCOL_FAILURE, "Google Sheets returned an invalid mutation response")
         except ConnectorError as exc:
-            self._fail_ledger_if_started(request, ledger_context)
+            self._finish_ledger_failure(request, ledger_context, post_dispatched=post_dispatched)
             if exc.code is ConnectorErrorCode.TIMEOUT:
                 return _unknown(otf.FormulaErrorCode.UNCERTAIN_MUTATION, "formula commit state could not be determined")
             if exc.code is ConnectorErrorCode.EXECUTION_FAILED and exc.safe_details.get("status") == 400:
-                return _rejected(otf.FormulaErrorCode.INVALID_FORMULA, "formula provider rejected the expression", {"provider_status_code": 400})
+                return self._provider_400_result(exc)
             return self._transport_error(exc, operation="formula mutation")
         except (TypeError, ValueError, KeyError, json.JSONDecodeError):
-            self._fail_ledger_if_started(request, ledger_context)
+            self._finish_ledger_failure(request, ledger_context, post_dispatched=post_dispatched)
             return _failed(otf.FormulaErrorCode.PROTOCOL_FAILURE, "Google Sheets returned an invalid mutation response")
         except Exception:
-            self._fail_ledger_if_started(request, ledger_context)
+            self._finish_ledger_failure(request, ledger_context, post_dispatched=post_dispatched)
             return _failed(otf.FormulaErrorCode.EXECUTION_FAILED, "Google Sheets formula mutation failed")
 
     def recalculate_grid(self, request: otf.GridFormulaRecalculateRequest) -> otf.FormulaExtensionResult[otf.RecalculationObservation]:
@@ -487,6 +504,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
         payload = self._connector._transport.request(
             "GET", url, headers=self._connector._headers(), timeout=self._connector._timeout
         )
+        self._check_response_size(payload)
         sheets = payload.get("sheets")
         if not isinstance(sheets, list):
             raise _ProtocolFailure
@@ -497,17 +515,22 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
             properties.append(dict(sheet["properties"]))
         return properties
 
-    def _grid_request(self, target: otf.BoundGridFormulaTarget, rectangle: otf.A1Rectangle) -> tuple[Mapping[str, Any], str]:
+    def _grid_request(
+        self,
+        target: otf.BoundGridFormulaTarget,
+        rectangle: otf.A1Rectangle,
+        limits: otf.FormulaResourceLimits | None,
+    ) -> tuple[Mapping[str, Any], str]:
         title = self._title_for(target)
         url = self._url(
             f"/v4/spreadsheets/{quote(self._spreadsheet_id(target.grid), safe='')}?"
-            f"includeGridData=true&ranges={quote(f'{title}!{rectangle.start_address}:{rectangle.end_address}', safe='')}&"
+            f"includeGridData=true&ranges={quote(f'{self._a1_title(title)}!{rectangle.start_address}:{rectangle.end_address}', safe='')}&"
             f"fields={_GRID_FIELDS}"
         )
         payload = self._connector._transport.request(
             "GET", url, headers=self._connector._headers(), timeout=self._connector._timeout
         )
-        self._check_response_size(payload)
+        self._check_response_size(payload, limits)
         return payload, title
 
     def _parse_grid_response(
@@ -650,18 +673,19 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
         with self._lock:
             cached = self._bindings.get((spreadsheet_id, worksheet_id))
         if cached is not None:
+            target_title = self._worksheet_name(target.grid)
+            if target_title is not None and target_title != cached[0]:
+                raise _ProtocolFailure
             return cached[0]
-        parsed = urlsplit(target.grid.value)
-        if parsed.scheme == "gsheets":
-            title = unquote(parsed.path.lstrip("/"))
-            if title:
-                return title
+        title = self._worksheet_name(target.grid)
+        if title is not None:
+            return title
         raise _ProtocolFailure
 
     def _spreadsheet_id(self, uri: TableURI | str) -> str:
         value = uri.value if isinstance(uri, TableURI) else TableURI(uri).value
         parsed = urlsplit(value)
-        if parsed.scheme == "gsheets":
+        if parsed.scheme == SCHEME_GSHEETS:
             return parsed.netloc
         if parsed.scheme == "https" and parsed.hostname == "docs.google.com":
             parts = parsed.path.split("/")
@@ -677,10 +701,49 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
     def _formula_map(self, observation: otf.GridFormulaObservation) -> dict[str, str]:
         return {cell.address: cell.expression.text for cell in observation.formulas}
 
-    def _check_response_size(self, payload: Mapping[str, Any]) -> None:
+    def _check_response_size(
+        self,
+        payload: Mapping[str, Any],
+        limits: otf.FormulaResourceLimits | None = None,
+    ) -> None:
+        requested = limits.max_response_bytes if limits is not None else None
+        if requested is not None and (isinstance(requested, bool) or not isinstance(requested, int) or requested <= 0):
+            raise _ProtocolFailure
+        limit = _MAX_RESPONSE_BYTES if requested is None else min(_MAX_RESPONSE_BYTES, requested)
         encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
-        if len(encoded) > _MAX_RESPONSE_BYTES:
-            raise _LimitFailure("Google Sheets response exceeded the configured byte limit", _MAX_RESPONSE_BYTES)
+        if len(encoded) > limit:
+            raise _LimitFailure("Google Sheets response exceeded the configured byte limit", limit)
+
+    def _provider_400_result(self, exc: ConnectorError) -> otf.FormulaExtensionResult[Any]:
+        if self._is_formula_rejection(exc):
+            return _rejected(
+                otf.FormulaErrorCode.INVALID_FORMULA,
+                "formula provider rejected the expression",
+                {"provider_status_code": 400},
+            )
+        return self._transport_error(exc, operation="formula mutation")
+
+    def _is_formula_rejection(self, exc: ConnectorError) -> bool:
+        if exc.safe_details.get("status") != 400:
+            return False
+        for key in ("reason", "code"):
+            value = exc.safe_details.get(key)
+            if isinstance(value, str) and "formula" in value.casefold():
+                return True
+        return False
+
+    def _worksheet_name(self, uri: TableURI | str) -> str | None:
+        value = uri.value if isinstance(uri, TableURI) else TableURI(uri).value
+        parsed = urlsplit(value)
+        if parsed.scheme != SCHEME_GSHEETS:
+            return None
+        title = unquote(parsed.path.lstrip("/"))
+        return title or None
+
+    def _a1_title(self, title: str) -> str:
+        if _SIMPLE_A1_TITLE.fullmatch(title) and _CELL_REFERENCE.fullmatch(title) is None:
+            return title
+        return "'" + title.replace("'", "''") + "'"
 
     def _transport_error(self, exc: ConnectorError, *, operation: str) -> otf.FormulaExtensionResult[Any]:
         mapping = {
@@ -801,12 +864,18 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
             with self._lock:
                 self._ledger.mark_unknown(connector_id="google_sheets", target_hash=target_hash, selector_hash=selector_hash, idempotency_key=request.idempotency_key, payload_hash=payload_hash)
 
-    def _fail_ledger_if_started(
+    def _finish_ledger_failure(
         self,
         request: otf.GridFormulaSetRequest,
         ledger_context: tuple[str, str, str] | None,
+        *,
+        post_dispatched: bool,
     ) -> None:
-        if request.idempotency_key is not None and ledger_context is not None:
+        if request.idempotency_key is None or ledger_context is None:
+            return
+        if post_dispatched:
+            self._mark_unknown_ledger(request, *ledger_context)
+        else:
             self._fail_ledger(request, *ledger_context)
 
 

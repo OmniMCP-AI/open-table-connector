@@ -245,6 +245,10 @@ class FormulaIdempotencyLedger:
             return FormulaIdempotencyDecision(FormulaIdempotencyDisposition.REPLAY, entry.operation_hash)
         if entry.state == "unknown":
             return FormulaIdempotencyDecision(FormulaIdempotencyDisposition.UNKNOWN, entry.operation_hash)
+        if entry.state == "failed":
+            entry.state = "in_flight"
+            entry.operation_hash = None
+            return FormulaIdempotencyDecision(FormulaIdempotencyDisposition.STARTED)
         return FormulaIdempotencyDecision(FormulaIdempotencyDisposition.IN_FLIGHT, entry.operation_hash)
 
     def succeed(
