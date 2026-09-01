@@ -355,6 +355,7 @@ version = "0.1.0"
 source = { editable = "packages/google_sheets" }
 dependencies = [
     { name = "open-table-connector-contract" },
+    { name = "open-table-connector-formulas" },
     { name = "polars" },
     { name = "pyarrow" },
 ]
@@ -362,6 +363,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "open-table-connector-contract", editable = "packages/contract" },
+    { name = "open-table-connector-formulas", editable = "packages/formulas" },
     { name = "polars", specifier = ">=1,<2" },
     { name = "pyarrow", specifier = ">=14,<24" },
 ]

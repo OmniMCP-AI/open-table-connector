@@ -17,7 +17,9 @@ from open_table_connector.contract import (
     ProviderFactoryContext,
     parse_adapter_endpoint,
 )
+from open_table_connector.formulas import CompositeFormulaConnectorExtension
 from open_table_connector.google_sheets.cli_adapter import google_sheets_cli_plugin
+from open_table_connector.google_sheets.formula import GoogleSheetsFormulaExtension
 
 
 @dataclass(frozen=True)
@@ -72,3 +74,21 @@ def test_google_cli_descriptor_owns_https_host_route() -> None:
         (SCHEME_GSHEETS, None),
         (SCHEME_HTTPS, HOST_GOOGLE_DOCS),
     )
+
+
+def test_google_cli_formula_extension_reuses_configured_connector() -> None:
+    transport = RecordingTransport({"GET": {"values": [["id"], ["1"]]}})
+    context = ProviderFactoryContext(
+        ProviderConfig(PROVIDER_GOOGLE_SHEETS, credential_reference="work-google"),
+        environment={},
+        credentials={CREDENTIAL_ACCESS_TOKEN: "configured-secret"},
+        transports={PROVIDER_GOOGLE_SHEETS: transport},
+    )
+    adapter = google_sheets_cli_plugin().factory(context)
+
+    extension = adapter.formula_extension_for()
+
+    assert isinstance(extension, CompositeFormulaConnectorExtension)
+    assert isinstance(extension.grid, GoogleSheetsFormulaExtension)
+    assert extension.field is None
+    assert extension.grid._connector is adapter.connector

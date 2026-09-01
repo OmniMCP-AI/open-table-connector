@@ -32,6 +32,7 @@ from open_table_connector.contract import (
     TableWriteResult,
     WritePreflightAdapter,
 )
+from open_table_connector.formulas import CompositeFormulaConnectorExtension
 
 from .connector import (
     CAPABILITY_MANIFEST,
@@ -120,6 +121,14 @@ class GoogleSheetsCliAdapter(ConnectorAdapter, WritePreflightAdapter):
                 options.if_exists,
                 options.target,
             )
+        )
+
+    def formula_extension_for(self) -> CompositeFormulaConnectorExtension:
+        from .formula import GoogleSheetsFormulaExtension
+
+        return CompositeFormulaConnectorExtension(
+            grid=GoogleSheetsFormulaExtension(self.connector),
+            field=None,
         )
 
 

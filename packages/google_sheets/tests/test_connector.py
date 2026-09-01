@@ -1,11 +1,20 @@
 from __future__ import annotations
 
-import polars as pl
-import pytest
 from urllib.error import URLError
 
-from open_table_connector.contract import ConnectorError, ConnectorErrorCode, InspectRequest, ResourceLimits, ResolveContext, TableReadRequest, TableURI, TableWriteRequest
-from open_table_connector.google_sheets import GoogleSheetsConnector, GoogleSheetsReadOptions
+import polars as pl
+import pytest
+from open_table_connector.contract import (
+    ConnectorError,
+    ConnectorErrorCode,
+    InspectRequest,
+    ResolveContext,
+    ResourceLimits,
+    TableReadRequest,
+    TableURI,
+    TableWriteRequest,
+)
+from open_table_connector.google_sheets import GoogleSheetsConnector
 from open_table_connector.google_sheets.connector import (
     GOOGLE_SHEETS_MAX_RESPONSE_BYTES,
     UrllibSheetsTransport,
@@ -163,5 +172,5 @@ def test_google_sheets_inspection_reports_sheet_convention() -> None:
 
 def test_google_sheets_rejects_invalid_uri() -> None:
     connector = GoogleSheetsConnector(transport=FakeTransport(), access_token="token")
-    with pytest.raises(Exception):
+    with pytest.raises(ConnectorError):
         connector.resolve(TableURI("https://example.com/not-sheets"), ResolveContext())

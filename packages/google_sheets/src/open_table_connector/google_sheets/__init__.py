@@ -7,6 +7,7 @@ from .connector import (
     GoogleSheetsReadOptions,
     GoogleSheetsTableReadRequest,
 )
+from .formula import GoogleSheetsFormulaExtension
 
 __all__ = [
     "GOOGLE_SHEETS_MAX_RESPONSE_BYTES",
@@ -15,4 +16,5 @@ __all__ = [
     "google_sheets_cli_plugin",
     "GoogleSheetsReadOptions",
     "GoogleSheetsTableReadRequest",
+    "GoogleSheetsFormulaExtension",
 ]
