@@ -6,17 +6,18 @@ snapshot recovery and the Temporal SQL Lite profile.
 ## Source identity
 
 - Approved base: `272f7c2c1b45b738e4044211d5e8000e5841cebb`
-- Conforming code commit immediately before this report: `8aef6a4ea50a6b3a1dd69c4a4a81beba89bb1c93`
+- Conforming code commit immediately before this report: `2b348b8193decf2a4e21387a315bc370a8cdfe85`
 - Branch: `codex/ots-managed-current`
 - Supported Python: `>=3.11,<3.15`
 - PyArrow support: `>=14,<24`; lock-selected release: `23.0.1`
 - Polars lock-selected release: `1.44.1`
 
-The code commit adds provider-neutral managed current recovery, real SQLite
+The code commits add provider-neutral managed current recovery, real SQLite
 recovery and validation, the closed four-operation Temporal SQL Lite profile,
-duplicate-policy enforcement, and Python 3.14 wheel-compatible dependency
-metadata. The documentation commit that contains this report is the next
-commit, so the code SHA above is intentionally the report's final source SHA.
+duplicate-policy enforcement, Python 3.14 wheel-compatible dependency
+metadata, and public declared-schema attachment when reopening a table. This
+report refresh is the next documentation commit after that code commit, so the
+code SHA above is intentionally the report's final source SHA.
 
 ## Verification commands
 
@@ -24,6 +25,7 @@ The following commands were run from the repository root:
 
 ```text
 uv run --frozen pytest packages/timeseries/tests/test_storage_protocols.py packages/sdk/tests/test_temporal_current.py -q
+uv run --frozen pytest packages/sdk/tests/test_client.py -q
 uv run --frozen pytest packages/sqlite/tests/test_temporal_current.py -q
 uv run --frozen pytest packages/sdk/tests/test_temporal_sql_profile.py packages/timeseries/tests/test_sql_duplicate_policy.py packages/sqlite/tests/test_sdk_temporal_sql.py -q
 uv lock --upgrade-package pyarrow
