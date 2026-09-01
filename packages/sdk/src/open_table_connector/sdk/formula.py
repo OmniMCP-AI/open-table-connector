@@ -484,9 +484,11 @@ class GridFormulaView(_FormulaViewBase):
         cell_range: str | None = None,
         expected_revision: str | None = None,
         idempotency_key: str | None = None,
+        limits: FormulaResourceLimits | None = None,
     ) -> OperationResult[RecalculationObservation]:
         self._assert_ready()
         self._require_capability(GRID_RECALCULATE)
+        validated_limits = self._validate_limits(limits)
         if scope.value not in self.capabilities.details.recalculation_scopes:
             raise _error(
                 "formula recalculation scope is not available for this target",
@@ -494,7 +496,7 @@ class GridFormulaView(_FormulaViewBase):
                 connector_id=self._connector_id,
                 scope=scope.value,
             )
-        normalized_range = None if cell_range is None else self._validate_range(cell_range)
+        normalized_range = None if cell_range is None else self._validate_range(cell_range, limits=validated_limits)
         try:
             request = GridFormulaRecalculateRequest(
                 target=self.target,
@@ -502,6 +504,7 @@ class GridFormulaView(_FormulaViewBase):
                 cell_range=normalized_range,
                 expected_revision=self._validate_expected_revision(expected_revision),
                 idempotency_key=idempotency_key,
+                limits=validated_limits,
             )
         except ValueError as exc:
             raise _error(str(exc), ErrorCode.INVALID_TARGET, connector_id=self._connector_id) from exc

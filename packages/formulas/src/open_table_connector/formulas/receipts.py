@@ -273,7 +273,7 @@ class FormulaReceiptDetails:
         selector: str,
         capability: str,
         dialect: str,
-        observation_sha256: str,
+        observation_sha256: str | None,
         value_observation_sha256: str,
         observed_count: int,
         revision_after: str | None,

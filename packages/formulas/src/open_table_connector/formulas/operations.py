@@ -163,8 +163,11 @@ class GridFormulaRecalculateRequest:
     cell_range: str | None = None
     expected_revision: str | None = None
     idempotency_key: str | None = None
+    limits: FormulaResourceLimits | None = None
 
     def __post_init__(self) -> None:
+        scope = self.scope if isinstance(self.scope, GridRecalculationScope) else GridRecalculationScope(self.scope)
+        object.__setattr__(self, "scope", scope)
         if self.cell_range is not None:
             object.__setattr__(self, "cell_range", _grid_range(self.cell_range))
         if self.scope is GridRecalculationScope.RANGE and self.cell_range is None:

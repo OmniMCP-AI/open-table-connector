@@ -35,6 +35,7 @@ _ENVELOPE_KEYS = {
     "verification",
     "trace",
 }
+_ERROR_ENVELOPE_KEYS = (_ENVELOPE_KEYS - {"result"}) | {"error"}
 _CELL_REFERENCE = re.compile(r"(?P<column>\$?[A-Za-z]{1,3})(?P<row>\$?[1-9]\d*)")
 _HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
@@ -47,6 +48,16 @@ class _LimitFailure(Exception):
     def __init__(self, message: str, limit: int) -> None:
         super().__init__(message)
         self.limit = limit
+
+
+class _BindingFailure(Exception):
+    pass
+
+
+class _ProviderFailure(Exception):
+    def __init__(self, code: otf.FormulaErrorCode, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def _hash_payload(payload: object) -> str:
@@ -126,7 +137,7 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
         self._timeout = timeout
         self._bindings: dict[tuple[str, str], tuple[str, otf.FormulaCapabilityDetails]] = {}
         self._ledger = otf.FormulaIdempotencyLedger(limit=_DEFAULT_LEDGER_LIMIT)
-        self._completed: dict[str, otf.FormulaExtensionResult[otf.FormulaMutation]] = {}
+        self._completed: dict[str, otf.FormulaExtensionResult[Any]] = {}
         self._lock = threading.RLock()
 
     def bind_grid(self, request: otf.GridFormulaBindRequest) -> otf.FormulaExtensionResult[otf.GridFormulaBinding]:
@@ -174,6 +185,8 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
             return _result(binding)
         except _ProtocolFailure:
             return _failed(otf.FormulaErrorCode.PROTOCOL_FAILURE, "MaybeSheet returned an invalid worksheet response")
+        except _ProviderFailure as exc:
+            return _rejected(exc.code, str(exc))
         except ConnectorError as exc:
             return self._transport_error(exc, "worksheet binding")
         except (TypeError, ValueError, KeyError, json.JSONDecodeError):
@@ -183,7 +196,8 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
 
     def read_grid(self, request: otf.GridFormulaReadRequest) -> otf.FormulaExtensionResult[otf.GridFormulaObservation]:
         try:
-            rectangle = self._validated_range(request.cell_range, request.limits)
+            details = self._binding_details(request.target)
+            rectangle = self._validated_range(request.cell_range, request.limits, details.max_cells_per_operation)
             payload = self._call(self._formula_argv("read", request.target, rectangle) + ("--output", "json"), operation="formula.read", timeout=self._request_timeout(request.limits), limits=request.limits)
             observation = self._parse_formula_observation(payload["result"], request.target, rectangle, request.limits)
             receipt = otf.FormulaReceiptDetails.for_grid_read(
@@ -198,6 +212,10 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
             return _result(observation, (receipt,))
         except _LimitFailure as exc:
             return _rejected(otf.FormulaErrorCode.RESOURCE_LIMIT, str(exc), {"limit": exc.limit})
+        except _BindingFailure:
+            return _rejected(otf.FormulaErrorCode.TARGET_NOT_FOUND, "MaybeSheet worksheet binding is required")
+        except _ProviderFailure as exc:
+            return _rejected(exc.code, str(exc))
         except _ProtocolFailure:
             return _failed(otf.FormulaErrorCode.PROTOCOL_FAILURE, "MaybeSheet returned an invalid formula response")
         except ConnectorError as exc:
@@ -209,7 +227,8 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
 
     def read_grid_values(self, request: otf.GridFormulaValueReadRequest) -> otf.FormulaExtensionResult[otf.GridFormulaValueObservation]:
         try:
-            rectangle = self._validated_range(request.cell_range, request.limits)
+            details = self._binding_details(request.target)
+            rectangle = self._validated_range(request.cell_range, request.limits, details.max_cells_per_operation)
             payload = self._call(
                 self._worksheet_argv(request.target, rectangle),
                 operation="excel-worksheet.read",
@@ -222,7 +241,7 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
                 selector=request.cell_range,
                 capability=otf.GRID_VALUES_READ.to_reference(),
                 dialect=otf.MAYBE_SHEET_A1,
-                observation_sha256=_hash_payload({"target": request.target.grid.value, "range": request.cell_range, "formulas": []}),
+                observation_sha256=None,
                 value_observation_sha256=otf.formula_observation_hash(observation),
                 observed_count=len(observation.values),
                 revision_after=observation.observed_revision,
@@ -233,6 +252,10 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
             return _result(observation, (receipt,))
         except _LimitFailure as exc:
             return _rejected(otf.FormulaErrorCode.RESOURCE_LIMIT, str(exc), {"limit": exc.limit})
+        except _BindingFailure:
+            return _rejected(otf.FormulaErrorCode.TARGET_NOT_FOUND, "MaybeSheet worksheet binding is required")
+        except _ProviderFailure as exc:
+            return _rejected(exc.code, str(exc))
         except _ProtocolFailure:
             return _failed(otf.FormulaErrorCode.PROTOCOL_FAILURE, "MaybeSheet returned an invalid value response")
         except ConnectorError as exc:
@@ -246,7 +269,8 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
         context: tuple[str, str, str] | None = None
         dispatched = False
         try:
-            rectangle = self._validated_range(request.cell_range, request.limits)
+            details = self._binding_details(request.target)
+            rectangle = self._validated_range(request.cell_range, request.limits, details.max_cells_per_operation)
             if request.expression.dialect != otf.MAYBE_SHEET_A1:
                 return _rejected(otf.FormulaErrorCode.INVALID_FORMULA, "MaybeSheet formula dialect is invalid")
             expression_limit = self._expression_limit(request.limits)
@@ -336,12 +360,23 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
                         operation_hash=operation_hash,
                     )
             return result
+        except _BindingFailure:
+            return _rejected(otf.FormulaErrorCode.TARGET_NOT_FOUND, "MaybeSheet worksheet binding is required")
         except _LimitFailure as exc:
             self._finish_ledger(request, context, dispatched=dispatched)
+            if dispatched:
+                return _unknown("formula commit state could not be determined")
             return _rejected(otf.FormulaErrorCode.RESOURCE_LIMIT, str(exc), {"limit": exc.limit})
         except _ProtocolFailure:
             self._finish_ledger(request, context, dispatched=dispatched)
+            if dispatched:
+                return _unknown("formula commit state could not be determined")
             return _failed(otf.FormulaErrorCode.PROTOCOL_FAILURE, "MaybeSheet returned an invalid mutation response")
+        except _ProviderFailure:
+            self._finish_ledger(request, context, dispatched=dispatched)
+            if dispatched:
+                return _unknown("formula commit state could not be determined")
+            return _failed(otf.FormulaErrorCode.EXECUTION_FAILED, "MaybeSheet rejected the formula mutation")
         except ConnectorError as exc:
             before_dispatch = exc.code is ConnectorErrorCode.TIMEOUT and exc.safe_details.get("before_dispatch") is True
             self._finish_ledger(request, context, dispatched=dispatched and not before_dispatch)
@@ -350,23 +385,73 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
             return self._transport_error(exc, "formula mutation")
         except (TypeError, ValueError, KeyError, json.JSONDecodeError):
             self._finish_ledger(request, context, dispatched=dispatched)
+            if dispatched:
+                return _unknown("formula commit state could not be determined")
             return _failed(otf.FormulaErrorCode.PROTOCOL_FAILURE, "MaybeSheet returned an invalid mutation response")
         except Exception:
             self._finish_ledger(request, context, dispatched=dispatched)
+            if dispatched:
+                return _unknown("formula commit state could not be determined")
             return _failed(otf.FormulaErrorCode.EXECUTION_FAILED, "MaybeSheet formula mutation failed")
 
     def recalculate_grid(self, request: otf.GridFormulaRecalculateRequest) -> otf.FormulaExtensionResult[otf.RecalculationObservation]:
+        context: tuple[str, str, str] | None = None
+        dispatched = False
         try:
             details = self._binding_details(request.target)
             if request.scope.value not in details.recalculation_scopes:
                 return _rejected(otf.FormulaErrorCode.UNSUPPORTED_CAPABILITY, "MaybeSheet does not support the requested recalculation scope")
-            rectangle = otf.A1Rectangle.parse(request.cell_range) if request.scope.value == "range" and request.cell_range is not None else None
+            if request.scope.value == "range":
+                if request.cell_range is None:
+                    return _rejected(otf.FormulaErrorCode.INVALID_TARGET, "range recalculation requires a bounded cell range")
+                rectangle = self._validated_range(request.cell_range, request.limits, details.max_cells_per_operation)
+            else:
+                if request.cell_range is not None:
+                    return _rejected(otf.FormulaErrorCode.INVALID_TARGET, "non-range recalculation must not include a cell range")
+                rectangle = None
+            target_hash = _hash_payload({"uri": request.target.grid.value, "gid": request.target.worksheet.worksheet_id})
+            selector_hash = _hash_payload({"capability": otf.GRID_RECALCULATE.to_reference()})
+            payload_hash = _hash_payload(
+                {
+                    "scope": request.scope.value,
+                    "range": request.cell_range,
+                    "expected_revision": request.expected_revision,
+                }
+            )
+            context = (target_hash, selector_hash, payload_hash)
+            if request.idempotency_key is not None:
+                with self._lock:
+                    decision = self._ledger.begin(
+                        connector_id="maybe_sheet",
+                        capability=otf.GRID_RECALCULATE.to_reference(),
+                        target_hash=target_hash,
+                        selector_hash=selector_hash,
+                        idempotency_key=request.idempotency_key,
+                        payload_hash=payload_hash,
+                    )
+                if decision.disposition in {
+                    otf.FormulaIdempotencyDisposition.CONFLICT,
+                    otf.FormulaIdempotencyDisposition.IN_FLIGHT,
+                }:
+                    return _rejected(otf.FormulaErrorCode.IDEMPOTENCY_CONFLICT, "formula recalculation idempotency key conflicts with a prior request")
+                if decision.disposition is otf.FormulaIdempotencyDisposition.UNKNOWN:
+                    return _unknown("formula recalculation remains uncertain")
+                if decision.disposition is otf.FormulaIdempotencyDisposition.REPLAY:
+                    with self._lock:
+                        cached = self._completed.get(decision.operation_hash or "")
+                    return cached if cached is not None else _unknown("formula recalculation replay result is unavailable")
             argv = list(self._formula_argv("recalculate", request.target, rectangle))
             argv.append("--verify")
             if request.expected_revision is not None:
                 argv.extend(("--expected-revision", request.expected_revision))
             argv.extend(("--output", "json"))
-            payload = self._call(tuple(argv), operation="formula.recalculate")
+            dispatched = True
+            payload = self._call(
+                tuple(argv),
+                operation="formula.recalculate",
+                timeout=self._request_timeout(request.limits),
+                limits=request.limits,
+            )
             result = payload["result"]
             requested_scope = result.get("requested_scope", request.scope.value)
             effective_scope = result.get("effective_scope", requested_scope)
@@ -390,14 +475,62 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
                 verification="passed" if value_observation is not None else "unavailable",
                 value_observation=value_observation,
             )
-            return _result(observation)
+            result = otf.FormulaExtensionResult(
+                value=observation,
+                outcome=otf.FormulaOutcome.SUCCEEDED,
+                commit=otf.FormulaCommitState.NOT_APPLICABLE,
+                verification=(
+                    otf.FormulaVerificationState.PASSED
+                    if observation.verification == "passed"
+                    else otf.FormulaVerificationState.UNAVAILABLE
+                ),
+                receipts=(),
+            )
+            if request.idempotency_key is not None and context is not None:
+                operation_hash = _hash_payload(observation.to_wire())
+                with self._lock:
+                    self._completed[operation_hash] = result
+                    self._ledger.succeed(
+                        connector_id="maybe_sheet",
+                        target_hash=context[0],
+                        selector_hash=context[1],
+                        idempotency_key=request.idempotency_key,
+                        payload_hash=context[2],
+                        operation_hash=operation_hash,
+                    )
+            return result
         except _ProtocolFailure:
+            self._finish_recalculation_ledger(request, context, dispatched=dispatched)
+            if dispatched:
+                return _unknown("formula recalculation state could not be determined")
             return _failed(otf.FormulaErrorCode.PROTOCOL_FAILURE, "MaybeSheet returned an invalid recalculation response")
+        except _LimitFailure as exc:
+            self._finish_recalculation_ledger(request, context, dispatched=dispatched)
+            if dispatched:
+                return _unknown("formula recalculation state could not be determined")
+            return _rejected(otf.FormulaErrorCode.RESOURCE_LIMIT, str(exc), {"limit": exc.limit})
+        except _BindingFailure:
+            return _rejected(otf.FormulaErrorCode.TARGET_NOT_FOUND, "MaybeSheet worksheet binding is required")
+        except _ProviderFailure as exc:
+            self._finish_recalculation_ledger(request, context, dispatched=dispatched)
+            if dispatched:
+                return _unknown("formula recalculation state could not be determined")
+            return _rejected(exc.code, str(exc))
         except ConnectorError as exc:
+            before_dispatch = exc.code is ConnectorErrorCode.TIMEOUT and exc.safe_details.get("before_dispatch") is True
+            self._finish_recalculation_ledger(request, context, dispatched=dispatched and not before_dispatch)
+            if dispatched and not before_dispatch:
+                return _unknown("formula recalculation state could not be determined")
             return self._transport_error(exc, "formula recalculation")
         except (TypeError, ValueError, KeyError, json.JSONDecodeError):
+            self._finish_recalculation_ledger(request, context, dispatched=dispatched)
+            if dispatched:
+                return _unknown("formula recalculation state could not be determined")
             return _failed(otf.FormulaErrorCode.PROTOCOL_FAILURE, "MaybeSheet returned an invalid recalculation response")
         except Exception:
+            self._finish_recalculation_ledger(request, context, dispatched=dispatched)
+            if dispatched:
+                return _unknown("formula recalculation state could not be determined")
             return _failed(otf.FormulaErrorCode.EXECUTION_FAILED, "MaybeSheet formula recalculation failed")
 
     def _call(
@@ -417,15 +550,20 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
             raise
         except Exception:
             raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "MaybeSheet process operation failed", {}) from None
-        if not isinstance(payload, Mapping) or set(payload) != _ENVELOPE_KEYS:
+        if not isinstance(payload, Mapping) or set(payload) not in (_ENVELOPE_KEYS, _ERROR_ENVELOPE_KEYS):
             raise _ProtocolFailure
-        if payload["contract_version"] != "1.0" or payload["ok"] is not True or payload["operation"] != operation:
+        if payload["contract_version"] != "1.0" or payload["operation"] != operation:
             raise _ProtocolFailure
         if not isinstance(payload["target"], Mapping) or not isinstance(payload["warnings"], list) or not isinstance(payload["verification"], Mapping):
             raise _ProtocolFailure
         if payload["request_id"] is not None and not isinstance(payload["request_id"], str):
             raise _ProtocolFailure
-        if not isinstance(payload["result"], Mapping):
+        if payload["ok"] is False:
+            error = payload.get("error")
+            if not isinstance(error, Mapping) or not isinstance(error.get("code"), str) or not error["code"].strip():
+                raise _ProtocolFailure
+            raise _ProviderFailure(*self._provider_error(error))
+        if payload["ok"] is not True or "error" in payload or not isinstance(payload["result"], Mapping):
             raise _ProtocolFailure
         requested = limits.max_response_bytes if limits is not None else None
         if requested is not None and (isinstance(requested, bool) or not isinstance(requested, int) or requested <= 0):
@@ -475,7 +613,31 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
         matrix = self._checked_matrix(values, rectangle)
         metadata = self._metadata_matrix(result.get("cell_metadata", result.get("metadata")), rectangle)
         formula_cells = result.get("formula_cells")
-        formula_addresses = {str(item) for item in formula_cells} if isinstance(formula_cells, list) and all(isinstance(item, str) for item in formula_cells) else None
+        formula_addresses: set[str] | None = None
+        if formula_cells is not None:
+            if not isinstance(formula_cells, list):
+                raise _ProtocolFailure
+            formula_addresses = set()
+            for item in formula_cells:
+                if not isinstance(item, str):
+                    raise _ProtocolFailure
+                try:
+                    cell = otf.A1Rectangle.parse(item)
+                except (TypeError, ValueError):
+                    raise _ProtocolFailure from None
+                if (
+                    cell.cell_count != 1
+                    or cell.worksheet_name is not None
+                    or not (
+                        rectangle.start_column <= cell.start_column <= rectangle.end_column
+                        and rectangle.start_row <= cell.start_row <= rectangle.end_row
+                    )
+                ):
+                    raise _ProtocolFailure
+                address = _address(cell.start_column, cell.start_row)
+                if address in formula_addresses:
+                    raise _ProtocolFailure
+                formula_addresses.add(address)
         parsed: list[otf.FormulaValueCell] = []
         for row_offset, row in enumerate(matrix):
             for column_offset, raw in enumerate(row):
@@ -488,6 +650,10 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
                 if not is_formula:
                     continue
                 parsed.append(otf.FormulaValueCell(address, self._value(raw)))
+        if formula_addresses is not None:
+            returned_addresses = {cell.address for cell in parsed}
+            if returned_addresses != formula_addresses:
+                raise _ProtocolFailure
         state = result.get("calculation_state", "unknown")
         if not isinstance(state, str):
             raise _ProtocolFailure
@@ -548,9 +714,18 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
         except (TypeError, ValueError):
             raise _ProtocolFailure from None
 
-    def _validated_range(self, selector: str, limits: otf.FormulaResourceLimits | None) -> otf.A1Rectangle:
+    def _validated_range(
+        self,
+        selector: str,
+        limits: otf.FormulaResourceLimits | None,
+        binding_limit: int | None = None,
+    ) -> otf.A1Rectangle:
         rectangle = otf.A1Rectangle.parse(selector)
-        limit = _MAX_CELLS if limits is None or limits.max_cells is None else min(_MAX_CELLS, limits.max_cells)
+        limit = _MAX_CELLS if binding_limit is None else min(_MAX_CELLS, binding_limit)
+        if limits is not None and limits.max_cells is not None:
+            if isinstance(limits.max_cells, bool) or not isinstance(limits.max_cells, int) or limits.max_cells <= 0:
+                raise _ProtocolFailure
+            limit = min(limit, limits.max_cells)
         if rectangle.cell_count > limit:
             raise _LimitFailure("formula range exceeds the configured cell limit", limit)
         return rectangle
@@ -565,7 +740,7 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
         with self._lock:
             cached = self._bindings.get((target.grid.value, target.worksheet.worksheet_id or ""))
         if cached is None:
-            return otf.FormulaCapabilityDetails("grid", (otf.MAYBE_SHEET_A1,), _MAX_CELLS, _MAX_EXPRESSION_BYTES, ("range", "worksheet", "workbook"), (otf.CalculationState.PROVIDER_CURRENT, otf.CalculationState.UNKNOWN), otf.MutationAtomicity.ATOMIC, otf.RevisionEnforcement.CHECKED, otf.IdempotencyStrength.PROVIDER)
+            raise _BindingFailure
         return cached[1]
 
     def _capability_details(self, result: Mapping[str, Any]) -> otf.FormulaCapabilityDetails:
@@ -616,6 +791,7 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
     def _translate_formula(self, expression: str, column_delta: int, row_delta: int) -> str:
         output: list[str] = []
         position = 0
+        square_bracket_depth = 0
         while position < len(expression):
             if expression[position] in {'"', "'"}:
                 quote = expression[position]
@@ -627,6 +803,20 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
                     end += 1
                 output.append(expression[position:end])
                 position = end
+                continue
+            if expression[position] == "[":
+                square_bracket_depth += 1
+                output.append(expression[position])
+                position += 1
+                continue
+            if expression[position] == "]":
+                square_bracket_depth = max(0, square_bracket_depth - 1)
+                output.append(expression[position])
+                position += 1
+                continue
+            if square_bracket_depth:
+                output.append(expression[position])
+                position += 1
                 continue
             match = _CELL_REFERENCE.match(expression, position)
             if match is None:
@@ -657,6 +847,30 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
             position = end
         return "".join(output)
 
+    def _provider_error(self, error: Mapping[str, Any]) -> tuple[otf.FormulaErrorCode, str]:
+        raw_code = error.get("code")
+        if not isinstance(raw_code, str):
+            raise _ProtocolFailure
+        code = re.sub(r"[-\s]+", "_", raw_code.strip().casefold())
+        mapping = {
+            "stale_revision": otf.FormulaErrorCode.STALE_REVISION,
+            "revision_mismatch": otf.FormulaErrorCode.STALE_REVISION,
+            "invalid_formula": otf.FormulaErrorCode.INVALID_FORMULA,
+            "formula_invalid": otf.FormulaErrorCode.INVALID_FORMULA,
+            "syntax_error": otf.FormulaErrorCode.INVALID_FORMULA,
+            "resource_limit": otf.FormulaErrorCode.RESOURCE_LIMIT,
+            "resource_limit_exceeded": otf.FormulaErrorCode.RESOURCE_LIMIT,
+            "limit_exceeded": otf.FormulaErrorCode.RESOURCE_LIMIT,
+            "protocol_error": otf.FormulaErrorCode.PROTOCOL_FAILURE,
+            "protocol_invalid": otf.FormulaErrorCode.PROTOCOL_FAILURE,
+            "protocol_failure": otf.FormulaErrorCode.PROTOCOL_FAILURE,
+            "provider_rejected": otf.FormulaErrorCode.EXECUTION_FAILED,
+            "rejected": otf.FormulaErrorCode.EXECUTION_FAILED,
+            "execution_failed": otf.FormulaErrorCode.EXECUTION_FAILED,
+        }
+        mapped = mapping.get(code, otf.FormulaErrorCode.EXECUTION_FAILED)
+        return mapped, f"MaybeSheet provider rejected the {mapped.value.replace('_', ' ')} operation"
+
     def _request_timeout(self, limits: otf.FormulaResourceLimits | None) -> float | int:
         if limits is None or limits.timeout_seconds is None:
             return self._timeout
@@ -675,6 +889,33 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
                 self._ledger.mark_unknown(connector_id="maybe_sheet", target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2])
             else:
                 self._ledger.fail_known(connector_id="maybe_sheet", target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2])
+
+    def _finish_recalculation_ledger(
+        self,
+        request: otf.GridFormulaRecalculateRequest,
+        context: tuple[str, str, str] | None,
+        *,
+        dispatched: bool,
+    ) -> None:
+        if request.idempotency_key is None or context is None:
+            return
+        with self._lock:
+            if dispatched:
+                self._ledger.mark_unknown(
+                    connector_id="maybe_sheet",
+                    target_hash=context[0],
+                    selector_hash=context[1],
+                    idempotency_key=request.idempotency_key,
+                    payload_hash=context[2],
+                )
+            else:
+                self._ledger.fail_known(
+                    connector_id="maybe_sheet",
+                    target_hash=context[0],
+                    selector_hash=context[1],
+                    idempotency_key=request.idempotency_key,
+                    payload_hash=context[2],
+                )
 
     def _transport_error(self, exc: ConnectorError, operation: str) -> otf.FormulaExtensionResult[Any]:
         mapping = {

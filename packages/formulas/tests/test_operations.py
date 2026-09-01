@@ -97,6 +97,13 @@ FIELD_DETAILS = FormulaCapabilityDetails(
             False,
         ),
         (
+            FormulaOutcome.SUCCEEDED,
+            FormulaCommitState.NOT_APPLICABLE,
+            FormulaVerificationState.UNAVAILABLE,
+            True,
+            False,
+        ),
+        (
             FormulaOutcome.FAILED,
             FormulaCommitState.NOT_COMMITTED,
             FormulaVerificationState.SKIPPED,

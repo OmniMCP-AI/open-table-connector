@@ -50,3 +50,54 @@ git diff --check
 
 - The report includes mechanical Ruff import/lambda cleanup in existing Maybe temporal/test files because the requested package-wide `ruff check packages/maybe_sheet` gate otherwise remained red; no temporal behavior was changed.
 - Formula capabilities remain runtime extension metadata only; static Maybe discovery stays base-read/inspect/table-write and base mode as required until the later enablement task.
+
+## Task 3 Review-Fix Remediation
+
+### RED Evidence
+
+After adding the review regressions, the pre-fix implementation produced:
+
+```text
+uv run --frozen python -m pytest packages/maybe_sheet/tests/test_grid_formula.py packages/maybe_sheet/tests/test_connector.py -q
+17 failed, 35 passed in 0.32s
+```
+
+The failures covered binding fallback, fabricated value receipts, recalculation verification, canonical provider errors, terminal idempotency, formula-cell bounds, and copy-fill reference handling.
+
+### GREEN Verification
+
+```text
+uv run --frozen python -m pytest packages/maybe_sheet/tests/test_grid_formula.py packages/maybe_sheet/tests/test_connector.py packages/maybe_sheet/tests/test_cli_adapter.py packages/cli/tests/test_commands.py packages/formulas/tests -q
+150 passed in 0.56s
+```
+
+```text
+uv run --frozen ruff check <all changed formula/Maybe/SDK files>
+All checks passed!
+```
+
+```text
+git diff --check
+[no output]
+```
+
+The requested package-wide Ruff command still reports pre-existing findings in untouched `packages/cli/tests` files (`I001`, `UP017`, and `F401`).
+
+### Changed Files
+
+- `packages/maybe_sheet/src/open_table_connector/maybe_sheet/grid_formula.py`
+- `packages/maybe_sheet/tests/test_grid_formula.py`
+- `packages/formulas/src/open_table_connector/formulas/errors.py`
+- `packages/formulas/src/open_table_connector/formulas/operations.py`
+- `packages/formulas/src/open_table_connector/formulas/receipts.py`
+- `packages/formulas/tests/test_operations.py`
+- `packages/sdk/src/open_table_connector/sdk/formula.py`
+- `docs/superpowers/plans/2026-09-02-maybe-sheet-task-3-review-fixes.md`
+- `.superpowers/sdd/2026-09-01-grid-formula-providers/task-3-report.md`
+
+Commit: `fix: harden Maybe Sheet formula review findings` (hash reported by final VCS status)
+
+### Remaining Concerns
+
+- Static Maybe capabilities and Base/field formula paths remain disabled; ordinary table reads and writes are unchanged.
+- Full package Ruff remains blocked only by the pre-existing CLI test lint findings noted above.

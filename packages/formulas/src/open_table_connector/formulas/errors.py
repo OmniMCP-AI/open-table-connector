@@ -152,8 +152,11 @@ class FormulaExtensionResult(Generic[_T]):
                 raise ValueError("succeeded result requires a value")
             if commit not in {FormulaCommitState.NOT_APPLICABLE, FormulaCommitState.COMMITTED}:
                 raise ValueError("illegal succeeded state requires committed or not_applicable")
-            if verification is not FormulaVerificationState.PASSED:
-                raise ValueError("illegal succeeded state requires passed verification")
+            if verification not in {
+                FormulaVerificationState.PASSED,
+                FormulaVerificationState.UNAVAILABLE,
+            }:
+                raise ValueError("illegal succeeded state requires passed or unavailable verification")
         elif outcome is FormulaOutcome.REJECTED:
             if has_value:
                 raise ValueError("rejected result must not carry a value")

@@ -28,6 +28,23 @@ def envelope(operation: str, result: dict[str, Any], *, request_id: str = "reque
     }
 
 
+def error_envelope(operation: str, code: str, *, status: int | None = None) -> dict[str, Any]:
+    error: dict[str, Any] = {"code": code, "message": "provider diagnostic =SECRET"}
+    if status is not None:
+        error["status"] = status
+    return {
+        "contract_version": "1.0",
+        "ok": False,
+        "operation": operation,
+        "target": {"kind": "sheet"},
+        "warnings": [],
+        "request_id": "request-error",
+        "verification": {"status": "failed", "checks": []},
+        "trace": None,
+        "error": error,
+    }
+
+
 def worksheet_list(**result: Any) -> dict[str, Any]:
     return envelope(
         "worksheet.list",
@@ -142,10 +159,15 @@ def test_bind_grid_rejects_missing_ambiguous_or_non_sheet_targets(worksheets: li
 def test_read_grid_parses_formula_matrix_and_native_metadata_without_table_read() -> None:
     process = RecordingProcess(
         [
+            worksheet_list(),
             formula_matrix([["=B1+$C$1", None], [None, "='Quarter Plan'!$B$2"]]),
         ]
     )
-    result = _extension(process).read_grid(otf.GridFormulaReadRequest(bound_target(), "A1:B2"))
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+    result = extension.read_grid(otf.GridFormulaReadRequest(bound_target(), "A1:B2"))
 
     assert result.outcome is otf.FormulaOutcome.SUCCEEDED
     assert result.value is not None
@@ -153,7 +175,7 @@ def test_read_grid_parses_formula_matrix_and_native_metadata_without_table_read(
         ("A1", "=B1+$C$1"),
         ("B2", "='Quarter Plan'!$B$2"),
     ]
-    assert process.calls[0][0] == (
+    assert process.calls[1][0] == (
         "mbs",
         "formula",
         "read",
@@ -168,9 +190,47 @@ def test_read_grid_parses_formula_matrix_and_native_metadata_without_table_read(
     )
 
 
+def test_formula_reads_require_successful_exact_binding_before_process_io() -> None:
+    process = RecordingProcess([])
+
+    result = _extension(process).read_grid(otf.GridFormulaReadRequest(bound_target(), "A1"))
+
+    assert result.outcome is otf.FormulaOutcome.REJECTED
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.TARGET_NOT_FOUND
+    assert process.calls == []
+
+
+def test_formula_value_receipt_does_not_fabricate_formula_observation_hash() -> None:
+    process = RecordingProcess(
+        [
+            worksheet_list(),
+            envelope(
+                "excel-worksheet.read",
+                {
+                    "values": [[7]],
+                    "cell_metadata": [[{"kind": "formula"}]],
+                    "calculation_state": "provider_current",
+                    "revision": HASH_B,
+                },
+            ),
+        ]
+    )
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+
+    result = extension.read_grid_values(otf.GridFormulaValueReadRequest(bound_target(), "A1"))
+
+    assert result.outcome is otf.FormulaOutcome.SUCCEEDED
+    assert result.receipts[0].observation_sha256 is None
+
+
 def test_read_grid_values_uses_formula_rendered_worksheet_and_marks_provider_dynamic() -> None:
     process = RecordingProcess(
         [
+            worksheet_list(),
             envelope(
                 "excel-worksheet.read",
                 {
@@ -185,7 +245,11 @@ def test_read_grid_values_uses_formula_rendered_worksheet_and_marks_provider_dyn
             )
         ]
     )
-    result = _extension(process).read_grid_values(otf.GridFormulaValueReadRequest(bound_target(), "A1:B2"))
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+    result = extension.read_grid_values(otf.GridFormulaValueReadRequest(bound_target(), "A1:B2"))
 
     assert result.outcome is otf.FormulaOutcome.SUCCEEDED
     assert result.value is not None
@@ -196,7 +260,7 @@ def test_read_grid_values_uses_formula_rendered_worksheet_and_marks_provider_dyn
     assert result.value.calculation_state is otf.CalculationState.PROVIDER_CURRENT
     assert result.value.calculation_trigger is otf.CalculationTrigger.PROVIDER_READ
     assert result.value.dependency_scope == "provider_dynamic"
-    assert process.calls[0][0] == (
+    assert process.calls[1][0] == (
         "mbs",
         "excel-worksheet",
         "read",
@@ -216,11 +280,16 @@ def test_read_grid_values_uses_formula_rendered_worksheet_and_marks_provider_dyn
 def test_set_uses_verify_then_independent_formula_readback_and_top_left_copy_fill() -> None:
     process = RecordingProcess(
         [
+            worksheet_list(),
             envelope("formula.set", {"revision": HASH_B, "verification": {"status": "passed"}}),
             formula_matrix([["=B1+$C$1", "=C1+$C$1"], ["=B2+$C$1", "=C2+$C$1"]]),
         ]
     )
-    result = _extension(process).set_grid(
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+    result = extension.set_grid(
         otf.GridFormulaSetRequest(
             bound_target(),
             "A1:B2",
@@ -235,7 +304,7 @@ def test_set_uses_verify_then_independent_formula_readback_and_top_left_copy_fil
     assert result.verification is otf.FormulaVerificationState.PASSED
     assert result.value is not None
     assert result.value.affected_count == 4
-    assert [call[0] for call in process.calls] == [
+    assert [call[0] for call in process.calls[1:]] == [
         (
             "mbs",
             "formula",
@@ -278,6 +347,7 @@ def test_cross_mode_reference_is_opaque_and_never_binds_base_target() -> None:
     expression = "='R_Revenue Base'!$C2*0.8"
     process = RecordingProcess(
         [
+            worksheet_list(),
             envelope("formula.set", {"revision": HASH_B, "verification": {"status": "passed"}}),
             formula_matrix([[expression]], values=[[12.5]]),
             envelope(
@@ -292,6 +362,9 @@ def test_cross_mode_reference_is_opaque_and_never_binds_base_target() -> None:
         ]
     )
     extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
     result = extension.set_grid(
         otf.GridFormulaSetRequest(
             bound_target(), "A1", otf.FormulaExpression(expression, otf.MAYBE_SHEET_A1)
@@ -305,6 +378,7 @@ def test_cross_mode_reference_is_opaque_and_never_binds_base_target() -> None:
     assert values.value is not None
     assert values.value.dependency_scope == "provider_dynamic"
     assert all("db-table" not in " ".join(call[0]) for call in process.calls)
+    assert all(call[0][1] in {"worksheet", "formula", "excel-worksheet"} for call in process.calls)
 
 
 @pytest.mark.parametrize(
@@ -322,6 +396,7 @@ def test_recalculate_only_sends_explicit_supported_scope_and_preserves_effective
 ) -> None:
     process = RecordingProcess(
         [
+            worksheet_list(),
             envelope(
                 "formula.recalculate",
                 {
@@ -336,14 +411,19 @@ def test_recalculate_only_sends_explicit_supported_scope_and_preserves_effective
             )
         ]
     )
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
     request = otf.GridFormulaRecalculateRequest(bound_target(), scope, cell_range)
-    result = _extension(process).recalculate_grid(request)
+    result = extension.recalculate_grid(request)
 
     assert result.outcome is otf.FormulaOutcome.SUCCEEDED
     assert result.value is not None
     assert result.value.requested_scope == scope.value
     assert result.value.effective_scope == scope.value
-    assert process.calls[0][0] == (
+    assert result.verification is otf.FormulaVerificationState.UNAVAILABLE
+    assert process.calls[1][0] == (
         "mbs",
         "formula",
         "recalculate",
@@ -356,6 +436,281 @@ def test_recalculate_only_sends_explicit_supported_scope_and_preserves_effective
         "--output",
         "json",
     )
+
+
+def test_recalculate_validates_range_shape_and_cell_limit_before_dispatch() -> None:
+    process = RecordingProcess([worksheet_list()])
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+
+    result = extension.recalculate_grid(
+        otf.GridFormulaRecalculateRequest(bound_target(), otf.GridRecalculationScope.RANGE, "A1:Z1000")
+    )
+
+    assert result.outcome is otf.FormulaOutcome.REJECTED
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.RESOURCE_LIMIT
+    assert len(process.calls) == 1
+
+
+def test_recalculate_applies_caller_cell_limit_before_dispatch() -> None:
+    process = RecordingProcess([worksheet_list()])
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+
+    result = extension.recalculate_grid(
+        otf.GridFormulaRecalculateRequest(
+            bound_target(),
+            otf.GridRecalculationScope.RANGE,
+            "A1:B1",
+            limits=otf.FormulaResourceLimits(max_cells=1),
+        )
+    )
+
+    assert result.outcome is otf.FormulaOutcome.REJECTED
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.RESOURCE_LIMIT
+    assert len(process.calls) == 1
+
+
+def test_recalculate_rejects_supplied_range_for_non_range_scope_before_dispatch() -> None:
+    with pytest.raises(ValueError, match="only allowed"):
+        otf.GridFormulaRecalculateRequest(
+            bound_target(), otf.GridRecalculationScope.WORKBOOK, "A1"
+        )
+
+
+def test_recalculate_without_binding_rejects_before_process_io() -> None:
+    process = RecordingProcess([])
+
+    result = _extension(process).recalculate_grid(
+        otf.GridFormulaRecalculateRequest(bound_target(), otf.GridRecalculationScope.WORKBOOK)
+    )
+
+    assert result.outcome is otf.FormulaOutcome.REJECTED
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.TARGET_NOT_FOUND
+    assert process.calls == []
+
+
+def test_dispatched_recalculation_error_is_terminal_and_idempotency_is_not_reusable() -> None:
+    process = RecordingProcess([worksheet_list(), error_envelope("formula.recalculate", "provider_rejected")])
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+    request = otf.GridFormulaRecalculateRequest(
+        bound_target(), otf.GridRecalculationScope.WORKBOOK, idempotency_key="recalculate-terminal"
+    )
+
+    first = extension.recalculate_grid(request)
+    second = extension.recalculate_grid(request)
+
+    assert first.outcome is otf.FormulaOutcome.UNKNOWN
+    assert second.outcome is otf.FormulaOutcome.UNKNOWN
+    assert len(process.calls) == 2
+
+
+@pytest.mark.parametrize(
+    ("provider_code", "expected_code"),
+    [
+        ("stale_revision", otf.FormulaErrorCode.STALE_REVISION),
+        ("invalid_formula", otf.FormulaErrorCode.INVALID_FORMULA),
+        ("provider_rejected", otf.FormulaErrorCode.EXECUTION_FAILED),
+        ("resource_limit", otf.FormulaErrorCode.RESOURCE_LIMIT),
+        ("resource_limit_exceeded", otf.FormulaErrorCode.RESOURCE_LIMIT),
+        ("protocol_error", otf.FormulaErrorCode.PROTOCOL_FAILURE),
+        ("protocol_invalid", otf.FormulaErrorCode.PROTOCOL_FAILURE),
+    ],
+)
+def test_canonical_mbs_error_envelopes_map_to_typed_formula_errors(
+    provider_code: str, expected_code: otf.FormulaErrorCode
+) -> None:
+    process = RecordingProcess(
+        [
+            worksheet_list(),
+            error_envelope("formula.read", provider_code),
+        ]
+    )
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+
+    result = extension.read_grid(otf.GridFormulaReadRequest(bound_target(), "A1"))
+
+    assert result.outcome is otf.FormulaOutcome.REJECTED
+    assert result.error is not None
+    assert result.error.code is expected_code
+    assert "SECRET" not in result.error.message
+
+
+def test_dispatched_canonical_mutation_error_is_terminal_and_idempotency_is_not_reusable() -> None:
+    process = RecordingProcess([worksheet_list(), error_envelope("formula.set", "provider_rejected")])
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+    request = otf.GridFormulaSetRequest(
+        bound_target(), "A1", otf.FormulaExpression("=1", otf.MAYBE_SHEET_A1), idempotency_key="terminal"
+    )
+
+    first = extension.set_grid(request)
+    second = extension.set_grid(request)
+
+    assert first.outcome is otf.FormulaOutcome.UNKNOWN
+    assert second.outcome is otf.FormulaOutcome.UNKNOWN
+    assert len(process.calls) == 2
+
+
+@pytest.mark.parametrize("response", [{}, {"not": "an envelope"}])
+def test_dispatched_mutation_parse_failure_is_terminal_and_idempotency_is_not_reusable(
+    response: dict[str, Any],
+) -> None:
+    process = RecordingProcess([worksheet_list(), response])
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+    request = otf.GridFormulaSetRequest(
+        bound_target(), "A1", otf.FormulaExpression("=1", otf.MAYBE_SHEET_A1), idempotency_key="parse-terminal"
+    )
+
+    first = extension.set_grid(request)
+    second = extension.set_grid(request)
+
+    assert first.outcome is otf.FormulaOutcome.UNKNOWN
+    assert second.outcome is otf.FormulaOutcome.UNKNOWN
+    assert len(process.calls) == 2
+
+
+def test_dispatched_mutation_response_limit_is_terminal_and_idempotency_is_not_reusable() -> None:
+    process = RecordingProcess(
+        [
+            worksheet_list(),
+            envelope("formula.set", {"revision": HASH_B, "padding": "x" * 200}),
+        ]
+    )
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+    request = otf.GridFormulaSetRequest(
+        bound_target(),
+        "A1",
+        otf.FormulaExpression("=1", otf.MAYBE_SHEET_A1),
+        idempotency_key="limit-terminal",
+        limits=otf.FormulaResourceLimits(max_response_bytes=100),
+    )
+
+    first = extension.set_grid(request)
+    second = extension.set_grid(request)
+
+    assert first.outcome is otf.FormulaOutcome.UNKNOWN
+    assert second.outcome is otf.FormulaOutcome.UNKNOWN
+    assert len(process.calls) == 2
+
+
+def test_formula_cells_must_be_in_requested_rectangle_and_well_formed() -> None:
+    process = RecordingProcess(
+        [
+            worksheet_list(),
+            envelope(
+                "excel-worksheet.read",
+                {
+                    "values": [[7, 8]],
+                    "formula_cells": ["C1"],
+                    "calculation_state": "provider_current",
+                    "revision": HASH_B,
+                },
+            ),
+        ]
+    )
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+
+    result = extension.read_grid_values(otf.GridFormulaValueReadRequest(bound_target(), "A1:B1"))
+
+    assert result.outcome is otf.FormulaOutcome.FAILED
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.PROTOCOL_FAILURE
+
+
+def test_formula_value_matrix_over_return_fails_closed() -> None:
+    process = RecordingProcess(
+        [
+            worksheet_list(),
+            envelope(
+                "excel-worksheet.read",
+                {
+                    "values": [[1, 2, 3]],
+                    "cell_metadata": [[{"kind": "formula"}, {"kind": "formula"}, {"kind": "formula"}]],
+                    "calculation_state": "provider_current",
+                    "revision": HASH_B,
+                },
+            ),
+        ]
+    )
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+
+    result = extension.read_grid_values(otf.GridFormulaValueReadRequest(bound_target(), "A1:B1"))
+
+    assert result.outcome is otf.FormulaOutcome.FAILED
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.PROTOCOL_FAILURE
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        (
+            '=IF(A1="=literal",A1,0)',
+            [['=IF(A1="=literal",A1,0)', '=IF(B1="=literal",B1,0)'],
+             ['=IF(A2="=literal",A2,0)', '=IF(B2="=literal",B2,0)']],
+        ),
+        (
+            "=SUM(Table1[A1])+A1",
+            [["=SUM(Table1[A1])+A1", "=SUM(Table1[A1])+B1"],
+             ["=SUM(Table1[A1])+A2", "=SUM(Table1[A1])+B2"]],
+        ),
+        (
+            "='[Book.xlsx]Sheet 1'!A1+A1",
+            [["='[Book.xlsx]Sheet 1'!A1+A1", "='[Book.xlsx]Sheet 1'!B1+B1"],
+             ["='[Book.xlsx]Sheet 1'!A2+A2", "='[Book.xlsx]Sheet 1'!B2+B2"]],
+        ),
+    ],
+)
+def test_copy_fill_preserves_literal_structured_and_external_reference_semantics(
+    expression: str, expected: list[list[str]]
+) -> None:
+    process = RecordingProcess(
+        [
+            worksheet_list(),
+            envelope("formula.set", {"revision": HASH_B, "verification": {"status": "passed"}}),
+            formula_matrix(expected),
+        ]
+    )
+
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+    result = extension.set_grid(
+        otf.GridFormulaSetRequest(
+            bound_target(), "A1:B2", otf.FormulaExpression(expression, otf.MAYBE_SHEET_A1)
+        )
+    )
+
+    assert result.outcome is otf.FormulaOutcome.SUCCEEDED
 
 
 def test_process_arguments_and_envelopes_never_expose_credentials_and_extra_keys_fail_closed() -> None:
@@ -383,8 +738,12 @@ def test_process_arguments_and_envelopes_never_expose_credentials_and_extra_keys
 
 
 def test_formula_reads_apply_caller_response_limit_before_parsing() -> None:
-    process = RecordingProcess([formula_matrix([["=A1"]], padding="x" * 200)])
-    result = _extension(process).read_grid(
+    process = RecordingProcess([worksheet_list(), formula_matrix([["=A1"]], padding="x" * 200)])
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+    result = extension.read_grid(
         otf.GridFormulaReadRequest(
             bound_target(), "A1", limits=otf.FormulaResourceLimits(max_response_bytes=100)
         )
@@ -399,6 +758,8 @@ def test_pre_dispatch_timeout_is_retriable_but_lost_acknowledgement_is_terminal(
     class TimeoutProcess(RecordingProcess):
         def run(self, argv, *, credentials=None, stdin=None, timeout=None):
             self.calls.append((tuple(argv), {"credentials": credentials, "stdin": stdin, "timeout": timeout}))
+            if len(self.calls) == 1:
+                return worksheet_list()
             raise ConnectorError(
                 ConnectorErrorCode.TIMEOUT,
                 "timed out",
@@ -410,24 +771,32 @@ def test_pre_dispatch_timeout_is_retriable_but_lost_acknowledgement_is_terminal(
     )
     process = TimeoutProcess([])
     extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
     first = extension.set_grid(request)
     second = extension.set_grid(request)
     assert first.error is not None and first.error.code is otf.FormulaErrorCode.TIMEOUT
     assert second.error is not None and second.error.code is otf.FormulaErrorCode.TIMEOUT
-    assert len(process.calls) == 2
+    assert len(process.calls) == 3
 
     class LostAckProcess(RecordingProcess):
         def run(self, argv, *, credentials=None, stdin=None, timeout=None):
             self.calls.append((tuple(argv), {"credentials": credentials, "stdin": stdin, "timeout": timeout}))
+            if len(self.calls) == 1:
+                return worksheet_list()
             raise ConnectorError(ConnectorErrorCode.TIMEOUT, "timed out", {})
 
     process = LostAckProcess([])
     extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
     first = extension.set_grid(request)
     second = extension.set_grid(request)
     assert first.outcome is otf.FormulaOutcome.UNKNOWN
     assert second.outcome is otf.FormulaOutcome.UNKNOWN
-    assert len(process.calls) == 1
+    assert len(process.calls) == 2
 
 
 def test_adapter_composes_grid_delegate_and_optional_field_delegate() -> None:
