@@ -7,6 +7,8 @@ from .field_cases import (
     EXPECTED_FIELD_CAPABILITIES,
     FIELD_BINDING_CASES,
     FIELD_PROVIDER_IDS,
+    FieldRecordBounds,
+    consume_field_pages,
     field_record_scenario,
     load_field_provider_cases,
 )
@@ -147,3 +149,51 @@ def test_recording_field_doubles_inject_failures_and_replay_paginated_metadata_a
             headers={},
             timeout=4,
         )
+
+
+def test_field_page_consumption_follows_returned_tokens_and_preserves_order() -> None:
+    scenario = field_record_scenario()
+    requested_tokens: list[str | None] = []
+    pages = {None: scenario.record_pages[0], "r2": scenario.record_pages[1]}
+
+    def fetch_page(token: str | None):
+        requested_tokens.append(token)
+        return pages[token]
+
+    items = consume_field_pages(fetch_page, bounds=scenario.bounds)
+
+    assert requested_tokens == [None, "r2"]
+    assert [item["record_id"] for item in items] == ["rec-1", "rec-2", "rec-3"]
+
+
+@pytest.mark.parametrize(
+    ("bounds", "error"),
+    [
+        (FieldRecordBounds(max_records=2, max_response_bytes=640, max_elapsed_ms=40), "MAX_RECORDS"),
+        (FieldRecordBounds(max_records=3, max_response_bytes=300, max_elapsed_ms=40), "RESPONSE_BYTES"),
+        (FieldRecordBounds(max_records=3, max_response_bytes=640, max_elapsed_ms=15), "MAX_ELAPSED"),
+    ],
+)
+def test_field_page_consumption_rejects_cumulative_bounds(bounds: FieldRecordBounds, error: str) -> None:
+    scenario = field_record_scenario()
+    pages = {None: scenario.record_pages[0], "r2": scenario.record_pages[1]}
+
+    with pytest.raises(ValueError, match=error):
+        consume_field_pages(lambda token: pages[token], bounds=bounds)
+
+
+def test_field_page_consumption_rejects_returned_token_loops() -> None:
+    pages = {
+        None: field_record_scenario().record_pages[0],
+        "r2": field_record_scenario().record_pages[0],
+    }
+    looping_page = pages["r2"]
+    pages["r2"] = type(looping_page)(
+        items=looping_page.items,
+        next_page_token="r2",
+        response_bytes=looping_page.response_bytes,
+        elapsed_ms=looping_page.elapsed_ms,
+    )
+
+    with pytest.raises(ValueError, match="PAGE_LOOP"):
+        consume_field_pages(lambda token: pages[token], bounds=FieldRecordBounds(10, 4096, 100))

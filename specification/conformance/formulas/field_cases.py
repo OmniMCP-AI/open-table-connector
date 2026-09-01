@@ -155,6 +155,37 @@ def field_record_scenario() -> FieldRecordScenario:
     )
 
 
+def consume_field_pages(
+    fetch_page: Callable[[str | None], FieldRecordPage],
+    *,
+    bounds: FieldRecordBounds,
+) -> tuple[Mapping[str, Any], ...]:
+    """Consume token-linked pages while enforcing cumulative field-read limits."""
+
+    token: str | None = None
+    seen_tokens: set[str | None] = set()
+    items: list[Mapping[str, Any]] = []
+    response_bytes = 0
+    elapsed_ms = 0
+    while True:
+        if token in seen_tokens:
+            raise ValueError("PAGE_LOOP")
+        seen_tokens.add(token)
+        page = fetch_page(token)
+        items.extend(page.items)
+        response_bytes += page.response_bytes
+        elapsed_ms += page.elapsed_ms
+        if len(items) > bounds.max_records:
+            raise ValueError("MAX_RECORDS")
+        if response_bytes > bounds.max_response_bytes:
+            raise ValueError("RESPONSE_BYTES")
+        if elapsed_ms > bounds.max_elapsed_ms:
+            raise ValueError("MAX_ELAPSED")
+        if page.next_page_token is None:
+            return tuple(items)
+        token = page.next_page_token
+
+
 def assert_field_metadata_isolated(
     before: Mapping[str, Any],
     after: Mapping[str, Any],
@@ -391,6 +422,7 @@ __all__ = [
     "FieldRecordScenario",
     "assert_field_metadata_isolated",
     "field_case_data_for_provider",
+    "consume_field_pages",
     "field_record_scenario",
     "field_fixture_metadata",
     "load_field_fixture",

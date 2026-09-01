@@ -80,7 +80,17 @@ def test_field_metadata_fixture_rejects_unrelated_mutation(
 
 @pytest.mark.parametrize(
     "channel",
-    ["result_repr", "error", "error_details", "warning", "log", "repr", "operation_id", "ledger"],
+    [
+        "result_repr",
+        "value_repr",
+        "error",
+        "error_details",
+        "warning",
+        "log",
+        "repr",
+        "operation_id",
+        "ledger",
+    ],
 )
 def test_field_security_probe_rejects_marker_leaks_in_every_safe_surface(channel: str) -> None:
     case = FormulaProviderCase(
