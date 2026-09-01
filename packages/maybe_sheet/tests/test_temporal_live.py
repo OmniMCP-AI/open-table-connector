@@ -5,7 +5,6 @@ import json
 import os
 
 import pytest
-
 from open_table_connector.maybe_sheet import SubprocessProcessClient, probe_temporal_capabilities
 
 

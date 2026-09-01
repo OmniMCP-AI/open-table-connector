@@ -174,11 +174,10 @@ def test_maybe_sheet_read_enforces_max_rows_when_process_over_returns() -> None:
     assert result.receipt.vendor_receipt_ref == "over-return-ref"
 
 
-def test_maybe_sheet_non_read_capabilities_fail_explicitly() -> None:
+def test_maybe_sheet_connector_does_not_expose_legacy_formula_aliases() -> None:
     connector = MaybeSheetConnector(Process())
-    with pytest.raises(ConnectorError) as error:
-        connector.read_formula_values(object())
-    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+    assert not hasattr(connector, "calculate_formulas")
+    assert not hasattr(connector, "read_formula_values")
 
 
 def test_maybe_sheet_subprocess_transport_redacts_diagnostics_and_prefixes_credentials(monkeypatch) -> None:
@@ -346,7 +345,9 @@ def test_maybe_sheet_unexpected_process_errors_do_not_expose_access_tokens(opera
             TableMode.BASE,
             "R_orders",
         )
-        invoke = lambda: connector.read_polars(request)
+
+        def invoke():
+            return connector.read_polars(request)
     else:
         request = TableWriteRequest(
             TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"),
@@ -354,7 +355,9 @@ def test_maybe_sheet_unexpected_process_errors_do_not_expose_access_tokens(opera
             table="R_orders",
             if_exists="append",
         )
-        invoke = lambda: connector.write(request, credentials={"access_token": access_token})
+
+        def invoke():
+            return connector.write(request, credentials={"access_token": access_token})
 
     with pytest.raises(ConnectorError) as error:
         invoke()

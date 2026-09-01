@@ -258,18 +258,6 @@ class MaybeSheetConnector:
             affected_rows=int(request.frame.height if inserted_rows is None else inserted_rows),
         )
 
-    def calculate_formulas(self, request: Any) -> None:
-        """MaybeSheet formula calculation remains outside this read slice."""
-
-        del request
-        self._unsupported("formula.calculate")
-
-    def read_formula_values(self, request: Any) -> None:
-        """Value-only reads are never accepted as formula evidence."""
-
-        del request
-        self._unsupported("formula.readback")
-
     def _run_process(
         self,
         argv: tuple[str, ...],

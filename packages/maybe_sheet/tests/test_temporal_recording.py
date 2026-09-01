@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from open_table_connector.contract import TableURI
 from open_table_connector.maybe_sheet import MaybeSheetTemporalExecutor
 from open_table_connector.timeseries import (
@@ -15,10 +14,8 @@ from open_table_connector.timeseries import (
     TemporalExtensionError,
 )
 
-from packages.timeseries.tests.fixtures import MemoryTemporalSource, bounds, descriptor
-
 from packages.local_files.tests.test_temporal_csv import operations
-
+from packages.timeseries.tests.fixtures import MemoryTemporalSource, bounds, descriptor
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

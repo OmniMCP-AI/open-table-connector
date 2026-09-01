@@ -32,8 +32,10 @@ from open_table_connector.contract import (
     TableWriteResult,
     WritePreflightAdapter,
 )
+from open_table_connector.formulas import CompositeFormulaConnectorExtension
 
 from .connector import MaybeSheetConnector, MaybeSheetReadRequest
+from .grid_formula import MaybeSheetGridFormulaExtension
 from .identity import (
     BASE_INSPECT_CAPABILITY,
     BASE_READ_CAPABILITY,
@@ -154,6 +156,17 @@ class MaybeSheetCliAdapter(ConnectorAdapter, WritePreflightAdapter):
             self._target(endpoint, options),
         )
         return self.connector.write(request, credentials=self._credentials_for_options(options))
+
+    def formula_extension_for(self) -> CompositeFormulaConnectorExtension:
+        field_extension = getattr(self, "field_formula_extension", None)
+        return CompositeFormulaConnectorExtension(
+            grid=MaybeSheetGridFormulaExtension(
+                self.connector,
+                self.credentials,
+                self.timeout_seconds,
+            ),
+            field=field_extension,
+        )
 
 
 def _factory(context: ProviderFactoryContext) -> MaybeSheetCliAdapter:

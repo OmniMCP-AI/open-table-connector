@@ -15,7 +15,12 @@ from pathlib import Path
 from threading import Lock
 
 import pyarrow as pa
-from open_table_connector.contract import ConnectorError, ConnectorErrorCode, PROVIDER_JSON, TableURI
+from open_table_connector.contract import (
+    PROVIDER_JSON,
+    ConnectorError,
+    ConnectorErrorCode,
+    TableURI,
+)
 from open_table_connector.timeseries import (
     ManagedAbortReceipt,
     ManagedAbortRequest,

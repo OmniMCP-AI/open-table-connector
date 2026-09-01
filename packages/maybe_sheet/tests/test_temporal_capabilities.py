@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pyarrow as pa
 import pytest
-
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode, TableURI
 from open_table_connector.maybe_sheet import (
     MaybeSheetManagedTemporalStore,
@@ -34,7 +33,6 @@ from open_table_connector.timeseries.capabilities import (
 from packages.timeseries.tests.fixtures import descriptor, ticks_table
 
 from .test_temporal_recording import FIXTURES, RecordingTemporalProcess
-
 
 LIFECYCLE = {
     STORAGE_STAGE,
