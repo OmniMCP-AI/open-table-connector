@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +44,135 @@ FIELD_NATIVE_EXPRESSIONS = {
         "ROUND(revenue - cost, 2)",
     ),
 }
+
+
+@dataclass(frozen=True, slots=True)
+class FieldBindingCase:
+    name: str
+    selector: otf.FieldRef
+    expected_error: otf.FormulaErrorCode | None
+    expected_field_id: str | None
+
+
+FIELD_BINDING_CASES = (
+    FieldBindingCase("exact_name", otf.FieldRef(name="gross_margin"), None, "fld-gross-margin"),
+    FieldBindingCase("exact_id", otf.FieldRef(field_id="fld-gross-margin"), None, "fld-gross-margin"),
+    FieldBindingCase(
+        "missing",
+        otf.FieldRef(name="does_not_exist"),
+        otf.FormulaErrorCode.TARGET_NOT_FOUND,
+        None,
+    ),
+    FieldBindingCase(
+        "ambiguous",
+        otf.FieldRef(name="duplicate"),
+        otf.FormulaErrorCode.INVALID_TARGET,
+        None,
+    ),
+    FieldBindingCase(
+        "non_formula",
+        otf.FieldRef(name="description"),
+        otf.FormulaErrorCode.INVALID_TARGET,
+        None,
+    ),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class FieldRecordPage:
+    items: tuple[Mapping[str, Any], ...]
+    next_page_token: str | None
+    response_bytes: int
+    elapsed_ms: int
+
+
+@dataclass(frozen=True, slots=True)
+class FieldRecordBounds:
+    max_records: int
+    max_response_bytes: int
+    max_elapsed_ms: int
+
+
+@dataclass(frozen=True, slots=True)
+class FieldRecordScenario:
+    metadata_pages: tuple[FieldRecordPage, ...]
+    record_pages: tuple[FieldRecordPage, ...]
+    bounds: FieldRecordBounds
+
+    @property
+    def total_rows(self) -> int:
+        return sum(len(page.items) for page in self.record_pages)
+
+    @property
+    def metadata_row_count(self) -> int:
+        return sum(len(page.items) for page in self.metadata_pages)
+
+    @property
+    def total_response_bytes(self) -> int:
+        return sum(page.response_bytes for page in (*self.metadata_pages, *self.record_pages))
+
+    @property
+    def total_elapsed_ms(self) -> int:
+        return sum(page.elapsed_ms for page in (*self.metadata_pages, *self.record_pages))
+
+
+def field_record_scenario() -> FieldRecordScenario:
+    """Return bounded metadata and stable-record pages for adapter fixtures."""
+
+    return FieldRecordScenario(
+        metadata_pages=(
+            FieldRecordPage(
+                items=({"field_id": "fld-gross-margin", "field_name": "gross_margin"},),
+                next_page_token="p2",
+                response_bytes=160,
+                elapsed_ms=8,
+            ),
+            FieldRecordPage(
+                items=({"field_id": "fld-description", "field_name": "description"},),
+                next_page_token=None,
+                response_bytes=120,
+                elapsed_ms=7,
+            ),
+        ),
+        record_pages=(
+            FieldRecordPage(
+                items=(
+                    {"record_id": "rec-1", "field_id": "fld-gross-margin"},
+                    {"record_id": "rec-2", "field_id": "fld-gross-margin"},
+                ),
+                next_page_token="r2",
+                response_bytes=220,
+                elapsed_ms=11,
+            ),
+            FieldRecordPage(
+                items=({"record_id": "rec-3", "field_id": "fld-gross-margin"},),
+                next_page_token=None,
+                response_bytes=140,
+                elapsed_ms=9,
+            ),
+        ),
+        bounds=FieldRecordBounds(max_records=3, max_response_bytes=640, max_elapsed_ms=40),
+    )
+
+
+def assert_field_metadata_isolated(
+    before: Mapping[str, Any],
+    after: Mapping[str, Any],
+) -> None:
+    """Assert that a field mutation changes only expression and evidence."""
+
+    for key in ("field_id", "field_name", "type", "result_type", "unrelated_properties"):
+        if before.get(key) != after.get(key):
+            raise AssertionError(f"disallowed field metadata mutation: {key}")
+    before_property = dict(before["property"])
+    after_property = dict(after["property"])
+    before_expression = before_property.pop("formula_expression", None)
+    after_expression = after_property.pop("formula_expression", None)
+    if before_expression == after_expression or before_property != after_property:
+        raise AssertionError("disallowed field metadata mutation: property")
+    added_keys = set(after).difference(before)
+    if not added_keys.issubset({"provider_revision", "provider_evidence"}):
+        raise AssertionError("disallowed field metadata mutation: top-level evidence")
 
 _FIELD_METADATA = {
     "maybe_sheet": {
@@ -250,12 +379,19 @@ def simulate_field_failure(scenario: FieldFailureScenario) -> otf.FormulaExtensi
 
 
 __all__ = [
+    "FIELD_BINDING_CASES",
     "EXPECTED_FIELD_CAPABILITIES",
     "FIELD_FAILURE_SCENARIOS",
     "FIELD_NATIVE_EXPRESSIONS",
     "FIELD_PROVIDER_IDS",
+    "FieldBindingCase",
     "FieldFailureScenario",
+    "FieldRecordBounds",
+    "FieldRecordPage",
+    "FieldRecordScenario",
+    "assert_field_metadata_isolated",
     "field_case_data_for_provider",
+    "field_record_scenario",
     "field_fixture_metadata",
     "load_field_fixture",
     "load_field_provider_cases",

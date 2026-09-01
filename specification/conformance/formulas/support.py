@@ -802,7 +802,7 @@ class FakeFormulaExtension:
                 }
             )
         )
-        if self.broken.security_leak_channel == "error":
+        if self.broken.security_leak_channel in {"error", "error_details"}:
             return otf.FormulaExtensionResult(
                 value=None,
                 outcome=otf.FormulaOutcome.FAILED,
@@ -811,8 +811,12 @@ class FakeFormulaExtension:
                 receipts=(receipt,),
                 error=otf.FormulaExtensionErrorInfo(
                     code=otf.FormulaErrorCode.EXECUTION_FAILED,
-                    message=self.security_markers[0],
-                    safe_details={"target_kind": "grid"},
+                    message=self.security_markers[0] if self.broken.security_leak_channel == "error" else "formula operation failed",
+                    safe_details=(
+                        {"target_kind": "grid", "status": self.security_markers[1]}
+                        if self.broken.security_leak_channel == "error_details"
+                        else {"target_kind": "grid"}
+                    ),
                 ),
             )
         return _maybe_leak_result_repr(
@@ -1061,7 +1065,7 @@ class FakeFormulaExtension:
                 }
             )
         )
-        if self.broken.security_leak_channel == "error":
+        if self.broken.security_leak_channel in {"error", "error_details"}:
             return otf.FormulaExtensionResult(
                 value=None,
                 outcome=otf.FormulaOutcome.FAILED,
@@ -1070,8 +1074,12 @@ class FakeFormulaExtension:
                 receipts=(receipt,),
                 error=otf.FormulaExtensionErrorInfo(
                     code=otf.FormulaErrorCode.EXECUTION_FAILED,
-                    message=self.security_markers[0],
-                    safe_details={"target_kind": "field"},
+                    message=self.security_markers[0] if self.broken.security_leak_channel == "error" else "formula operation failed",
+                    safe_details=(
+                        {"target_kind": "field", "status": self.security_markers[1]}
+                        if self.broken.security_leak_channel == "error_details"
+                        else {"target_kind": "field"}
+                    ),
                 ),
             )
         return _maybe_leak_result_repr(

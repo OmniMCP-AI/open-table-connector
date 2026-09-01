@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from open_table_connector.formulas import FieldFormulaValueObservation, formula_observation_from_wire
+from open_table_connector.formulas import (
+    FieldFormulaValueObservation,
+    formula_observation_from_wire,
+)
 
 from .field_cases import load_field_fixture
 
