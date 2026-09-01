@@ -7,14 +7,12 @@ from pathlib import Path
 import pyarrow as pa
 import pytest
 from jsonschema import Draft202012Validator, ValidationError
-
 from open_table_connector.timeseries import (
     TemporalTableDescriptor,
     descriptor_from_wire,
     plan_from_wire,
     temporal_descriptor_hash,
 )
-
 
 ROOT = Path(__file__).parents[3]
 SCHEMA_ROOT = ROOT / "specification" / "schemas"

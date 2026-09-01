@@ -5,7 +5,6 @@ from dataclasses import replace
 
 import pyarrow as pa
 import pytest
-
 from open_table_connector.timeseries import (
     PolarsTemporalExecutor,
     TemporalErrorCode,
@@ -13,7 +12,13 @@ from open_table_connector.timeseries import (
     TemporalExtensionError,
 )
 
-from packages.timeseries.tests.fixtures import MemoryTemporalSource, TARGET, bounds, scan, ticks_table
+from packages.timeseries.tests.fixtures import (
+    TARGET,
+    MemoryTemporalSource,
+    bounds,
+    scan,
+    ticks_table,
+)
 
 
 class DelayedSource(MemoryTemporalSource):

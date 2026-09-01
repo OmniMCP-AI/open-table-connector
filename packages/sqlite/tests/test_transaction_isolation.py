@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 from threading import Barrier, Thread
 
 import pytest
-
 from open_table_connector.contract import ExecutionRequest
 from open_table_connector.sqlite import SQLiteConnector, SQLiteManagedTemporalStore
 

@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator, ValidationError
-
 from open_table_connector.timeseries import (
     ManagedAbortReceipt,
     ManagedCommitReceipt,
@@ -14,7 +13,6 @@ from open_table_connector.timeseries import (
     ManagedStageReceipt,
     TemporalReceipt,
 )
-
 
 ROOT = Path(__file__).parents[3]
 SCHEMA_ROOT = ROOT / "specification" / "schemas"

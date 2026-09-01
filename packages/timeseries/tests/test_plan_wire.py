@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from open_table_connector.timeseries import (
     AggregateFunction,
     AggregateMeasure,
@@ -31,7 +30,6 @@ from open_table_connector.timeseries import (
     portable_plan_hash,
     validate_plan_for_descriptor,
 )
-
 
 DESCRIPTOR_HASH = "sha256:" + "a" * 64
 START = "2026-08-29T00:00:00.000000000Z"

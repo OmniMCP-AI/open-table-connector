@@ -35,6 +35,7 @@ from open_table_connector.timeseries import (
 from open_table_connector.timeseries import (
     ManagedAbortReceipt,
     ManagedCommitReceipt,
+    ManagedCurrentResult,
     ManagedReadbackReceipt,
     ManagedReadbackResult,
     ManagedStageReceipt,
@@ -238,6 +239,18 @@ class FakeTemporalExtension:
                 observed_bytes=len(_frame_arrow_bytes(frame)),
                 observed_range=None,
             ),
+        )
+
+    def current_snapshot(self, _binding, descriptor):
+        if not self.committed_frames:
+            return None
+        snapshot_id, frame = next(reversed(self.committed_frames.items()))
+        return ManagedCurrentResult(
+            snapshot_id=snapshot_id,
+            snapshot_reference="snapshots/current.arrow",
+            committed_at=_utc("2026-08-29T00:22:00.000000000Z"),
+            descriptor_hash=self.descriptor_hash_for(_binding, descriptor),
+            schema=frame.to_arrow().schema,
         )
 
     def abort_stage(self, _binding, _descriptor, stage):

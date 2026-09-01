@@ -11,7 +11,7 @@ readme = "README.md"
 dependencies = [
   "open-table-connector-contract>=0.1,<0.2",
   "polars>=1,<2",
-  "pyarrow>=14,<20",
+  "pyarrow>=14,<24",
 ]
 
 [project.entry-points."open_table_connector.providers"]

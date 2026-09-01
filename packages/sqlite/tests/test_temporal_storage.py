@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 
 import pytest
-
+from open_table_connector.contract import TableURI
 from open_table_connector.sqlite import SQLiteManagedTemporalStore, SQLiteTemporalExecutor
 from open_table_connector.timeseries import (
     AbortDisposition,
@@ -13,16 +13,9 @@ from open_table_connector.timeseries import (
     PolarsTemporalExecutor,
     ResourceBounds,
     TemporalErrorCode,
-    TemporalExtensionError,
     TemporalExecutionRequest,
+    TemporalExtensionError,
 )
-from open_table_connector.contract import TableURI
-
-
-def test_managed_store_rejects_memory_database(tmp_path: Path) -> None:
-    with pytest.raises(TemporalExtensionError) as raised:
-        SQLiteManagedTemporalStore(TableURI("sqlite:///:memory:"), tmp_path, descriptor())
-    assert raised.value.code is TemporalErrorCode.PROTOCOL_INVALID
 
 from packages.local_files.tests.test_temporal_csv import operations
 from packages.timeseries.tests.fixtures import MemoryTemporalSource, descriptor
@@ -33,6 +26,12 @@ from .temporal_fixtures import (
     sqlite_uri,
     stage_request,
 )
+
+
+def test_managed_store_rejects_memory_database(tmp_path: Path) -> None:
+    with pytest.raises(TemporalExtensionError) as raised:
+        SQLiteManagedTemporalStore(TableURI("sqlite:///:memory:"), tmp_path, descriptor())
+    assert raised.value.code is TemporalErrorCode.PROTOCOL_INVALID
 
 
 def test_sqlite_stage_commit_readback_and_abort_use_adapter_owned_tables(tmp_path: Path) -> None:

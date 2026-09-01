@@ -6,14 +6,14 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Mapping, TypeAlias
+from typing import TypeAlias
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .descriptor import TemporalTableDescriptor, TimestampPrecision
-
 
 _HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _CAPABILITY_RE = re.compile(r"^[a-z0-9][a-z0-9.-]*/[1-9][0-9]*\.[0-9]+$")
@@ -705,6 +705,11 @@ def validate_plan_for_descriptor(
                 raise ValueError(
                     f"aggregate value field is not declared: {measure.value_field}"
                 )
+            if (
+                measure.function in {AggregateFunction.FIRST, AggregateFunction.LAST}
+                and descriptor.duplicate_policy.value == "preserve"
+            ):
+                raise ValueError("first/last aggregates require duplicate resolution")
         outputs = [*operation.group_by, "bucket", *(measure.output_field for measure in operation.measures)]
         if len(outputs) != len(set(outputs)):
             raise ValueError("aggregate output fields must be unique")

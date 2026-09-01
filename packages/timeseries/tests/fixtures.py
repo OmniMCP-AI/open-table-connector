@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pyarrow as pa
-
 from open_table_connector.contract import TableURI
 from open_table_connector.timeseries import (
     AsOf,
@@ -22,7 +21,6 @@ from open_table_connector.timeseries import (
     TimestampPrecision,
     temporal_descriptor_hash,
 )
-
 
 TARGET = TableURI("json:///fixtures/ticks.json")
 

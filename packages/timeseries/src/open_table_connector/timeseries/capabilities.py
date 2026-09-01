@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 DESCRIBE = "timeseries.describe/1.0"
 SCAN_RANGE = "timeseries.scan.range/1.0"
 SCAN_RANGE_PUSHDOWN = "timeseries.scan.range.pushdown/1.0"

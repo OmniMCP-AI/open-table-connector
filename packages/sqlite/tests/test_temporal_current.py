@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 
 import pyarrow as pa
 import pytest
 from open_table_connector.contract import TableURI
 from open_table_connector.sqlite import SQLiteManagedTemporalStore
 from open_table_connector.timeseries import (
-    ManagedCurrentRequest,
     ManagedCommitRequest,
+    ManagedCurrentRequest,
     ManagedStageRequest,
     ResourceBounds,
     TemporalErrorCode,
@@ -20,7 +20,6 @@ from open_table_connector.timeseries import (
 from packages.timeseries.tests.fixtures import descriptor, ticks_table
 
 from .temporal_fixtures import put_artifact, sqlite_uri
-
 
 BOUNDS = ResourceBounds(10_000, 64 * 1024 * 1024, 30_000)
 

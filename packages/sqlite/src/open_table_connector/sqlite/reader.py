@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from collections.abc import Callable
+from contextlib import suppress
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -47,6 +48,7 @@ from open_table_connector.contract.fingerprints import (
     arrow_schema_fingerprint,
     operation_identity,
 )
+from open_table_connector.timeseries.capabilities import ALL_CAPABILITIES
 
 from .identity import (
     CONNECTOR_IDENTITY,
@@ -57,8 +59,6 @@ from .identity import (
     TABLE_WRITE_CAPABILITY,
 )
 from .sdk_temporal import SQLiteSdkConnectorMixin
-
-from open_table_connector.timeseries.capabilities import ALL_CAPABILITIES
 
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*(?:\.[A-Za-z_][A-Za-z0-9_$]*)?$")
 
@@ -256,10 +256,8 @@ class SQLiteConnector(
             raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "SQLite read failed", {"reason": str(exc)}) from None
         finally:
             if owns_connection and connection is not None:
-                try:
+                with suppress(Exception):
                     connection.close()
-                except Exception:
-                    pass
 
     def _receipt(self, request: SQLiteTableReadRequest, table: pa.Table, revision: str, options: SQLiteReadOptions, capability) -> NeutralReceipt:
         schema = arrow_schema_fingerprint(table.schema)
@@ -321,10 +319,8 @@ class SQLiteConnector(
             raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "SQLite statement failed", {"reason": str(exc)}) from None
         finally:
             if commit:
-                try:
+                with suppress(Exception):
                     connection.close()
-                except Exception:
-                    pass
 
     def write(self, request: TableWriteRequest) -> TableWriteResult:
         if request.if_exists not in {"error", "append", "replace"}:
@@ -407,10 +403,8 @@ class SQLiteConnector(
             raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "SQLite table write failed", {"reason": str(exc)}) from None
         finally:
             if commit:
-                try:
+                with suppress(Exception):
                     connection.close()
-                except Exception:
-                    pass
 
     def begin(self, uri: TableURI | None = None) -> SQLiteTransaction:
         if uri is None:

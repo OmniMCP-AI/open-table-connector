@@ -12,7 +12,7 @@ readme = "README.md"
 dependencies = [
   "open-table-connector-contract>=0.1,<0.2",
   "open-table-connector-timeseries>=0.1,<0.2",
-  "pyarrow>=14,<20",
+  "pyarrow>=14,<24",
 ]
 
 [tool.uv.sources]

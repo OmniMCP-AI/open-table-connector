@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pyarrow as pa
 import pytest
-
 from open_table_connector.contract import TableURI
 from open_table_connector.timeseries import (
     ArrowArtifactReference,
@@ -20,14 +19,13 @@ from open_table_connector.timeseries import (
     PortableTemporalExecutor,
     ResourceBounds,
     TemporalErrorCode,
-    TemporalExtensionError,
     TemporalExecutionRequest,
     TemporalExecutionResult,
+    TemporalExtensionError,
     plan_from_wire,
     portable_plan_hash,
     validate_stage_retry,
 )
-
 
 ROOT = Path(__file__).parents[3]
 HASH_A = "sha256:" + "a" * 64

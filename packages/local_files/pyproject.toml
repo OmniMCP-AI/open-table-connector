@@ -15,7 +15,7 @@ dependencies = [
   "open-table-connector-timeseries>=0.1,<0.2",
   "openpyxl>=3.1,<4",
   "polars>=1,<2",
-  "pyarrow>=14,<20",
+  "pyarrow>=14,<24",
 ]
 
 [project.entry-points."open_table_connector.process_handlers"]

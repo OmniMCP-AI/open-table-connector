@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pyarrow as pa
 import pytest
-
 from open_table_connector.timeseries import (
     AggregateFunction,
     AggregateMeasure,
@@ -18,8 +17,8 @@ from open_table_connector.timeseries import (
 )
 
 from packages.timeseries.tests.fixtures import (
-    MemoryTemporalSource,
     TARGET,
+    MemoryTemporalSource,
     descriptor,
     ns,
     portable,

@@ -6,8 +6,8 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import StrEnum
 from decimal import Decimal
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import polars as pl
@@ -528,6 +528,8 @@ def _temporal_predicates(
             field = _column_name(predicate.this)
             if field not in filterable:
                 raise ValueError("temporal equality filters require a series-key or tag field")
+            if not isinstance(predicate.expression, exp.Parameter):
+                raise ValueError("temporal tag values must use typed numbered parameters")
             tags.append(
                 TagPredicate(
                     field,
@@ -540,6 +542,8 @@ def _temporal_predicates(
             field = _column_name(predicate.this)
             if field not in filterable or predicate.args.get("query") is not None:
                 raise ValueError("temporal IN filters require literal series-key or tag values")
+            if any(not isinstance(item, exp.Parameter) for item in predicate.expressions):
+                raise ValueError("temporal tag values must use typed numbered parameters")
             tags.append(
                 TagPredicate(
                     field,
@@ -558,9 +562,14 @@ def _temporal_limit(expression: exp.Select, limits: TemporalResourceLimits) -> i
     limit = expression.args.get("limit")
     if not isinstance(limit, exp.Limit) or not isinstance(limit.expression, exp.Literal):
         raise ValueError("temporal SQL requires a positive literal LIMIT")
-    if limit.expression.is_string:
-        raise ValueError("temporal SQL LIMIT must be an integer")
-    value = int(limit.expression.this)
+    literal = str(limit.expression.this)
+    if (
+        limit.expression.is_string
+        or not limit.expression.is_int
+        or not re.fullmatch(r"[1-9][0-9]*", literal)
+    ):
+        raise ValueError("temporal SQL LIMIT must be a positive integer")
+    value = int(literal)
     if value <= 0 or value > limits.max_rows:
         raise ValueError("temporal SQL LIMIT must fit within max_rows")
     return value
@@ -653,6 +662,11 @@ def _aggregate_measure(
         and _column_name(aggregate.expression) != descriptor.time_field
     ):
         raise ValueError("first/last aggregates must order by the event-time field")
+    if (
+        function in {AggregateFunction.FIRST, AggregateFunction.LAST}
+        and descriptor.duplicate_policy.value == "preserve"
+    ):
+        raise ValueError("first/last aggregates require duplicate resolution")
     return AggregateMeasure(output, function, value_field), fill
 
 
@@ -673,7 +687,7 @@ def _lower_temporal_sql(
     used_parameters = {node.name for node in expression.find_all(exp.Parameter)}
     if set(parameters) != used_parameters:
         raise ValueError("temporal SQL parameters must match the statement exactly")
-    for key in ("joins", "with", "having", "distinct", "offset"):
+    for key in ("joins", "with", "with_", "having", "distinct", "offset"):
         if expression.args.get(key):
             raise ValueError(f"temporal SQL does not support {key.upper()}")
     from_clause = expression.args.get("from_")
@@ -683,6 +697,7 @@ def _lower_temporal_sql(
         or from_clause.this.name != "series"
         or from_clause.this.db
         or from_clause.this.catalog
+        or from_clause.expressions
     ):
         raise ValueError("temporal SQL must read exactly the descriptor-bound source 'series'")
     result_limit = _temporal_limit(expression, limits)

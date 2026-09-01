@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import pytest
-
 from open_table_connector.timeseries import CalendarBucket, CalendarUnit
-from open_table_connector.timeseries.buckets import _timestamp_ns, calendar_bucket_next, calendar_bucket_start
+from open_table_connector.timeseries.buckets import (
+    _timestamp_ns,
+    calendar_bucket_next,
+    calendar_bucket_start,
+)
 
 
 @pytest.mark.parametrize(

@@ -3,9 +3,12 @@ from __future__ import annotations
 import sqlite3
 
 import polars as pl
-
 from open_table_connector.contract import ExecutionRequest, TableURI, TableWriteRequest
-from open_table_connector.sqlite.reader import SQLiteConnector, SQLiteReadOptions, SQLiteTableReadRequest
+from open_table_connector.sqlite.reader import (
+    SQLiteConnector,
+    SQLiteReadOptions,
+    SQLiteTableReadRequest,
+)
 
 
 def test_sqlite_reads_real_db_and_preserves_base_coordinates(tmp_path) -> None:

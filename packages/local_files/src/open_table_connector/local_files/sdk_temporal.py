@@ -47,6 +47,7 @@ from open_table_connector.timeseries import (
     ResourceBounds,
     TemporalExecutionRequest,
     TemporalExecutionResult,
+    TemporalExtensionError,
     TemporalTableDescriptor,
     temporal_descriptor_hash,
 )
@@ -271,6 +272,14 @@ class LocalFilesSdkTemporalExtension:
                 snapshot_reference=snapshot.snapshot_reference,
                 resource_bounds=_DEFAULT_BOUNDS,
             )
+        )
+
+    def current_snapshot(self, binding: TableBinding, descriptor: TemporalTableDescriptor) -> None:
+        self._assert_binding(binding, descriptor)
+        raise TemporalExtensionError(
+            ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+            "local-file temporal current recovery is not supported",
+            {},
         )
 
     def abort_stage(self, binding: TableBinding, descriptor: TemporalTableDescriptor, stage: Any):

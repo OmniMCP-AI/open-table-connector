@@ -125,7 +125,7 @@ class PolarsTemporalExecutor:
         except (TypeError, ValueError) as exc:
             raise TemporalExtensionError(
                 TemporalErrorCode.PROTOCOL_INVALID,
-                "portable temporal plan is invalid for the resolved descriptor",
+                f"portable temporal plan is invalid for the resolved descriptor: {exc}",
                 {"reason": str(exc)},
             ) from None
 
@@ -246,9 +246,7 @@ def _required_fields(
     else:
         fields = list(operation.group_by)
         fields.extend(
-            measure.value_field
-            for measure in operation.measures
-            if measure.value_field is not None
+            measure.value_field for measure in operation.measures if measure.value_field is not None
         )
     fields.extend(predicate.field for predicate in operation.tag_predicates)
     declared = set(descriptor.declared_fields)
@@ -322,10 +320,7 @@ def _resolve_duplicates(
         ingestion = descriptor.ingestion_time_field
         if ingestion is None:
             raise ValueError("replace-latest requires an ingestion timestamp")
-        return (
-            frame.sort([*keys, ingestion])
-            .unique(subset=keys, keep="last", maintain_order=True)
-        )
+        return frame.sort([*keys, ingestion]).unique(subset=keys, keep="last", maintain_order=True)
     return frame
 
 
@@ -351,9 +346,7 @@ def _aggregate_rows(
             _timestamp_ns(calendar_bucket_start(_format_ns(value), operation.bucket))
             for value in timestamps
         ]
-    frame = frame.with_columns(
-        pl.Series("bucket", labels, dtype=pl.Datetime("ns", "UTC"))
-    )
+    frame = frame.with_columns(pl.Series("bucket", labels, dtype=pl.Datetime("ns", "UTC")))
     sort_fields = [*operation.group_by, "bucket", descriptor.time_field]
     if descriptor.ingestion_time_field is not None:
         sort_fields.append(descriptor.ingestion_time_field)
@@ -405,16 +398,12 @@ def _gap_fill(
             "gap-fill series and bucket domain exceeds max_rows",
             {"groups": group_count, "buckets": len(domain), "rows": rows},
         )
-    buckets = pl.DataFrame(
-        {"bucket": pl.Series(domain, dtype=pl.Datetime("ns", "UTC"))}
-    )
+    buckets = pl.DataFrame({"bucket": pl.Series(domain, dtype=pl.Datetime("ns", "UTC"))})
     expanded = groups.join(buckets, how="cross")
     if not operation.group_by:
         expanded = expanded.drop("__single_group")
     keys = [*operation.group_by, "bucket"]
-    outside_domain = aggregate.select(keys).join(
-        expanded.select(keys), on=keys, how="anti"
-    )
+    outside_domain = aggregate.select(keys).join(expanded.select(keys), on=keys, how="anti")
     if outside_domain.height:
         raise TemporalExtensionError(
             TemporalErrorCode.PROTOCOL_INVALID,

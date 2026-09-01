@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Mapping
 
 from open_table_connector.contract import NeutralReceipt, TableURI
 
 from .plan import OrderKey, ResourceBounds, _bounds_from_wire, _order_from_wire, _utc_parts
-
 
 _HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _STAGE_RE = re.compile(r"^stage:[0-9a-f]{64}$")
@@ -82,7 +81,7 @@ class TimeRange:
         return {"start": self.start, "end": self.end}
 
     @classmethod
-    def from_wire(cls, document: Mapping[str, object]) -> "TimeRange":
+    def from_wire(cls, document: Mapping[str, object]) -> TimeRange:
         item = _closed(document, ("start", "end"), "time range")
         return cls(item["start"], item["end"])
 
@@ -187,7 +186,7 @@ class TemporalReceipt:
         }
 
     @classmethod
-    def from_wire(cls, document: Mapping[str, object]) -> "TemporalReceipt":
+    def from_wire(cls, document: Mapping[str, object]) -> TemporalReceipt:
         fields = (
             "schema_version",
             "neutral_receipt",
@@ -257,7 +256,7 @@ class ManagedStageReceipt:
         }
 
     @classmethod
-    def from_wire(cls, document: Mapping[str, object]) -> "ManagedStageReceipt":
+    def from_wire(cls, document: Mapping[str, object]) -> ManagedStageReceipt:
         fields = (
             "schema_version",
             "operation_id",
@@ -320,7 +319,7 @@ class ManagedCommitReceipt:
         }
 
     @classmethod
-    def from_wire(cls, document: Mapping[str, object]) -> "ManagedCommitReceipt":
+    def from_wire(cls, document: Mapping[str, object]) -> ManagedCommitReceipt:
         fields = (
             "schema_version",
             "operation_id",
@@ -389,7 +388,7 @@ class ManagedReadbackReceipt:
         }
 
     @classmethod
-    def from_wire(cls, document: Mapping[str, object]) -> "ManagedReadbackReceipt":
+    def from_wire(cls, document: Mapping[str, object]) -> ManagedReadbackReceipt:
         fields = (
             "schema_version",
             "operation_id",
@@ -438,7 +437,7 @@ class ManagedAbortReceipt:
         }
 
     @classmethod
-    def from_wire(cls, document: Mapping[str, object]) -> "ManagedAbortReceipt":
+    def from_wire(cls, document: Mapping[str, object]) -> ManagedAbortReceipt:
         fields = (
             "schema_version",
             "operation_id",

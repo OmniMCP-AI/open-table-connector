@@ -3,7 +3,6 @@ from __future__ import annotations
 from copy import deepcopy
 
 import pytest
-
 from open_table_connector.contract import (
     BaseConvention,
     CapabilityIdentity,
@@ -26,7 +25,6 @@ from open_table_connector.timeseries import (
     TimeRange,
     VisibilityGuarantee,
 )
-
 
 START = "2026-08-29T00:00:00.000000000Z"
 END = "2026-08-30T00:00:00.000000000Z"

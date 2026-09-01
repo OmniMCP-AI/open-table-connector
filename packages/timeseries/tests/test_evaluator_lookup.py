@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
-
 from open_table_connector.timeseries import (
     DuplicatePolicy,
     PolarsTemporalExecutor,
@@ -14,8 +13,8 @@ from open_table_connector.timeseries import (
 )
 
 from packages.timeseries.tests.fixtures import (
-    MemoryTemporalSource,
     TARGET,
+    MemoryTemporalSource,
     as_of,
     latest,
     scan,

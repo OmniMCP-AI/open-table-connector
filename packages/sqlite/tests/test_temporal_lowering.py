@@ -3,21 +3,17 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
-
 from open_table_connector.sqlite import lower_sqlite
 from open_table_connector.timeseries import (
     AggregateFunction,
     AggregateMeasure,
-    BucketAggregate,
     CalendarBucket,
     CalendarUnit,
-    FixedBucket,
-    GapFill,
     PreparedTemporalQuery,
 )
 
-from packages.timeseries.tests.fixtures import descriptor, portable, scan
 from packages.local_files.tests.test_temporal_csv import operations
+from packages.timeseries.tests.fixtures import descriptor, portable, scan
 
 
 def test_range_lowering_quotes_authorized_identifiers_and_parameterizes_every_value() -> None:

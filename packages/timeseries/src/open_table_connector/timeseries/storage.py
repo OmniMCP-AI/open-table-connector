@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from enum import StrEnum
 from pathlib import PurePosixPath
 from types import MappingProxyType
-from typing import Mapping, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 import pyarrow as pa
-
 from open_table_connector.contract import ConnectorErrorCode, TableURI
 
 from .plan import PortableTemporalPlan, ResourceBounds
@@ -21,7 +20,6 @@ from .receipts import (
     ManagedStageReceipt,
     TemporalReceipt,
 )
-
 
 _HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _STAGE_RE = re.compile(r"^stage:[0-9a-f]{64}$")
@@ -114,10 +112,10 @@ class TemporalExecutionRequest:
         if not isinstance(self.plan, PortableTemporalPlan):
             raise TypeError("plan must be a PortableTemporalPlan")
         object.__setattr__(self, "operation_id", _text(self.operation_id, "operation_id"))
-        for field in ("credential_reference", "snapshot_reference"):
-            value = getattr(self, field)
+        for field_name in ("credential_reference", "snapshot_reference"):
+            value = getattr(self, field_name)
             if value is not None:
-                object.__setattr__(self, field, _text(value, field))
+                object.__setattr__(self, field_name, _text(value, field_name))
         if not isinstance(self.credential_values, Mapping):
             raise TypeError("credential_values must be a mapping")
         object.__setattr__(
@@ -162,9 +160,9 @@ class ManagedStageRequest:
         if not isinstance(self.artifact, ArrowArtifactReference):
             raise TypeError("artifact must be an ArrowArtifactReference")
         object.__setattr__(self, "descriptor_hash", _hash(self.descriptor_hash, "descriptor_hash"))
-        for field in ("logical_target", "physical_target"):
-            if not isinstance(getattr(self, field), TableURI):
-                raise TypeError(f"{field} must be a TableURI")
+        for field_name in ("logical_target", "physical_target"):
+            if not isinstance(getattr(self, field_name), TableURI):
+                raise TypeError(f"{field_name} must be a TableURI")
         object.__setattr__(self, "idempotency_key", _text(self.idempotency_key, "idempotency_key"))
         if not isinstance(self.resource_bounds, ResourceBounds):
             raise TypeError("resource_bounds must be ResourceBounds")
@@ -276,7 +274,7 @@ class ManagedAbortRequest:
 
 
 def _bind_credentials(request: object) -> None:
-    values = getattr(request, "credential_values")
+    values = request.credential_values
     if not isinstance(values, Mapping):
         raise TypeError("credential_values must be a mapping")
     object.__setattr__(

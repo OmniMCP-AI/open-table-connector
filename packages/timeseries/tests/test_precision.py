@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from open_table_connector.timeseries import TimestampPrecision
 from open_table_connector.timeseries.precision import storage_to_timestamp, timestamp_to_storage
 
