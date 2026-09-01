@@ -129,6 +129,16 @@ def _mbs_target(uri: TableURI) -> str:
 class MaybeSheetConnector:
     identity = CONNECTOR_IDENTITY
 
+    def formula_extension_for(self):
+        from open_table_connector.formulas import CompositeFormulaConnectorExtension
+
+        from .grid_formula import MaybeSheetGridFormulaExtension
+
+        return CompositeFormulaConnectorExtension(
+            grid=MaybeSheetGridFormulaExtension(self),
+            field=None,
+        )
+
     def __init__(self, process_client: ProcessClient) -> None:
         self._process = process_client
 

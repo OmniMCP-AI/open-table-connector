@@ -68,6 +68,8 @@ _EXPECTED_METADATA = {
             ("table.inspect", "1.0"),
             ("table.read.arrow", "1.0"),
             ("table.read.polars", "1.0"),
+            ("formula.grid.read", "1.0"),
+            ("formula.grid.set", "1.0"),
         ),
         modes=("sheet",),
         schemes=("excel",),
@@ -108,6 +110,9 @@ _EXPECTED_METADATA = {
             ("table.read.arrow", "1.0"),
             ("table.read.polars", "1.0"),
             ("table.write", "1.0"),
+            ("formula.grid.read", "1.0"),
+            ("formula.grid.set", "1.0"),
+            ("formula.grid.values.read", "1.0"),
         ),
         modes=("sheet",),
         schemes=("gsheets", "https"),
@@ -136,6 +141,10 @@ _EXPECTED_METADATA = {
             ("sheet.read", "1.0"),
             ("sheet.inspect", "1.0"),
             ("table.write", "1.0"),
+            ("formula.grid.read", "1.0"),
+            ("formula.grid.set", "1.0"),
+            ("formula.grid.values.read", "1.0"),
+            ("formula.grid.recalculate", "1.0"),
         ),
         modes=("base", "sheet"),
         schemes=("https", "maybe"),
@@ -364,7 +373,21 @@ def _assert_formula_capabilities_are_disabled(
     )
 
 
-def test_current_descriptors_do_not_advertise_formula_capabilities() -> None:
+def test_formula_capability_advertisements_match_the_proven_grid_matrix() -> None:
+    expected = {
+        "google_sheets": {
+            "formula.grid.read",
+            "formula.grid.set",
+            "formula.grid.values.read",
+        },
+        "maybe_sheet": {
+            "formula.grid.read",
+            "formula.grid.set",
+            "formula.grid.values.read",
+            "formula.grid.recalculate",
+        },
+        "excel": {"formula.grid.read", "formula.grid.set"},
+    }
     for connector_case in all_cases():
         advertised = set(connector_case.capabilities)
         manifest = getattr(connector_case.connector, "manifest", None)
@@ -376,10 +399,11 @@ def test_current_descriptors_do_not_advertise_formula_capabilities() -> None:
             if binding.identity is not None
         )
 
-        _assert_formula_capabilities_are_disabled(
-            advertised,
-            connector_name=connector_case.name,
-        )
+        actual = {capability for capability in advertised if capability.startswith("formula.")}
+        if connector_case.name in expected:
+            assert actual == expected[connector_case.name]
+        else:
+            _assert_formula_capabilities_are_disabled(advertised, connector_name=connector_case.name)
 
 
 def test_unknown_formula_capability_is_rejected_by_disabled_discovery_checkpoint() -> None:

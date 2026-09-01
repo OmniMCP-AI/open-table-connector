@@ -32,12 +32,7 @@ from open_table_connector.contract import (
     TableWriteResult,
     WritePreflightAdapter,
 )
-from open_table_connector.formulas import (
-    GRID_READ,
-    GRID_SET,
-    GRID_VALUES_READ,
-    CompositeFormulaConnectorExtension,
-)
+from open_table_connector.formulas import CompositeFormulaConnectorExtension
 
 from .connector import (
     CAPABILITY_MANIFEST,
@@ -56,12 +51,7 @@ class GoogleSheetsCliAdapter(ConnectorAdapter, WritePreflightAdapter):
     identity = CONNECTOR_IDENTITY
     schemes = (SCHEME_GSHEETS, SCHEME_HTTPS)
     hosts = (HOST_GOOGLE_DOCS,)
-    capabilities = (
-        *CAPABILITY_MANIFEST.capabilities,
-        GRID_READ,
-        GRID_SET,
-        GRID_VALUES_READ,
-    )
+    capabilities = tuple(CAPABILITY_MANIFEST.capabilities)
     modes = tuple(CAPABILITY_MANIFEST.modes)
 
     def _connector_for_options(self, options: AdapterOptions) -> GoogleSheetsConnector:
@@ -179,7 +169,7 @@ def google_sheets_cli_plugin() -> PluginDescriptor:
         (SCHEME_GSHEETS, SCHEME_HTTPS),
         _factory,
         (HOST_GOOGLE_DOCS,),
-        capabilities=GoogleSheetsCliAdapter.capabilities,
+        capabilities=tuple(CAPABILITY_MANIFEST.capabilities),
         modes=tuple(CAPABILITY_MANIFEST.modes),
     )
 

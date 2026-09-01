@@ -32,13 +32,7 @@ from open_table_connector.contract import (
     TableWriteResult,
     WritePreflightAdapter,
 )
-from open_table_connector.formulas import (
-    GRID_READ,
-    GRID_RECALCULATE,
-    GRID_SET,
-    GRID_VALUES_READ,
-    CompositeFormulaConnectorExtension,
-)
+from open_table_connector.formulas import CompositeFormulaConnectorExtension
 
 from .connector import MaybeSheetConnector, MaybeSheetReadRequest
 from .grid_formula import MaybeSheetGridFormulaExtension
@@ -46,6 +40,10 @@ from .identity import (
     BASE_INSPECT_CAPABILITY,
     BASE_READ_CAPABILITY,
     CONNECTOR_IDENTITY,
+    FORMULA_GRID_READ_CAPABILITY,
+    FORMULA_GRID_RECALCULATE_CAPABILITY,
+    FORMULA_GRID_SET_CAPABILITY,
+    FORMULA_GRID_VALUES_READ_CAPABILITY,
     TABLE_WRITE_CAPABILITY,
 )
 from .process import SubprocessProcessClient, _absolute_executable
@@ -64,10 +62,10 @@ class MaybeSheetCliAdapter(ConnectorAdapter, WritePreflightAdapter):
         BASE_READ_CAPABILITY,
         BASE_INSPECT_CAPABILITY,
         TABLE_WRITE_CAPABILITY,
-        GRID_READ,
-        GRID_SET,
-        GRID_VALUES_READ,
-        GRID_RECALCULATE,
+        FORMULA_GRID_READ_CAPABILITY,
+        FORMULA_GRID_SET_CAPABILITY,
+        FORMULA_GRID_VALUES_READ_CAPABILITY,
+        FORMULA_GRID_RECALCULATE_CAPABILITY,
     )
     modes = (TableMode.BASE, TableMode.SHEET)
 

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import sqlite3
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-import sqlite3
 from tempfile import TemporaryDirectory
 from types import MappingProxyType
-from typing import Any, Callable, Mapping
+from typing import Any
 from unittest.mock import patch
 
+import open_table_connector.formulas as otf
 import polars as pl
-
 from open_table_connector.contract import (
     ArrowReadResult,
     CapabilityIdentity,
@@ -28,6 +29,8 @@ from open_table_connector.contract import (
 from open_table_connector.dbt import DbtCompileRequest, DbtConnector, DbtPreparedOperation
 from open_table_connector.dbt.identity import (
     CONNECTOR_IDENTITY as DBT_IDENTITY,
+)
+from open_table_connector.dbt.identity import (
     DBT_ARTIFACT_READ_CAPABILITY,
     DBT_CANCEL_CAPABILITY,
     DBT_COMPILE_CAPABILITY,
@@ -46,6 +49,8 @@ from open_table_connector.google_sheets import (
 )
 from open_table_connector.google_sheets.connector import (
     CAPABILITY_MANIFEST as GOOGLE_MANIFEST,
+)
+from open_table_connector.google_sheets.connector import (
     UrllibSheetsTransport,
 )
 from open_table_connector.local_files import (
@@ -62,32 +67,60 @@ from open_table_connector.maybe_sheet import MaybeSheetConnector, MaybeSheetRead
 from open_table_connector.maybe_sheet.identity import (
     BASE_INSPECT_CAPABILITY,
     BASE_READ_CAPABILITY,
-    CONNECTOR_IDENTITY as MAYBE_IDENTITY,
     SHEET_INSPECT_CAPABILITY,
     SHEET_READ_CAPABILITY,
+)
+from open_table_connector.maybe_sheet.identity import (
+    CONNECTOR_IDENTITY as MAYBE_IDENTITY,
+)
+from open_table_connector.maybe_sheet.identity import (
     TABLE_WRITE_CAPABILITY as MAYBE_TABLE_WRITE_CAPABILITY,
 )
 from open_table_connector.postgres import (
     CONNECTOR_IDENTITY as POSTGRES_IDENTITY,
+)
+from open_table_connector.postgres import (
+    TABLE_EXECUTE_CAPABILITY as POSTGRES_EXECUTE_CAPABILITY,
+)
+from open_table_connector.postgres import (
+    TABLE_INSPECT_CAPABILITY as POSTGRES_INSPECT_CAPABILITY,
+)
+from open_table_connector.postgres import (
+    TABLE_READ_ARROW_CAPABILITY as POSTGRES_READ_ARROW_CAPABILITY,
+)
+from open_table_connector.postgres import (
+    TABLE_READ_POLARS_CAPABILITY as POSTGRES_READ_POLARS_CAPABILITY,
+)
+from open_table_connector.postgres import (
+    TABLE_WRITE_CAPABILITY as POSTGRES_WRITE_CAPABILITY,
+)
+from open_table_connector.postgres import (
     PostgresConnector,
     PostgresReadOptions,
     PostgresTableReadRequest,
-    TABLE_EXECUTE_CAPABILITY as POSTGRES_EXECUTE_CAPABILITY,
-    TABLE_INSPECT_CAPABILITY as POSTGRES_INSPECT_CAPABILITY,
-    TABLE_READ_ARROW_CAPABILITY as POSTGRES_READ_ARROW_CAPABILITY,
-    TABLE_READ_POLARS_CAPABILITY as POSTGRES_READ_POLARS_CAPABILITY,
-    TABLE_WRITE_CAPABILITY as POSTGRES_WRITE_CAPABILITY,
 )
 from open_table_connector.sqlite import (
     CONNECTOR_IDENTITY as SQLITE_IDENTITY,
+)
+from open_table_connector.sqlite import (
+    TABLE_EXECUTE_CAPABILITY as SQLITE_EXECUTE_CAPABILITY,
+)
+from open_table_connector.sqlite import (
+    TABLE_INSPECT_CAPABILITY as SQLITE_INSPECT_CAPABILITY,
+)
+from open_table_connector.sqlite import (
+    TABLE_READ_ARROW_CAPABILITY as SQLITE_READ_ARROW_CAPABILITY,
+)
+from open_table_connector.sqlite import (
+    TABLE_READ_POLARS_CAPABILITY as SQLITE_READ_POLARS_CAPABILITY,
+)
+from open_table_connector.sqlite import (
+    TABLE_WRITE_CAPABILITY as SQLITE_WRITE_CAPABILITY,
+)
+from open_table_connector.sqlite import (
     SQLiteConnector,
     SQLiteReadOptions,
     SQLiteTableReadRequest,
-    TABLE_EXECUTE_CAPABILITY as SQLITE_EXECUTE_CAPABILITY,
-    TABLE_INSPECT_CAPABILITY as SQLITE_INSPECT_CAPABILITY,
-    TABLE_READ_ARROW_CAPABILITY as SQLITE_READ_ARROW_CAPABILITY,
-    TABLE_READ_POLARS_CAPABILITY as SQLITE_READ_POLARS_CAPABILITY,
-    TABLE_WRITE_CAPABILITY as SQLITE_WRITE_CAPABILITY,
 )
 
 from .fixtures import (
@@ -327,6 +360,16 @@ def _excel_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
             make_request=make_read_request,
             read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
         ),
+        "formula.grid.read": _binding(
+            otf.GRID_READ,
+            expected_mode=TableMode.SHEET,
+            invoke=connector.formula_extension_for,
+        ),
+        "formula.grid.set": _binding(
+            otf.GRID_SET,
+            expected_mode=TableMode.SHEET,
+            invoke=connector.formula_extension_for,
+        ),
     }
 
     return ConnectorCase(
@@ -554,6 +597,21 @@ def _google_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
             "table.write",
             expected_mode=TableMode.SHEET,
             write=lambda frame, if_exists: connector.write(make_write_request(frame, if_exists)),
+        ),
+        "formula.grid.read": _binding(
+            otf.GRID_READ,
+            expected_mode=TableMode.SHEET,
+            invoke=connector.formula_extension_for,
+        ),
+        "formula.grid.set": _binding(
+            otf.GRID_SET,
+            expected_mode=TableMode.SHEET,
+            invoke=connector.formula_extension_for,
+        ),
+        "formula.grid.values.read": _binding(
+            otf.GRID_VALUES_READ,
+            expected_mode=TableMode.SHEET,
+            invoke=connector.formula_extension_for,
         ),
     }
 
@@ -859,6 +917,26 @@ def _maybe_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
             expected_mode=TableMode.BASE,
             write=write,
         ),
+        "formula.grid.read": _binding(
+            otf.GRID_READ,
+            expected_mode=TableMode.SHEET,
+            invoke=connector.formula_extension_for,
+        ),
+        "formula.grid.set": _binding(
+            otf.GRID_SET,
+            expected_mode=TableMode.SHEET,
+            invoke=connector.formula_extension_for,
+        ),
+        "formula.grid.values.read": _binding(
+            otf.GRID_VALUES_READ,
+            expected_mode=TableMode.SHEET,
+            invoke=connector.formula_extension_for,
+        ),
+        "formula.grid.recalculate": _binding(
+            otf.GRID_RECALCULATE,
+            expected_mode=TableMode.SHEET,
+            invoke=connector.formula_extension_for,
+        ),
     }
 
     return ConnectorCase(
@@ -871,6 +949,10 @@ def _maybe_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
             SHEET_READ_CAPABILITY,
             SHEET_INSPECT_CAPABILITY,
             MAYBE_TABLE_WRITE_CAPABILITY,
+            otf.GRID_READ,
+            otf.GRID_SET,
+            otf.GRID_VALUES_READ,
+            otf.GRID_RECALCULATE,
         ),
         modes=frozenset({TableMode.BASE, TableMode.SHEET}),
         schemes=frozenset({"https", "maybe"}),

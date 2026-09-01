@@ -3,16 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from openpyxl import Workbook
-
+from open_table_connector.conformance import run_read_suite
 from open_table_connector.contract import InspectRequest, ResourceLimits, TableMode, TableURI
 from open_table_connector.contract.errors import ConnectorError, ConnectorErrorCode
-from open_table_connector.conformance import run_read_suite
 from open_table_connector.local_files.excel_connector import (
     ExcelConnector,
     ExcelReadOptions,
     ExcelTableReadRequest,
 )
+from openpyxl import Workbook
 
 
 def _workbook(path: Path) -> None:
@@ -38,6 +37,8 @@ def test_excel_connector_identity_and_manifest_pin_the_public_scheme() -> None:
         "table.inspect",
         "table.read.arrow",
         "table.read.polars",
+        "formula.grid.read",
+        "formula.grid.set",
     ]
 
 

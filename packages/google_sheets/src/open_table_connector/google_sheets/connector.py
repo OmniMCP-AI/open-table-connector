@@ -9,6 +9,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote, urlsplit
 from urllib.request import Request, urlopen
 
+import open_table_connector.formulas as otf
 import polars as pl
 import pyarrow as pa
 from open_table_connector.contract import (
@@ -53,7 +54,21 @@ TABLE_READ_POLARS_CAPABILITY = CapabilityIdentity("table.read.polars", "1.0")
 TABLE_WRITE_CAPABILITY = CapabilityIdentity("table.write", "1.0")
 GOOGLE_SHEETS_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 GOOGLE_SHEETS_API_ENDPOINT = "https://sheets.googleapis.com"
-CAPABILITY_MANIFEST = CapabilityManifest(CONNECTOR_IDENTITY, (URI_RESOLVER_CAPABILITY, TABLE_INSPECT_CAPABILITY, TABLE_READ_ARROW_CAPABILITY, TABLE_READ_POLARS_CAPABILITY, TABLE_WRITE_CAPABILITY), (TableMode.SHEET,), (SCHEME_GSHEETS, SCHEME_HTTPS))
+CAPABILITY_MANIFEST = CapabilityManifest(
+    CONNECTOR_IDENTITY,
+    (
+        URI_RESOLVER_CAPABILITY,
+        TABLE_INSPECT_CAPABILITY,
+        TABLE_READ_ARROW_CAPABILITY,
+        TABLE_READ_POLARS_CAPABILITY,
+        TABLE_WRITE_CAPABILITY,
+        otf.GRID_READ,
+        otf.GRID_SET,
+        otf.GRID_VALUES_READ,
+    ),
+    (TableMode.SHEET,),
+    (SCHEME_GSHEETS, SCHEME_HTTPS),
+)
 
 
 class SheetsTransport(Protocol):
@@ -150,6 +165,16 @@ def _arrow_from_values(values: list[list[Any]], header_row: int) -> pa.Table:
 class GoogleSheetsConnector(URIResolver, TableInspector, ArrowTableReader, PolarsTableReader, TableWriter):
     identity = CONNECTOR_IDENTITY
     manifest = CAPABILITY_MANIFEST
+
+    def formula_extension_for(self):
+        from open_table_connector.formulas import CompositeFormulaConnectorExtension
+
+        from .formula import GoogleSheetsFormulaExtension
+
+        return CompositeFormulaConnectorExtension(
+            grid=GoogleSheetsFormulaExtension(self),
+            field=None,
+        )
 
     def __init__(
         self,

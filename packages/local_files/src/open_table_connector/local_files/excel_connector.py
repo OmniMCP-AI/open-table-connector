@@ -5,11 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import polars as pl
-
 from open_table_connector.contract import (
+    PROVIDER_EXCEL,
     ArrowReadResult,
     ArrowTableReader,
-    PROVIDER_EXCEL,
     InspectRequest,
     PolarsReadResult,
     PolarsTableReader,
@@ -22,6 +21,7 @@ from open_table_connector.contract import (
     TableURI,
     URIResolver,
 )
+from open_table_connector.formulas import CompositeFormulaConnectorExtension
 
 from .excel_reader import read_excel_arrow
 from .identity import (
@@ -30,18 +30,11 @@ from .identity import (
     connector_identity,
 )
 from .inspection import inspection_from_read
-from .manifest import capability_manifest
+from .manifest import EXCEL_CAPABILITY_MANIFEST
 from .receipts import make_receipt, normalize_parameters
 from .resolver import LocalFormat, ResolvedLocalTable, _resolve_explicit_local_path
 
-
 EXCEL_CONNECTOR_IDENTITY = connector_identity(PROVIDER_EXCEL)
-EXCEL_CAPABILITY_MANIFEST = capability_manifest(
-    connector=EXCEL_CONNECTOR_IDENTITY,
-    uri_schemes=(PROVIDER_EXCEL,),
-)
-
-
 @dataclass(frozen=True)
 class ExcelReadOptions:
     sheet: str | None = None
@@ -66,6 +59,14 @@ class ExcelTableReadRequest(TableReadRequest):
 class ExcelConnector(URIResolver, TableInspector, ArrowTableReader, PolarsTableReader):
     identity = EXCEL_CONNECTOR_IDENTITY
     manifest = EXCEL_CAPABILITY_MANIFEST
+
+    def formula_extension_for(self):
+        from .excel_formula import ExcelFormulaExtension
+
+        return CompositeFormulaConnectorExtension(
+            grid=ExcelFormulaExtension(self),
+            field=None,
+        )
 
     def resolve(self, uri: TableURI, context: ResolveContext) -> ResolvedTable:
         path, sheet = _resolve_explicit_local_path(

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from open_table_connector.conformance.formulas import load_formula_cases
+from open_table_connector.conformance.formulas import (
+    assert_grid_formula_conformance,
+    load_formula_cases,
+)
 
 from .grid_cases import (
     EXPECTED_GRID_CAPABILITIES,
@@ -22,6 +25,11 @@ def test_grid_provider_cases_match_the_capability_selected_matrix() -> None:
     }
 
     assert actual == EXPECTED_GRID_CAPABILITIES
+
+
+def test_each_advertised_grid_provider_case_passes_shared_conformance() -> None:
+    for case in load_formula_cases(load_grid_provider_cases()):
+        assert_grid_formula_conformance(case)
 
 
 def test_capability_matrix_is_exactly_the_planned_grid_surface() -> None:
