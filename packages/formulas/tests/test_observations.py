@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from open_table_connector.contract import CapabilityIdentity
 from open_table_connector.formulas import (
     FIELD_READ,
     GRID_READ,
@@ -144,6 +145,12 @@ def test_formula_capability_set_rejects_duplicates_mismatches_and_empty_recalc_s
     with pytest.raises(ValueError, match="duplicate capability"):
         FormulaCapabilitySet((GRID_READ, GRID_READ), details)
 
+    with pytest.raises(ValueError, match="closed ALL_CAPABILITIES"):
+        FormulaCapabilitySet((CapabilityIdentity("formula.grid.future", "1.0"),), details)
+
+    with pytest.raises(ValueError, match="closed ALL_CAPABILITIES"):
+        FormulaCapabilitySet((CapabilityIdentity("formula.grid.read", "2.0"),), details)
+
     with pytest.raises(ValueError, match="target kind"):
         FormulaCapabilitySet((FIELD_READ,), details)
 
@@ -175,6 +182,39 @@ def test_formula_capability_set_rejects_duplicates_mismatches_and_empty_recalc_s
             revision_enforcement=RevisionEnforcement.UNAVAILABLE,
             idempotency_strength=IdempotencyStrength.RECONCILED,
         )
+
+
+def test_value_bearing_repr_is_redacted_for_diagnostics() -> None:
+    value = FormulaValue.from_python({"secret": ["literal", 7]})
+    cell = FormulaValueCell("A1", value)
+    record = FormulaRecordValue("rec-1", FormulaValue.logical("date", "2026-09-01"))
+    grid = GridFormulaValueObservation(
+        worksheet_id="17",
+        requested_range="A1:B2",
+        values=(cell,),
+        calculation_state=CalculationState.CACHED,
+        calculation_trigger=CalculationTrigger.STORED_CACHE,
+        dependency_scope="provider_dynamic",
+        observed_revision=HASH_A,
+    )
+    field = FieldFormulaValueObservation(
+        table_uri="airtable://app/orders",
+        field_id="fld-margin",
+        field_name="gross_margin",
+        values=(record,),
+        calculation_state=CalculationState.PROVIDER_CURRENT,
+        calculation_trigger=CalculationTrigger.PROVIDER_READ,
+        dependency_scope="provider_dynamic",
+        observed_revision=HASH_B,
+    )
+
+    rendered = "\n".join(repr(item) for item in (value, cell, record, grid, field))
+
+    assert "literal" not in rendered
+    assert "secret" not in rendered
+    assert "2026-09-01" not in rendered
+    assert "redacted" in rendered
+    assert field.to_wire()["values"][0]["value"]["kind"] == "logical"
 
 
 def test_formula_mutation_requires_count_consistency() -> None:

@@ -12,6 +12,7 @@ from typing import Any
 from open_table_connector.contract import CapabilityIdentity, TableURI
 
 from .capabilities import (
+    ALL_CAPABILITIES,
     FIELD_RECALCULATE,
     FORMULA_DIALECTS,
     GRID_RECALCULATE,
@@ -40,6 +41,7 @@ _FORMULA_VALUE_KINDS = {
 _GRID_SCOPES = {scope.value for scope in GridRecalculationScope}
 _FIELD_SCOPES = {scope.value for scope in FieldRecalculationScope}
 _VERIFICATIONS = {"passed", "unavailable"}
+_KNOWN_CAPABILITY_REFERENCES = {capability.to_reference() for capability in ALL_CAPABILITIES}
 
 
 def _closed_wire(payload: Mapping[str, Any], required: set[str], label: str) -> None:
@@ -267,6 +269,19 @@ class FormulaValue:
             return cls.provider_error(FormulaErrorValue.from_wire(payload["error"]))
         raise ValueError("unsupported FormulaValue kind")
 
+    def __repr__(self) -> str:
+        if self.kind == "logical":
+            return f"FormulaValue(kind='logical', logical_type={self.logical_type!r}, value=<redacted>)"
+        if self.kind == "provider_error":
+            return "FormulaValue(kind='provider_error', value=<redacted>)"
+        if self.kind == "sequence":
+            return f"FormulaValue(kind='sequence', item_count={len(self.value)}, value=<redacted>)"
+        if self.kind == "mapping":
+            return f"FormulaValue(kind='mapping', entry_count={len(self.value)}, value=<redacted>)"
+        if self.kind == "null":
+            return "FormulaValue(kind='null')"
+        return f"FormulaValue(kind={self.kind!r}, value=<redacted>)"
+
 
 @dataclass(frozen=True, slots=True)
 class FormulaCapabilityDetails:
@@ -388,6 +403,8 @@ class FormulaCapabilitySet:
         references = [capability.to_reference() for capability in capabilities]
         if len(set(references)) != len(references):
             raise ValueError("duplicate capability identities are not allowed")
+        if any(reference not in _KNOWN_CAPABILITY_REFERENCES for reference in references):
+            raise ValueError("capabilities must belong to the closed ALL_CAPABILITIES set")
         target_prefix = f"formula.{self.details.target_kind}."
         if any(not capability.capability_id.startswith(target_prefix) for capability in capabilities):
             raise ValueError("capability target kind must match capability details")
@@ -586,6 +603,9 @@ class FormulaValueCell:
         _closed_wire(payload, {"address", "value"}, "FormulaValueCell")
         return cls(address=payload["address"], value=FormulaValue.from_wire(payload["value"]))
 
+    def __repr__(self) -> str:
+        return f"FormulaValueCell(address={self.address!r}, value=<redacted>)"
+
 
 @dataclass(frozen=True, slots=True)
 class FormulaRecordValue:
@@ -604,6 +624,9 @@ class FormulaRecordValue:
     def from_wire(cls, payload: Mapping[str, Any]) -> FormulaRecordValue:
         _closed_wire(payload, {"record_id", "value"}, "FormulaRecordValue")
         return cls(record_id=payload["record_id"], value=FormulaValue.from_wire(payload["value"]))
+
+    def __repr__(self) -> str:
+        return f"FormulaRecordValue(record_id={self.record_id!r}, value=<redacted>)"
 
 
 @dataclass(frozen=True, slots=True)
@@ -685,6 +708,19 @@ class GridFormulaValueObservation:
             calculation_trigger=CalculationTrigger(payload["calculation_trigger"]),
             dependency_scope=payload["dependency_scope"],
             observed_revision=payload["observed_revision"],
+        )
+
+    def __repr__(self) -> str:
+        return (
+            "GridFormulaValueObservation("
+            f"worksheet_id={self.worksheet_id!r}, "
+            f"requested_range={self.requested_range!r}, "
+            f"value_count={len(self.values)}, "
+            f"calculation_state={self.calculation_state.value!r}, "
+            f"calculation_trigger={self.calculation_trigger.value!r}, "
+            f"dependency_scope={self.dependency_scope!r}, "
+            f"observed_revision={self.observed_revision!r}, "
+            "values=<redacted>)"
         )
 
 
@@ -769,6 +805,20 @@ class FieldFormulaValueObservation:
             calculation_trigger=CalculationTrigger(payload["calculation_trigger"]),
             dependency_scope=payload["dependency_scope"],
             observed_revision=payload["observed_revision"],
+        )
+
+    def __repr__(self) -> str:
+        return (
+            "FieldFormulaValueObservation("
+            f"table_uri={self.table_uri!r}, "
+            f"field_id={self.field_id!r}, "
+            f"field_name={self.field_name!r}, "
+            f"value_count={len(self.values)}, "
+            f"calculation_state={self.calculation_state.value!r}, "
+            f"calculation_trigger={self.calculation_trigger.value!r}, "
+            f"dependency_scope={self.dependency_scope!r}, "
+            f"observed_revision={self.observed_revision!r}, "
+            "values=<redacted>)"
         )
 
 
