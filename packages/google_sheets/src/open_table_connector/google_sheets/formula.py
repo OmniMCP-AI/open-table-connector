@@ -33,6 +33,15 @@ _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _DEFAULT_LEDGER_LIMIT = 1024
 _CELL_REFERENCE = re.compile(r"(?P<column>\$?[A-Za-z]{1,3})(?P<row>\$?[1-9]\d*)")
 _SIMPLE_A1_TITLE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_FORMULA_REJECTION_REASONS = frozenset(
+    {
+        "invalid_formula",
+        "invalidformula",
+        "formula_error",
+        "formula_parse_error",
+        "formula_syntax_error",
+    }
+)
 _GRID_FIELDS = (
     "sheets(properties(sheetId,title),data(startRow,startColumn,"
     "rowData(values(userEnteredValue,effectiveValue,effectiveFormat(numberFormat)))))"
@@ -150,13 +159,24 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
             spreadsheet_id = self._spreadsheet_id(request.target.grid)
             if not spreadsheet_id:
                 return _rejected(otf.FormulaErrorCode.INVALID_TARGET, "Google Sheets grid target is invalid")
-            properties = self._metadata(spreadsheet_id)
             reference = request.target.worksheet
+            target_title = self._worksheet_name(request.target.grid)
+            if (
+                reference.name is not None
+                and target_title is not None
+                and reference.name != target_title
+            ):
+                return _rejected(
+                    otf.FormulaErrorCode.TARGET_NOT_FOUND,
+                    "Google Sheets worksheet name and URI name do not match",
+                )
+            properties = self._metadata(spreadsheet_id)
             matches = [
                 item
                 for item in properties
-                if (reference.worksheet_id is not None and str(item.get("sheetId")) == reference.worksheet_id)
-                or (reference.name is not None and item.get("title") == reference.name)
+                if (reference.worksheet_id is None or str(item.get("sheetId")) == reference.worksheet_id)
+                and (reference.name is None or item.get("title") == reference.name)
+                and (target_title is None or item.get("title") == target_title)
             ]
             if len(matches) != 1:
                 return _rejected(
@@ -168,7 +188,6 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
             title = item.get("title")
             if isinstance(sheet_id, bool) or not isinstance(sheet_id, int) or sheet_id < 0 or not isinstance(title, str) or not title:
                 return _failed(otf.FormulaErrorCode.PROTOCOL_FAILURE, "Google Sheets metadata was malformed")
-            target_title = self._worksheet_name(request.target.grid)
             if target_title is not None and target_title != title:
                 return _rejected(
                     otf.FormulaErrorCode.TARGET_NOT_FOUND,
@@ -218,7 +237,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
             rectangle = self._validated_range(request.cell_range, request.limits)
             self._check_dimensions(request.target, rectangle)
             response, title = self._grid_request(request.target, rectangle, request.limits)
-            observation, _ = self._parse_grid_response(response, request.target, rectangle, title)
+            observation, _ = self._parse_grid_response(response, request.target, rectangle, title, request.limits)
             receipt = otf.FormulaReceiptDetails.for_grid_read(
                 target=request.target.grid.value,
                 selector=request.cell_range,
@@ -247,7 +266,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
             rectangle = self._validated_range(request.cell_range, request.limits)
             self._check_dimensions(request.target, rectangle)
             response, title = self._grid_request(request.target, rectangle, request.limits)
-            _, cells = self._parse_grid_response(response, request.target, rectangle, title)
+            _, cells = self._parse_grid_response(response, request.target, rectangle, title, request.limits)
             values = tuple(
                 otf.FormulaValueCell(address, value)
                 for address, value in cells
@@ -301,8 +320,9 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
             self._check_dimensions(request.target, rectangle)
             if request.expression.dialect != otf.GOOGLE_SHEETS_A1:
                 return _rejected(otf.FormulaErrorCode.INVALID_FORMULA, "Google Sheets formula dialect is invalid")
-            if request.expression.byte_count > _MAX_EXPRESSION_BYTES:
-                raise _LimitFailure("formula expression exceeds the configured byte limit", _MAX_EXPRESSION_BYTES)
+            expression_limit = self._expression_limit(request.limits)
+            if request.expression.byte_count > expression_limit:
+                raise _LimitFailure("formula expression exceeds the configured byte limit", expression_limit)
             before_result = self.read_grid(
                 otf.GridFormulaReadRequest(request.target, request.cell_range, request.limits)
             )
@@ -336,11 +356,16 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
                     return _rejected(otf.FormulaErrorCode.IDEMPOTENCY_CONFLICT, "formula idempotency key is already in flight")
                 if decision.disposition is otf.FormulaIdempotencyDisposition.UNKNOWN:
                     return _unknown(otf.FormulaErrorCode.UNCERTAIN_MUTATION, "formula mutation remains uncertain")
-                if decision.disposition is otf.FormulaIdempotencyDisposition.REPLAY and decision.operation_hash:
-                    with self._lock:
-                        cached = self._completed.get(decision.operation_hash)
-                    if cached is not None:
-                        return cached
+                if decision.disposition is otf.FormulaIdempotencyDisposition.REPLAY:
+                    if decision.operation_hash is not None:
+                        with self._lock:
+                            cached = self._completed.get(decision.operation_hash)
+                        if cached is not None:
+                            return cached
+                    return _unknown(
+                        otf.FormulaErrorCode.UNCERTAIN_MUTATION,
+                        "formula mutation replay result is unavailable",
+                    )
 
             body = {
                 "requests": [{
@@ -390,7 +415,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
             if not isinstance(updated, Mapping):
                 raise _ProtocolFailure
             expected, _ = self._parse_grid_response(
-                updated, request.target, rectangle, self._title_for(request.target)
+                updated, request.target, rectangle, self._title_for(request.target), request.limits
             )
             if len(expected.formulas) != rectangle.cell_count:
                 self._mark_unknown_ledger(request, target_hash, selector_hash, payload_hash)
@@ -457,12 +482,6 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
                 verification="formula_text_readback",
             )
             operation_hash = _hash_payload(mutation.to_wire())
-            if request.idempotency_key is not None:
-                with self._lock:
-                    self._ledger.succeed(
-                        connector_id="google_sheets", target_hash=target_hash, selector_hash=selector_hash,
-                        idempotency_key=request.idempotency_key, payload_hash=payload_hash, operation_hash=operation_hash,
-                    )
             result = otf.FormulaExtensionResult(
                 value=mutation,
                 outcome=otf.FormulaOutcome.SUCCEEDED,
@@ -472,7 +491,14 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
             )
             if request.idempotency_key is not None:
                 with self._lock:
+                    # Publish the result while the ledger is still protected.  A
+                    # replay can therefore observe either IN_FLIGHT or a complete
+                    # cached result, but can never fall through to another POST.
                     self._completed[operation_hash] = result
+                    self._ledger.succeed(
+                        connector_id="google_sheets", target_hash=target_hash, selector_hash=selector_hash,
+                        idempotency_key=request.idempotency_key, payload_hash=payload_hash, operation_hash=operation_hash,
+                    )
             return result
         except _LimitFailure as exc:
             self._finish_ledger_failure(request, ledger_context, post_dispatched=post_dispatched)
@@ -539,6 +565,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
         target: otf.BoundGridFormulaTarget,
         rectangle: otf.A1Rectangle,
         title: str,
+        limits: otf.FormulaResourceLimits | None = None,
     ) -> tuple[otf.GridFormulaObservation, tuple[tuple[str, otf.FormulaValue], ...]]:
         sheets = payload.get("sheets")
         if not isinstance(sheets, list):
@@ -558,6 +585,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
         if not isinstance(data, list):
             raise _ProtocolFailure
         expression_bytes = 0
+        expression_limit = self._expression_limit(limits)
         for grid_data in data:
             if not isinstance(grid_data, Mapping):
                 raise _ProtocolFailure
@@ -593,8 +621,8 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
                         if not isinstance(formula, str) or not formula:
                             raise _ProtocolFailure
                         expression_bytes += len(formula.encode("utf-8"))
-                        if expression_bytes > _MAX_EXPRESSION_BYTES:
-                            raise _LimitFailure("formula response exceeded the configured expression byte limit", _MAX_EXPRESSION_BYTES)
+                        if expression_bytes > expression_limit:
+                            raise _LimitFailure("formula response exceeded the configured expression byte limit", expression_limit)
                         formulas.append(otf.FormulaCell(address, otf.FormulaExpression(formula, otf.GOOGLE_SHEETS_A1)))
                     if "effectiveValue" in cell:
                         values.append((address, self._effective_value(cell["effectiveValue"], cell.get("effectiveFormat"))))
@@ -649,6 +677,14 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
         if rectangle.cell_count > max_cells:
             raise _LimitFailure("formula range exceeds the configured cell limit", max_cells)
         return rectangle
+
+    def _expression_limit(self, limits: otf.FormulaResourceLimits | None) -> int:
+        requested = limits.max_expression_bytes if limits is not None else None
+        if requested is not None and (
+            isinstance(requested, bool) or not isinstance(requested, int) or requested <= 0
+        ):
+            raise _ProtocolFailure
+        return _MAX_EXPRESSION_BYTES if requested is None else min(_MAX_EXPRESSION_BYTES, requested)
 
     def _check_dimensions(self, target: otf.BoundGridFormulaTarget, rectangle: otf.A1Rectangle) -> None:
         spreadsheet_id = self._spreadsheet_id(target.grid)
@@ -728,7 +764,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
             return False
         for key in ("reason", "code"):
             value = exc.safe_details.get(key)
-            if isinstance(value, str) and "formula" in value.casefold():
+            if isinstance(value, str) and re.sub(r"[^a-z0-9]+", "_", value.casefold()).strip("_") in _FORMULA_REJECTION_REASONS:
                 return True
         return False
 
@@ -825,7 +861,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
             end = match.end()
             previous = expression[position - 1] if position else ""
             following = expression[end] if end < len(expression) else ""
-            if following == "!" or (previous and (previous.isalnum() or previous == "_")):
+            if following in {"!", "("} or (previous and (previous.isalnum() or previous == "_")):
                 output.append(expression[position:end])
                 position = end
                 continue

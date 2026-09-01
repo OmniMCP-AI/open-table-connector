@@ -28,8 +28,9 @@ def test_targets_are_kind_safe_and_closed() -> None:
     assert grid.grid.value == "gsheets://book-1"
     assert field.field.field_id == "fld-margin"
 
-    with pytest.raises(ValueError, match="exactly one"):
-        WorksheetRef(name="Model", worksheet_id="17")
+    dual = WorksheetRef(name="Model", worksheet_id="17")
+    assert dual.name == "Model"
+    assert dual.worksheet_id == "17"
 
 
 def test_formula_expression_preserves_native_text_exactly() -> None:
@@ -77,4 +78,3 @@ def test_resource_limits_and_recalculation_scopes_are_closed() -> None:
         "workbook",
     )
     assert tuple(scope.value for scope in FieldRecalculationScope) == ("field", "table")
-

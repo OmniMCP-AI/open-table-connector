@@ -42,6 +42,7 @@ class FormulaResourceLimits:
     max_records: int | None = None
     max_response_bytes: int | None = None
     timeout_seconds: float | None = None
+    max_expression_bytes: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +53,8 @@ class WorksheetRef:
     def __post_init__(self) -> None:
         normalized_name = _normalize_optional_text(self.name, "name")
         normalized_id = _normalize_optional_text(self.worksheet_id, "worksheet_id")
-        _require_exactly_one(normalized_name, normalized_id, label="WorksheetRef")
+        if normalized_name is None and normalized_id is None:
+            raise ValueError("WorksheetRef requires a name or stable ID")
         object.__setattr__(self, "name", normalized_name)
         object.__setattr__(self, "worksheet_id", normalized_id)
 

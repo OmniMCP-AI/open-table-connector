@@ -68,4 +68,76 @@ providers remain disabled.
 
 - Static Google capability tuples and `manifest.json` remain unchanged by design; capability discovery remains disabled until the later enablement task.
 - The shared grid-provider matrix remains intentionally red until Tasks 3–5 register and enable all providers.
+
+## Fix Round 2 Evidence
+
+The replay branch now treats every replay, including one without a cached operation hash, as terminal uncertainty and publishes the completed result while holding the ledger lock. Added explicit coverage for dual worksheet selectors that identify different sheets. The existing implementation and tests also cover digit-suffixed function names, caller expression limits after response parsing, and strict recognized HTTP 400 formula reasons.
+
+GREEN verification:
+
+```text
+uv run --frozen python -m pytest packages/google_sheets/tests/test_formula.py packages/google_sheets/tests/test_connector.py packages/google_sheets/tests/test_cli_adapter.py -q
+44 passed in 0.31s
+
+uv run --frozen ruff check packages/google_sheets packages/formulas/src/open_table_connector/formulas/operations.py
+All checks passed!
+
+git diff --check
+[no output]
+```
+
+Changed files:
+
+- `packages/google_sheets/src/open_table_connector/google_sheets/formula.py`
+- `packages/google_sheets/tests/test_formula.py`
+
+Commit: pending after scoped re-review.
 - The full-suite canonical-literal check still reports pre-existing repeated literals outside this round’s requested behavior.
+
+## Round 2 Evidence
+
+### Scope Delivered
+
+- Published successful idempotency results atomically with the ledger state and made an uncached replay terminal/uncertain, preventing a replay from issuing a second POST.
+- Required worksheet name and worksheet ID selectors to agree with one metadata worksheet, including pre-I/O rejection when the URI and selector names conflict.
+- Added caller `FormulaResourceLimits.max_expression_bytes` handling to returned formula parsing and request validation while preserving the provider hard ceiling.
+- Prevented digit-suffixed function names such as `LOG10` from being shifted as A1 references while retaining valid relative, absolute, and mixed reference shifting.
+- Restricted HTTP 400 `INVALID_FORMULA` mapping to an explicit normalized reason/code allowlist; non-formula and formula-service-like errors remain execution failures.
+- Kept formula capabilities and `manifest.json` disabled and made no changes to the ordinary RAW/value writer.
+
+### RED Evidence
+
+```text
+uv run --frozen python -m pytest packages/google_sheets/tests/test_formula.py packages/formulas/tests/test_model.py -q
+7 failed, 26 passed
+```
+
+The expected failures covered dual selector construction/binding, caller expression
+limits, `LOG10` translation, formula-service-like 400 classification, and uncached
+replay behavior.
+
+### GREEN Evidence
+
+```text
+uv run --frozen python -m pytest packages/google_sheets/tests/test_formula.py packages/google_sheets/tests/test_connector.py packages/google_sheets/tests/test_cli_adapter.py -q
+42 passed
+```
+
+```text
+uv run --frozen python -m pytest packages/formulas/tests packages/sdk/tests/test_formula.py -q
+98 passed
+```
+
+```text
+uv run --frozen ruff check packages/google_sheets packages/formulas packages/sdk
+All checks passed!
+```
+
+```text
+git diff --check
+[no output]
+```
+
+### Round 2 Commit
+
+This evidence is included in the round-2 Conventional Commit for Task 2.

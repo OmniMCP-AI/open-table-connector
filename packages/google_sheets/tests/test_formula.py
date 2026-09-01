@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from threading import Event, Thread
 from typing import Any
 
 import open_table_connector.formulas as otf
@@ -202,6 +203,97 @@ def test_bind_grid_rejects_worksheet_id_that_disagrees_with_uri_name() -> None:
     assert result.error.code is otf.FormulaErrorCode.TARGET_NOT_FOUND
 
 
+def test_bind_grid_accepts_dual_worksheet_selectors_only_when_metadata_agrees() -> None:
+    transport = RecordingTransport([_metadata()])
+    extension = GoogleSheetsFormulaExtension(
+        GoogleSheetsConnector(transport=transport, access_token="token")
+    )
+
+    result = extension.bind_grid(
+        otf.GridFormulaBindRequest(
+            otf.GridFormulaTarget(
+                "gsheets://book-123",
+                otf.WorksheetRef(name="Model", worksheet_id="17"),
+            )
+        )
+    )
+
+    assert result.outcome is otf.FormulaOutcome.SUCCEEDED
+    assert result.value is not None
+    assert result.value.target.worksheet == otf.WorksheetRef(worksheet_id="17")
+    assert len(transport.calls) == 1
+
+
+def test_bind_grid_rejects_dual_worksheet_selectors_that_match_different_metadata() -> None:
+    transport = RecordingTransport([_metadata()])
+    extension = GoogleSheetsFormulaExtension(
+        GoogleSheetsConnector(transport=transport, access_token="token")
+    )
+
+    result = extension.bind_grid(
+        otf.GridFormulaBindRequest(
+            otf.GridFormulaTarget(
+                "gsheets://book-123",
+                otf.WorksheetRef(name="Model", worksheet_id="18"),
+            )
+        )
+    )
+
+    assert result.outcome is otf.FormulaOutcome.REJECTED
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.TARGET_NOT_FOUND
+    assert len(transport.calls) == 1
+
+
+def test_bind_grid_rejects_name_id_pair_that_identifies_different_sheets() -> None:
+    transport = RecordingTransport(
+        [{
+            "sheets": [
+                {"properties": {"sheetId": 17, "title": "Model"}},
+                {"properties": {"sheetId": 18, "title": "Other"}},
+            ]
+        }]
+    )
+    extension = GoogleSheetsFormulaExtension(
+        GoogleSheetsConnector(transport=transport, access_token="token")
+    )
+
+    result = extension.bind_grid(
+        otf.GridFormulaBindRequest(
+            otf.GridFormulaTarget(
+                "gsheets://book-123",
+                otf.WorksheetRef(name="Other", worksheet_id="17"),
+            )
+        )
+    )
+
+    assert result.outcome is otf.FormulaOutcome.REJECTED
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.TARGET_NOT_FOUND
+    assert len(transport.calls) == 1
+
+
+def test_bind_grid_rejects_conflicting_worksheet_selectors_before_metadata_io() -> None:
+    transport = RecordingTransport([])
+    extension = GoogleSheetsFormulaExtension(
+        GoogleSheetsConnector(transport=transport, access_token="token")
+    )
+
+    result = extension.bind_grid(
+        otf.GridFormulaBindRequest(
+            otf.GridFormulaTarget(
+                "gsheets://book-123/Model",
+                otf.WorksheetRef(name="Other", worksheet_id="17"),
+            )
+        )
+    )
+
+    assert result.outcome is otf.FormulaOutcome.REJECTED
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.TARGET_NOT_FOUND
+    assert transport.calls == []
+
+
 def test_read_grid_quotes_and_escapes_worksheet_title_in_a1_range() -> None:
     title = "O'Brien Sheet"
     grid = {
@@ -265,6 +357,27 @@ def test_formula_range_limit_is_rejected_before_grid_data_io() -> None:
     assert result.error is not None
     assert result.error.code is otf.FormulaErrorCode.RESOURCE_LIMIT
     assert len(transport.calls) == 1
+
+
+def test_read_grid_enforces_caller_expression_limit_after_parsing_formulas() -> None:
+    transport = RecordingTransport([
+        _metadata(),
+        _grid_response({"A1": "=12345"}),
+    ])
+    extension = _extension(transport)
+
+    result = extension.read_grid(
+        otf.GridFormulaReadRequest(
+            _bound_target(),
+            "A1",
+            limits=otf.FormulaResourceLimits(max_expression_bytes=5),
+        )
+    )
+
+    assert result.outcome is otf.FormulaOutcome.REJECTED
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.RESOURCE_LIMIT
+    assert [call["method"] for call in transport.calls] == ["GET", "GET"]
 
 
 def test_bind_grid_rejects_ambiguous_worksheet_without_binding() -> None:
@@ -343,6 +456,14 @@ def _extension(transport: RecordingTransport) -> GoogleSheetsFormulaExtension:
     )
     assert binding.value is not None
     return extension
+
+
+def test_copy_fill_does_not_translate_digit_suffixed_function_names() -> None:
+    extension = GoogleSheetsFormulaExtension(transport=RecordingTransport([]))
+
+    translated = extension._translate_formula("=LOG10(B2)+A1", 1, 1)
+
+    assert translated == "=LOG10(C3)+B2"
 
 
 def test_set_grid_uses_repeat_cell_and_independent_formula_text_readback() -> None:
@@ -532,7 +653,7 @@ def test_google_provider_syntax_rejection_is_sanitized() -> None:
                 raise ConnectorError(
                     ConnectorErrorCode.EXECUTION_FAILED,
                     "provider diagnostic =HYPERLINK(\"https://secret.example\",\"token\")",
-                    {"status": 400, "reason": "invalid formula =HYPERLINK(\"https://secret.example\",\"token\")"},
+                    {"status": 400, "reason": "INVALID_FORMULA"},
                 )
             return super().request(method, url, headers=headers, body=body, timeout=timeout)
 
@@ -600,6 +721,34 @@ def test_set_grid_rejects_oversized_post_response_before_parsing_or_readback() -
     assert [call["method"] for call in transport.calls] == ["GET", "GET", "POST", "GET"]
 
 
+def test_formula_service_like_provider_400_is_not_classified_as_invalid_formula() -> None:
+    class RejectingTransport(RecordingTransport):
+        def request(self, method, url, *, headers, body=None, timeout=None):
+            if method == "POST":
+                self.calls.append({"method": method, "url": url, "headers": dict(headers), "body": deepcopy(body), "timeout": timeout})
+                raise ConnectorError(
+                    ConnectorErrorCode.EXECUTION_FAILED,
+                    "formula service unavailable",
+                    {"status": 400, "reason": "formula_service_unavailable"},
+                )
+            return super().request(method, url, headers=headers, body=body, timeout=timeout)
+
+    transport = RejectingTransport([_metadata(), _empty_grid_response()])
+    extension = _extension(transport)
+
+    result = extension.set_grid(
+        otf.GridFormulaSetRequest(
+            _bound_target(), "E2", otf.FormulaExpression("=1", otf.GOOGLE_SHEETS_A1), idempotency_key="service-400-1"
+        )
+    )
+
+    assert result.outcome is otf.FormulaOutcome.REJECTED
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.EXECUTION_FAILED
+    assert result.error.safe_details == {"provider_status_code": 400}
+    assert [call["method"] for call in transport.calls] == ["GET", "GET", "POST"]
+
+
 def test_set_grid_enforces_caller_response_limit_on_post_response() -> None:
     oversized = {"updatedSpreadsheet": {"sheets": [], "padding": "x" * 200}}
     transport = RecordingTransport([_metadata(), _empty_grid_response(), oversized])
@@ -658,6 +807,68 @@ def test_same_idempotency_key_replays_without_a_second_post() -> None:
     assert first.outcome is otf.FormulaOutcome.SUCCEEDED
     assert second.outcome is otf.FormulaOutcome.SUCCEEDED
     assert second.commit is otf.FormulaCommitState.COMMITTED
+    assert [call["method"] for call in transport.calls].count("POST") == 1
+
+
+def test_uncached_idempotency_replay_is_terminal_without_a_second_post() -> None:
+    expected = {"E2": "=B2+$C$1", "F2": "=C2+$C$1", "E3": "=B3+$C$1", "F3": "=C3+$C$1"}
+    transport = RecordingTransport([
+        _metadata(),
+        _empty_grid_response(),
+        _grid_response(expected),
+        _grid_response(expected),
+        _empty_grid_response(),
+    ])
+    extension = _extension(transport)
+    request = otf.GridFormulaSetRequest(
+        _bound_target(), "E2:F3", otf.FormulaExpression("=B2+$C$1", otf.GOOGLE_SHEETS_A1), idempotency_key="uncached-1"
+    )
+
+    first = extension.set_grid(request)
+    extension._completed.clear()
+    replay = extension.set_grid(request)
+
+    assert first.outcome is otf.FormulaOutcome.SUCCEEDED
+    assert replay.outcome is otf.FormulaOutcome.UNKNOWN
+    assert replay.error is not None
+    assert replay.error.code is otf.FormulaErrorCode.UNCERTAIN_MUTATION
+    assert [call["method"] for call in transport.calls].count("POST") == 1
+
+
+def test_concurrent_idempotency_replay_while_post_is_in_flight_does_not_post_twice() -> None:
+    expected = {"E2": "=B2+$C$1", "F2": "=C2+$C$1", "E3": "=B3+$C$1", "F3": "=C3+$C$1"}
+
+    class BlockingPostTransport(RecordingTransport):
+        def __init__(self) -> None:
+            super().__init__([_metadata(), _empty_grid_response(), _empty_grid_response(), _grid_response(expected), _grid_response(expected)])
+            self.post_started = Event()
+            self.release_post = Event()
+
+        def request(self, method, url, *, headers, body=None, timeout=None):
+            if method == "POST":
+                self.post_started.set()
+                assert self.release_post.wait(2)
+            return super().request(method, url, headers=headers, body=body, timeout=timeout)
+
+    transport = BlockingPostTransport()
+    extension = _extension(transport)
+    request = otf.GridFormulaSetRequest(
+        _bound_target(), "E2:F3", otf.FormulaExpression("=B2+$C$1", otf.GOOGLE_SHEETS_A1), idempotency_key="concurrent-1"
+    )
+    results: list[otf.FormulaExtensionResult[Any]] = []
+
+    first_thread = Thread(target=lambda: results.append(extension.set_grid(request)))
+    first_thread.start()
+    assert transport.post_started.wait(2)
+    replay = extension.set_grid(request)
+    transport.release_post.set()
+    first_thread.join(2)
+
+    assert len(results) == 1
+    assert results[0].outcome is otf.FormulaOutcome.SUCCEEDED
+    assert replay.outcome is otf.FormulaOutcome.REJECTED
+    assert replay.error is not None
+    assert replay.error.code is otf.FormulaErrorCode.IDEMPOTENCY_CONFLICT
     assert [call["method"] for call in transport.calls].count("POST") == 1
 
 

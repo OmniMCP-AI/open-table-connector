@@ -281,7 +281,12 @@ class _FormulaViewBase:
             raise TypeError("limits must be a FormulaResourceLimits when provided")
         if limits is None:
             return None
-        for field_name in ("max_cells", "max_records", "max_response_bytes"):
+        for field_name in (
+            "max_cells",
+            "max_records",
+            "max_expression_bytes",
+            "max_response_bytes",
+        ):
             value = getattr(limits, field_name)
             if value is not None and (
                 isinstance(value, bool) or not isinstance(value, int) or value <= 0
