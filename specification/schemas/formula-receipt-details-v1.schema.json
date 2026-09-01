@@ -135,49 +135,6 @@
       "minLength": 1,
       "maxLength": 256,
       "pattern": "^(?!.*https?://).+$"
-    },
-    "safe_details": {
-      "$ref": "#/$defs/safeJsonObject"
-    }
-  },
-  "$defs": {
-    "safeJsonValue": {
-      "oneOf": [
-        {
-          "type": "null"
-        },
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "integer"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "string",
-          "pattern": "^(?!.*https?://).*$"
-        },
-        {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/safeJsonValue"
-          }
-        },
-        {
-          "$ref": "#/$defs/safeJsonObject"
-        }
-      ]
-    },
-    "safeJsonObject": {
-      "type": "object",
-      "additionalProperties": {
-        "$ref": "#/$defs/safeJsonValue"
-      },
-      "propertyNames": {
-        "pattern": "^(?!(expression|formula|value|values|credential|token)$).+$"
-      }
     }
   },
   "allOf": [

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Iterator, Mapping
+from copy import deepcopy
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 
 import jsonschema
@@ -33,17 +34,28 @@ def _load_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _mutated_objects(value: object) -> Iterator[object]:
+def _object_paths(value: object, path: tuple[object, ...] = ()) -> Iterator[tuple[object, ...]]:
     if isinstance(value, Mapping):
-        mutated = dict(value)
-        mutated["unexpected"] = True
-        yield mutated
-        for item in value.values():
-            yield from _mutated_objects(item)
+        yield path
+        for key, item in value.items():
+            yield from _object_paths(item, (*path, key))
         return
-    if isinstance(value, list):
-        for item in value:
-            yield from _mutated_objects(item)
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        for index, item in enumerate(value):
+            yield from _object_paths(item, (*path, index))
+
+
+def _inject_unexpected(value: object, path: tuple[object, ...]) -> object:
+    mutated = deepcopy(value)
+    current = mutated
+    for segment in path:
+        current = current[segment]
+    current["unexpected"] = True
+    return mutated
+
+
+def _is_path_closed_under_test(path: tuple[object, ...]) -> bool:
+    return "entries" not in path
 
 
 def _manifest_lines() -> list[str]:
@@ -101,7 +113,10 @@ def test_formula_contract_fixtures_match_closed_schemas_and_python_codecs(
     decoded = decoder(fixture)
     assert _canonical_json(decoded.to_wire()) == fixture_path.read_text(encoding="utf-8").strip()
 
-    for mutated in _mutated_objects(fixture):
+    for path in _object_paths(fixture):
+        if not _is_path_closed_under_test(path):
+            continue
+        mutated = _inject_unexpected(fixture, path)
         with pytest.raises(jsonschema.ValidationError):
             validator.validate(mutated)
 
@@ -159,6 +174,24 @@ def test_formula_observation_schema_rejects_provider_error_variants_with_raw_pay
         "kind": "provider_error",
         "error": {"code": "DIV0", "message": "#DIV/0!"},
     }
+
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.Draft202012Validator(schema).validate(fixture)
+
+
+def test_formula_receipt_schema_rejects_nested_safe_details_extra_keys_in_context() -> None:
+    schema = _load_json(SCHEMA_ROOT / "formula-receipt-details-v1.schema.json")
+    fixture = _load_json(FIXTURE_ROOT / "receipt-details.json")
+    fixture["safe_details"] = {"provider_status": {"state": "committed"}}
+
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.Draft202012Validator(schema).validate(fixture)
+
+
+def test_formula_mapping_schema_rejects_nested_entry_extra_keys_in_context() -> None:
+    schema = _load_json(SCHEMA_ROOT / "formula-observation-v1.schema.json")
+    fixture = _load_json(FIXTURE_ROOT / "value-observations.json")
+    fixture["values"][1]["value"]["entries"]["amount"]["unexpected"] = True
 
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.Draft202012Validator(schema).validate(fixture)

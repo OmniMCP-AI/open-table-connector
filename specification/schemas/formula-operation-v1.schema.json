@@ -199,8 +199,11 @@
             },
             "entries": {
               "type": "object",
-              "additionalProperties": {
-                "$ref": "#/$defs/formulaValue"
+              "additionalProperties": false,
+              "patternProperties": {
+                "^.+$": {
+                  "$ref": "#/$defs/formulaValue"
+                }
               },
               "propertyNames": {
                 "type": "string",
