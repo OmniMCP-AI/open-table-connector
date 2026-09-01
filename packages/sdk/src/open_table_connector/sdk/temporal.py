@@ -11,6 +11,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import polars as pl
+import pyarrow as pa
 import sqlglot
 from open_table_connector.contract import PROVIDER_POSTGRES, ConnectorErrorCode, TableURI
 from open_table_connector.contract import TableMode as LegacyTableMode
@@ -27,6 +28,7 @@ from open_table_connector.timeseries import (
     Latest,
     ManagedAbortReceipt,
     ManagedCommitReceipt,
+    ManagedCurrentResult,
     ManagedReadbackResult,
     ManagedStageReceipt,
     OrderDirection,
@@ -153,6 +155,18 @@ class ManagedSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class ManagedSnapshotState:
+    snapshot: ManagedSnapshot
+    schema: pa.Schema
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.snapshot, ManagedSnapshot):
+            raise TypeError("snapshot must be a ManagedSnapshot")
+        if not isinstance(self.schema, pa.Schema):
+            raise TypeError("schema must be a pyarrow.Schema")
+
+
+@dataclass(frozen=True, slots=True)
 class _TemporalQueryDefinition:
     binding: TableBinding
     descriptor: TemporalTableDescriptor
@@ -220,6 +234,12 @@ class TemporalConnectorExtension(Protocol):
         descriptor: TemporalTableDescriptor,
         snapshot: ManagedSnapshot,
     ) -> ManagedReadbackResult: ...
+
+    def current_snapshot(
+        self,
+        binding: TableBinding,
+        descriptor: TemporalTableDescriptor,
+    ) -> ManagedCurrentResult | None: ...
 
     def abort_stage(
         self,
@@ -872,6 +892,59 @@ class TemporalStorage:
             receipts=(_receipt_from_readback(result),),
         )
 
+    def current(self) -> OperationResult[ManagedSnapshotState | None]:
+        try:
+            result = _extension_for(self._table, self._descriptor).current_snapshot(
+                self._table._binding,
+                self._descriptor,
+            )
+        except TemporalExtensionError as exc:
+            raise _error(
+                exc.message,
+                _map_temporal_error(exc.code),
+                connector_id=self._table.connector_id,
+                **dict(exc.safe_details),
+            ) from exc
+        if result is None:
+            return OperationResult(
+                value=None,
+                outcome=Outcome.SUCCEEDED,
+                commit=CommitState.NOT_APPLICABLE,
+                verification=VerificationState.PASSED,
+                receipts=(),
+            )
+        if not isinstance(result, ManagedCurrentResult):
+            raise _error("managed current result is invalid", ErrorCode.PROTOCOL_FAILURE)
+        expected_hash = _descriptor_hash(self._table, self._descriptor)
+        expected_schema = (
+            pl.DataFrame(schema=self._table.schema)
+            .select(list(self._descriptor.declared_fields))
+            .to_arrow()
+            .schema
+        )
+        if result.descriptor_hash != expected_hash or result.schema != expected_schema:
+            raise _error(
+                "managed current snapshot does not match this time-series view",
+                ErrorCode.PROTOCOL_FAILURE,
+            )
+        snapshot = ManagedSnapshot(
+            logical_target=self._table.uri,
+            stage_id=f"current:{result.snapshot_id}",
+            snapshot_id=result.snapshot_id,
+            snapshot_reference=result.snapshot_reference,
+            descriptor_hash=result.descriptor_hash,
+            committed_at=result.committed_at,
+            _binding=self._table._binding,
+            _owner_client_id=self._table._client._client_id,
+        )
+        return OperationResult(
+            value=ManagedSnapshotState(snapshot=snapshot, schema=result.schema),
+            outcome=Outcome.SUCCEEDED,
+            commit=CommitState.NOT_APPLICABLE,
+            verification=VerificationState.PASSED,
+            receipts=(),
+        )
+
     def abort(self, stage: ManagedStage) -> OperationResult[AbortDisposition]:
         self._assert_stage(stage)
         observed_at = self._now_text()
@@ -1187,6 +1260,7 @@ __all__ = [
     "FillRule",
     "FixedBucket",
     "ManagedSnapshot",
+    "ManagedSnapshotState",
     "ManagedStage",
     "TemporalConnectorExtension",
     "TemporalResourceLimits",

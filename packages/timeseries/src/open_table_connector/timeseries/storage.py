@@ -233,6 +233,34 @@ class ManagedReadbackResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ManagedCurrentRequest:
+    logical_target: TableURI
+    descriptor_hash: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.logical_target, TableURI):
+            raise TypeError("logical_target must be a TableURI")
+        object.__setattr__(self, "descriptor_hash", _hash(self.descriptor_hash, "descriptor_hash"))
+
+
+@dataclass(frozen=True, slots=True)
+class ManagedCurrentResult:
+    snapshot_id: str
+    snapshot_reference: str
+    committed_at: str
+    descriptor_hash: str
+    schema: pa.Schema
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "snapshot_id", _hash(self.snapshot_id, "snapshot_id"))
+        object.__setattr__(self, "snapshot_reference", _text(self.snapshot_reference, "snapshot_reference"))
+        object.__setattr__(self, "committed_at", _text(self.committed_at, "committed_at"))
+        object.__setattr__(self, "descriptor_hash", _hash(self.descriptor_hash, "descriptor_hash"))
+        if not isinstance(self.schema, pa.Schema):
+            raise TypeError("schema must be a pyarrow.Schema")
+
+
+@dataclass(frozen=True, slots=True)
 class ManagedAbortRequest:
     operation_id: str
     logical_target: TableURI
@@ -310,6 +338,8 @@ __all__ = [
     "ArrowArtifactReference",
     "ManagedAbortRequest",
     "ManagedCommitRequest",
+    "ManagedCurrentRequest",
+    "ManagedCurrentResult",
     "ManagedReadbackRequest",
     "ManagedReadbackResult",
     "ManagedStageRequest",

@@ -12,6 +12,8 @@ from open_table_connector.timeseries import (
     ArrowArtifactReference,
     ManagedAbortRequest,
     ManagedCommitRequest,
+    ManagedCurrentRequest,
+    ManagedCurrentResult,
     ManagedReadbackRequest,
     ManagedStageRequest,
     ManagedTemporalStore,
@@ -120,6 +122,25 @@ def test_managed_requests_bind_target_stage_snapshot_and_idempotency() -> None:
     assert stage.idempotency_key == commit.idempotency_key
     assert readback.snapshot_reference == HASH_B
     assert abort.stage_id == commit.stage_id
+
+
+def test_current_snapshot_protocol_is_immutable_and_provider_neutral() -> None:
+    target = TableURI("json:///data/ticks.json")
+    descriptor_hash = HASH_A
+    request = ManagedCurrentRequest(target, descriptor_hash)
+    result = ManagedCurrentResult(
+        snapshot_id=HASH_B,
+        snapshot_reference="json-snapshot:latest",
+        committed_at="2026-08-29T00:00:00.000000000Z",
+        descriptor_hash=descriptor_hash,
+        schema=pa.schema([pa.field("value", pa.int64())]),
+    )
+
+    assert request.logical_target == target
+    assert request.descriptor_hash == descriptor_hash
+    assert result.schema.names == ["value"]
+    with pytest.raises((AttributeError, TypeError)):
+        request.logical_target = target  # type: ignore[misc]
 
 
 def test_stage_retry_rejects_same_key_with_different_content() -> None:
