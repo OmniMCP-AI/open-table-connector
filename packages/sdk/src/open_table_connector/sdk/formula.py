@@ -50,6 +50,7 @@ from open_table_connector.formulas import (
     RecalculationObservation,
 )
 
+from .connector import _MissingFormulaExtensionError
 from .model import TableMode
 from .result import (
     CommitState,
@@ -198,7 +199,7 @@ def _formula_extension_for(connector: object, *, connector_id: str) -> FormulaCo
     try:
         extension = factory()
         valid = isinstance(extension, FormulaConnectorExtension)
-    except AttributeError:
+    except _MissingFormulaExtensionError:
         missing = True
     except Exception:
         pass

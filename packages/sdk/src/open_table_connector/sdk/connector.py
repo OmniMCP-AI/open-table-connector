@@ -176,6 +176,10 @@ class TableConnector(Protocol):
     def close(self) -> None: ...
 
 
+class _MissingFormulaExtensionError(AttributeError):
+    """Signal that a legacy adapter has no optional formula extension."""
+
+
 class LegacyConnectorAdapterBridge:
     def __init__(self, adapter: ConnectorAdapter) -> None:
         self._adapter = adapter
@@ -357,7 +361,9 @@ class LegacyConnectorAdapterBridge:
     def formula_extension_for(self) -> FormulaConnectorExtension:
         factory = getattr(self._adapter, "formula_extension_for", None)
         if not callable(factory):
-            raise AttributeError("legacy adapter does not expose the formula extension")
+            raise _MissingFormulaExtensionError(
+                "legacy adapter does not expose the formula extension"
+            )
         extension = factory()
         if not isinstance(extension, FormulaConnectorExtension):
             raise TypeError("legacy adapter formula extension is invalid")

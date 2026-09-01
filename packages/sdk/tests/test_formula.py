@@ -548,6 +548,30 @@ def test_legacy_bridge_missing_formula_extension_is_an_unsupported_capability() 
     assert raised.value.__context__ is None
 
 
+def test_legacy_formula_factory_attribute_error_is_a_safe_protocol_failure() -> None:
+    secret = '=HYPERLINK("https://secret.example/?credential=token", "42")'
+    adapter = FakeLegacyAdapter()
+
+    def failing_factory() -> object:
+        raise AttributeError(secret)
+
+    adapter.formula_extension_for = failing_factory  # type: ignore[method-assign]
+    bridge = otc.LegacyConnectorAdapterBridge(adapter)
+    client = otc.Client(registry=otc.ConnectorRegistry([bridge]))
+    table = client.open("legacy://warehouse/orders").require_value()
+
+    with pytest.raises(otc.OTCError) as raised:
+        client.formulas(otc.FieldFormulaTarget(table, otc.FieldRef(name="gross_margin")))
+
+    assert raised.value.result.error is not None
+    assert raised.value.result.error.code is otc.ErrorCode.PROTOCOL_FAILURE
+    rendered = str(raised.value) + repr(raised.value.result)
+    for sensitive_part in ("HYPERLINK", "secret.example", "credential=token", '"42"'):
+        assert sensitive_part not in rendered
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+
+
 def test_legacy_bridge_invalid_formula_extension_is_a_safe_protocol_failure() -> None:
     adapter = FakeLegacyAdapter()
     adapter.formula_extension = object()  # type: ignore[assignment]
