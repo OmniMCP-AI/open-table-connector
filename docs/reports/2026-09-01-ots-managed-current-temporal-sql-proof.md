@@ -6,7 +6,7 @@ snapshot recovery and the Temporal SQL Lite profile.
 ## Source identity
 
 - Approved base: `272f7c2c1b45b738e4044211d5e8000e5841cebb`
-- Conforming code commit immediately before this report: `2b348b8193decf2a4e21387a315bc370a8cdfe85`
+- Conforming code commit immediately before this report: `2f858f7dea3ba5f07774510b43648b6109c9c929`
 - Branch: `codex/ots-managed-current`
 - Supported Python: `>=3.11,<3.15`
 - PyArrow support: `>=14,<24`; lock-selected release: `23.0.1`
@@ -15,9 +15,10 @@ snapshot recovery and the Temporal SQL Lite profile.
 The code commits add provider-neutral managed current recovery, real SQLite
 recovery and validation, the closed four-operation Temporal SQL Lite profile,
 duplicate-policy enforcement, Python 3.14 wheel-compatible dependency
-metadata, and public declared-schema attachment when reopening a table. This
-report refresh is the next documentation commit after that code commit, so the
-code SHA above is intentionally the report's final source SHA.
+metadata, public declared-schema attachment when reopening a table, precision-
+correct bucket origins, and exact Decimal averages. This report refresh is the
+next documentation commit after that code commit, so the code SHA above is
+intentionally the report's final source SHA.
 
 ## Verification commands
 
@@ -39,8 +40,8 @@ uv run --frozen ruff check packages/sdk packages/timeseries packages/sqlite
 git diff --check
 ```
 
-The focused SQL corpus passed 54 cases. The Python 3.13 and 3.14 package
-matrix each passed 392 tests. The repository-wide OTC suite passed 1,044 tests
+The focused SQL corpus passed 58 cases. The Python 3.13 and 3.14 package
+matrix each passed 392 tests. The repository-wide OTC suite passed 1,050 tests
 with 3 skips. Ruff passed for the SDK, time-series, and SQLite packages, and
 the final diff check was clean. The Python 3.14 interpreter selected the
 `cp314` PyArrow 23.0.1 wheel rather than an sdist.
