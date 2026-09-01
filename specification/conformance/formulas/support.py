@@ -168,6 +168,14 @@ class RecordingProcessClient:
         return deepcopy(queue[index])
 
 
+class RecordingMaybeProcess(RecordingProcessClient):
+    """Named Maybe process double for base-mode field command fixtures."""
+
+
+class RecordingFeishuTransport(RecordingSheetsTransport):
+    """Named Feishu transport double for field metadata and record fixtures."""
+
+
 @dataclass(frozen=True, slots=True)
 class RecordedWorkbookOpen:
     path: str
