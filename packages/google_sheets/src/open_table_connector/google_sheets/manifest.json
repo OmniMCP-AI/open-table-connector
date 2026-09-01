@@ -5,5 +5,5 @@
   "status": "implemented",
   "intended_mode": "sheet",
   "intended_capabilities": ["table.read.arrow", "table.read.polars", "table.inspect", "table.write", "formula.grid.read", "formula.grid.set", "formula.grid.values.read"],
-  "available_capabilities": ["uri.resolve", "table.read.arrow", "table.read.polars", "table.inspect", "table.write", "formula.grid.read", "formula.grid.set", "formula.grid.values.read"]
+  "available_capabilities": ["uri.resolve", "table.inspect", "table.read.arrow", "table.read.polars", "table.write", "formula.grid.read", "formula.grid.set", "formula.grid.values.read"]
 }
