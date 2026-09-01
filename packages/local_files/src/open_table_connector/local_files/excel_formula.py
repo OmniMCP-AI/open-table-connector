@@ -8,6 +8,7 @@ import posixpath
 import stat
 import tempfile
 import threading
+from collections import OrderedDict
 from contextlib import contextmanager, suppress
 from io import BytesIO
 from pathlib import Path
@@ -23,6 +24,7 @@ from .excel_connector import ExcelConnector
 _MAX_CELLS = 100_000
 _MAX_EXPRESSION_BYTES = 8_192
 _DEFAULT_LEDGER_LIMIT = 1_024
+_COMPLETED_CACHE_LIMIT = _DEFAULT_LEDGER_LIMIT
 _UNSUPPORTED_RECALC_MESSAGE = "direct Excel does not expose calculated values or recalculation"
 
 
@@ -107,7 +109,10 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
         self._connector = connector or ExcelConnector()
         self._bindings: dict[tuple[str, str], str] = {}
         self._ledger = otf.FormulaIdempotencyLedger(limit=_DEFAULT_LEDGER_LIMIT)
-        self._completed: dict[str, otf.FormulaExtensionResult[otf.FormulaMutation]] = {}
+        self._completed_limit = _COMPLETED_CACHE_LIMIT
+        self._completed: OrderedDict[
+            str, otf.FormulaExtensionResult[otf.FormulaMutation]
+        ] = OrderedDict()
         self._lock = threading.RLock()
 
     def bind_grid(
@@ -218,10 +223,11 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
                 raise _LimitFailure(
                     "formula expression exceeds the configured byte limit", expression_limit
                 )
-            target_hash = _hash_bytes(request.target.grid.value.encode("utf-8"))
+            target_identity = f"{path.resolve()}\0{worksheet_name}"
+            target_hash = _hash_bytes(target_identity.encode("utf-8"))
             selector_hash = _hash_bytes(otf.GRID_SET.to_reference().encode("utf-8"))
             payload_hash = _hash_bytes(
-                f"{request.cell_range}\0{request.expression.dialect}\0{request.expression.sha256}\0{request.expected_revision}".encode()
+                f"{self._range_text(rectangle)}\0{request.expression.dialect}\0{request.expression.sha256}\0{request.expected_revision}".encode()
             )
             context = (target_hash, selector_hash, payload_hash)
             lock_path = Path(f"{path}.otc.lock")
@@ -254,6 +260,8 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
                     if decision.disposition is otf.FormulaIdempotencyDisposition.REPLAY:
                         with self._lock:
                             cached = self._completed.get(decision.operation_hash or "")
+                            if cached is not None:
+                                self._completed.move_to_end(decision.operation_hash or "")
                         return (
                             cached
                             if cached is not None
@@ -340,6 +348,9 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
                     operation_hash = _hash_bytes(str(mutation.to_wire()).encode())
                     with self._lock:
                         self._completed[operation_hash] = result
+                        self._completed.move_to_end(operation_hash)
+                        while len(self._completed) > self._completed_limit:
+                            self._completed.popitem(last=False)
                         self._ledger.succeed(
                             connector_id="excel",
                             target_hash=context[0],
@@ -350,6 +361,7 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
                         )
                 return result
         except _TargetFailure as exc:
+            self._finish_ledger(request, context, dispatched=replaced)
             if replaced:
                 return _unknown("formula commit state could not be determined")
             return _rejected(exc.code, str(exc))
@@ -481,7 +493,15 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
         limit = _MAX_CELLS if requested is None else min(_MAX_CELLS, requested)
         if rectangle.cell_count > limit:
             raise _LimitFailure("formula range exceeds the configured cell limit", limit)
-        return rectangle
+        return otf.A1Rectangle(
+            worksheet_name=rectangle.worksheet_name,
+            start_address=self._address(rectangle.start_column, rectangle.start_row),
+            end_address=self._address(rectangle.end_column, rectangle.end_row),
+            start_column=rectangle.start_column,
+            start_row=rectangle.start_row,
+            end_column=rectangle.end_column,
+            end_row=rectangle.end_row,
+        )
 
     def _expression_limit(self, limits: otf.FormulaResourceLimits | None) -> int:
         requested = limits.max_expression_bytes if limits is not None else None

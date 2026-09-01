@@ -4,6 +4,7 @@ from pathlib import Path
 from zipfile import ZipFile
 
 import open_table_connector.formulas as otf
+import open_table_connector.local_files.excel_formula as excel_formula_module
 import pytest
 from open_table_connector.contract import (
     ConnectorError,
@@ -27,9 +28,12 @@ from openpyxl.worksheet.datavalidation import DataValidation
 HASH = "sha256:" + "a" * 64
 
 
-def _target(path: Path, sheet: str = "Model") -> otf.GridFormulaTarget:
+def _target(
+    path: Path, sheet: str = "Model", *, include_fragment: bool = True
+) -> otf.GridFormulaTarget:
+    fragment = f"#sheet={sheet}" if include_fragment else ""
     return otf.GridFormulaTarget(
-        f"excel://{path.as_posix()}#sheet={sheet}",
+        f"excel://{path.as_posix()}{fragment}",
         otf.WorksheetRef(name=sheet),
     )
 
@@ -66,8 +70,12 @@ def _workbook(path: Path) -> Path:
     return path
 
 
-def _bound(extension: ExcelFormulaExtension, path: Path) -> otf.BoundGridFormulaTarget:
-    result = extension.bind_grid(otf.GridFormulaBindRequest(_target(path)))
+def _bound(
+    extension: ExcelFormulaExtension, path: Path, sheet: str = "Model", *, include_fragment: bool = True
+) -> otf.BoundGridFormulaTarget:
+    result = extension.bind_grid(
+        otf.GridFormulaBindRequest(_target(path, sheet, include_fragment=include_fragment))
+    )
     assert result.outcome is otf.FormulaOutcome.SUCCEEDED
     assert result.value is not None
     return result.value.target
@@ -182,6 +190,36 @@ def test_set_translates_top_left_formula_and_preserves_unrelated_workbook_object
         workbook.close()
     assert set(ZipFile(path).namelist()) == before_zip_names
     assert path.read_bytes() != before_bytes
+
+
+def test_set_normalizes_absolute_selector_origin_without_changing_formula_absolutes(
+    tmp_path: Path,
+) -> None:
+    path = _workbook(tmp_path / "absolute-selector.xlsx")
+    extension = ExcelFormulaExtension(ExcelConnector())
+    target = _bound(extension, path)
+
+    result = extension.set_grid(
+        otf.GridFormulaSetRequest(
+            target,
+            "$B$2:$D$3",
+            otf.FormulaExpression("=A2+$D$1", otf.EXCEL_A1),
+        )
+    )
+
+    assert result.outcome is otf.FormulaOutcome.SUCCEEDED
+    assert result.value is not None
+    assert [
+        (cell.address, cell.expression.text)
+        for cell in result.value.formula_observation.formulas
+    ] == [
+        ("B2", "=A2+$D$1"),
+        ("C2", "=B2+$D$1"),
+        ("D2", "=C2+$D$1"),
+        ("B3", "=A3+$D$1"),
+        ("C3", "=B3+$D$1"),
+        ("D3", "=C3+$D$1"),
+    ]
 
 
 def test_set_rejects_stale_revision_without_mutating_bytes(tmp_path: Path) -> None:
@@ -319,3 +357,92 @@ def test_same_idempotency_key_replays_without_second_publication(tmp_path: Path)
     assert first.outcome is otf.FormulaOutcome.SUCCEEDED
     assert second == first
     assert path.read_bytes() == after_first
+
+
+def test_same_idempotency_key_is_bound_to_the_worksheet(tmp_path: Path) -> None:
+    path = _workbook(tmp_path / "worksheet-binding.xlsx")
+    extension = ExcelFormulaExtension(ExcelConnector())
+    model = _bound(extension, path, include_fragment=False)
+    last = _bound(extension, path, "Last", include_fragment=False)
+    request = otf.GridFormulaSetRequest(
+        model,
+        "B2",
+        otf.FormulaExpression("=1", otf.EXCEL_A1),
+        idempotency_key="same-key",
+    )
+
+    first = extension.set_grid(request)
+    second = extension.set_grid(
+        otf.GridFormulaSetRequest(
+            last,
+            "B2",
+            otf.FormulaExpression("=1", otf.EXCEL_A1),
+            idempotency_key="same-key",
+        )
+    )
+
+    assert first.outcome is otf.FormulaOutcome.SUCCEEDED
+    assert second.outcome is otf.FormulaOutcome.SUCCEEDED
+    assert second.value is not None
+    assert second.value.formula_observation.worksheet_id == "Last"
+    workbook = load_workbook(path, data_only=False)
+    try:
+        assert workbook["Model"]["B2"].value == "=1"
+        assert workbook["Last"]["B2"].value == "=1"
+    finally:
+        workbook.close()
+
+
+def test_target_failure_after_ledger_begin_allows_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _workbook(tmp_path / "retry-target-failure.xlsx")
+    extension = ExcelFormulaExtension(ExcelConnector())
+    target = _bound(extension, path)
+    original_validate_zip = extension._validate_zip
+    calls = 0
+
+    def fail_once(data: bytes) -> None:
+        nonlocal calls
+        if calls == 0:
+            calls += 1
+            raise excel_formula_module._TargetFailure(
+                otf.FormulaErrorCode.TARGET_NOT_FOUND, "transient worksheet failure"
+            )
+        original_validate_zip(data)
+
+    monkeypatch.setattr(extension, "_validate_zip", fail_once)
+    request = otf.GridFormulaSetRequest(
+        target,
+        "B2",
+        otf.FormulaExpression("=1", otf.EXCEL_A1),
+        idempotency_key="retry-key",
+    )
+
+    first = extension.set_grid(request)
+    second = extension.set_grid(request)
+
+    assert first.outcome is otf.FormulaOutcome.REJECTED
+    assert first.error is not None
+    assert first.error.code is otf.FormulaErrorCode.TARGET_NOT_FOUND
+    assert second.outcome is otf.FormulaOutcome.SUCCEEDED
+
+
+def test_completed_result_cache_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(excel_formula_module, "_COMPLETED_CACHE_LIMIT", 2, raising=False)
+    path = _workbook(tmp_path / "bounded-cache.xlsx")
+    extension = ExcelFormulaExtension(ExcelConnector())
+    target = _bound(extension, path)
+
+    for index in range(3):
+        result = extension.set_grid(
+            otf.GridFormulaSetRequest(
+                target,
+                f"B{index + 2}",
+                otf.FormulaExpression(f"={index}", otf.EXCEL_A1),
+                idempotency_key=f"bounded-key-{index}",
+            )
+        )
+        assert result.outcome is otf.FormulaOutcome.SUCCEEDED
+
+    assert len(extension._completed) == 2
