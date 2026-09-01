@@ -3,7 +3,8 @@ from __future__ import annotations
 import hashlib
 import logging
 import warnings
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from copy import deepcopy
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
@@ -34,6 +35,163 @@ SECURITY_EXPRESSION = otf.FormulaExpression(
     f'=HYPERLINK("{URL_MARKER}", "{TOKEN_MARKER}")&{CREDENTIAL_MARKER!r}&"{WORKBOOK_PATH_MARKER}"',
     otf.GOOGLE_SHEETS_A1,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class RecordedSheetsRequest:
+    method: str
+    url: str
+    headers: dict[str, str]
+    body: dict[str, Any] | None
+    timeout: int | float | None
+
+
+class RecordingSheetsTransport:
+    """Small HTTP recording double shared by Google and future grid suites."""
+
+    def __init__(
+        self,
+        responses: Mapping[str, Mapping[str, Any] | Iterable[Mapping[str, Any]]],
+        *,
+        failures: Mapping[str, BaseException] | None = None,
+        failure: BaseException | None = None,
+    ) -> None:
+        self._responses = {
+            str(key): self._response_queue(value)
+            for key, value in responses.items()
+        }
+        self._response_indexes = {key: 0 for key in self._responses}
+        self._failures = dict(failures or {})
+        self._failure = failure
+        self.requests: list[RecordedSheetsRequest] = []
+
+    @staticmethod
+    def _response_queue(
+        value: Mapping[str, Any] | Iterable[Mapping[str, Any]],
+    ) -> tuple[Mapping[str, Any], ...]:
+        queue = (value,) if isinstance(value, Mapping) else tuple(value)
+        if not queue or not all(isinstance(item, Mapping) for item in queue):
+            raise ValueError("recorded HTTP responses must be non-empty mappings")
+        return tuple(deepcopy(item) for item in queue)
+
+    @property
+    def calls(self) -> list[RecordedSheetsRequest]:
+        return self.requests
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: Mapping[str, str],
+        body: Mapping[str, Any] | None = None,
+        timeout: int | float | None = None,
+    ) -> Mapping[str, Any]:
+        request = RecordedSheetsRequest(
+            method=method,
+            url=url,
+            headers=dict(headers),
+            body=None if body is None else deepcopy(dict(body)),
+            timeout=timeout,
+        )
+        self.requests.append(request)
+        failure = self._failures.get(f"{method} {url}", self._failures.get(method, self._failure))
+        if failure is not None:
+            raise failure
+        key = next((candidate for candidate in (f"{method} {url}", method, "*") if candidate in self._responses), None)
+        if key is None:
+            raise KeyError(f"missing recorded HTTP response for {method} {url}")
+        index = self._response_indexes[key]
+        queue = self._responses[key]
+        if index >= len(queue):
+            raise AssertionError(f"recorded HTTP response for {key!r} was over-consumed")
+        self._response_indexes[key] = index + 1
+        return deepcopy(queue[index])
+
+
+@dataclass(frozen=True, slots=True)
+class RecordedProcessCall:
+    argv: tuple[str, ...]
+    credentials: dict[str, str]
+    stdin: str | None
+    timeout: int | float | None
+
+
+class RecordingProcessClient:
+    """Command recording double with credential and timeout capture."""
+
+    def __init__(
+        self,
+        responses: Mapping[str, Mapping[str, Any] | Iterable[Mapping[str, Any]]],
+        *,
+        failures: Mapping[str, BaseException] | None = None,
+        failure: BaseException | None = None,
+    ) -> None:
+        self._responses = {
+            str(key): RecordingSheetsTransport._response_queue(value)
+            for key, value in responses.items()
+        }
+        self._response_indexes = {key: 0 for key in self._responses}
+        self._failures = dict(failures or {})
+        self._failure = failure
+        self.calls: list[RecordedProcessCall] = []
+
+    def run(
+        self,
+        argv: tuple[str, ...],
+        *,
+        credentials: Mapping[str, str] | None = None,
+        stdin: str | None = None,
+        timeout: int | float | None = None,
+    ) -> Mapping[str, Any]:
+        normalized_argv = tuple(argv)
+        call = RecordedProcessCall(
+            argv=normalized_argv,
+            credentials={str(key): str(value) for key, value in (credentials or {}).items()},
+            stdin=stdin,
+            timeout=timeout,
+        )
+        self.calls.append(call)
+        operation = ":".join(normalized_argv[1:3]) if len(normalized_argv) >= 3 else ""
+        failure = self._failures.get(operation, self._failures.get(normalized_argv[2] if len(normalized_argv) >= 3 else "", self._failure))
+        if failure is not None:
+            raise failure
+        candidates = (operation, normalized_argv[2] if len(normalized_argv) >= 3 else "", "*")
+        key = next((candidate for candidate in candidates if candidate in self._responses), None)
+        if key is None:
+            raise KeyError(f"missing recorded process response for {operation!r}")
+        index = self._response_indexes[key]
+        queue = self._responses[key]
+        if index >= len(queue):
+            raise AssertionError(f"recorded process response for {key!r} was over-consumed")
+        self._response_indexes[key] = index + 1
+        return deepcopy(queue[index])
+
+
+@dataclass(frozen=True, slots=True)
+class RecordedWorkbookOpen:
+    path: str
+    options: dict[str, Any]
+
+
+class RecordingWorkbookFactory:
+    """Workbook loader seam that records each independent open."""
+
+    def __init__(
+        self,
+        workbook: object,
+        *,
+        failure: BaseException | None = None,
+    ) -> None:
+        self.workbook = workbook
+        self.failure = failure
+        self.opens: list[RecordedWorkbookOpen] = []
+
+    def __call__(self, path: object, **options: Any) -> object:
+        self.opens.append(RecordedWorkbookOpen(str(path), dict(options)))
+        if self.failure is not None:
+            raise self.failure
+        return self.workbook
 
 
 def stable_hash(text: str) -> str:

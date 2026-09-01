@@ -1,0 +1,49 @@
+{
+  "schema_version": "otc.grid-formula-provider-fixtures/v1",
+  "provider_id": "excel",
+  "dialect": "excel-a1",
+  "formula_range": "A1:C2",
+  "literal_range": "D4",
+  "copy_fill": {
+    "range": "A1:C2",
+    "source": "=B1+$C$1",
+    "expected": [
+      {"address": "A1", "text": "=B1+$C$1"},
+      {"address": "B1", "text": "=C1+$C$1"},
+      {"address": "C1", "text": "=D1+$C$1"},
+      {"address": "A2", "text": "=B2+$C$1"},
+      {"address": "B2", "text": "=C2+$C$1"},
+      {"address": "C2", "text": "=D2+$C$1"}
+    ]
+  },
+  "formula_text": [
+    {"name": "quoted_reference", "text": "='Quarter Plan'!$A2"},
+    {"name": "provider_function", "text": "=XLOOKUP(A1,Inputs!A:A,Inputs!B:B)"},
+    {"name": "external_reference", "text": "='[Budget.xlsx]Sheet1'!$A$1"}
+  ],
+  "sparse_observation": {
+    "kind": "formula.grid.observation",
+    "worksheet_id": "ws-model",
+    "requested_range": "A1:C3",
+    "formulas": [
+      {"address": "A1", "expression": {"dialect": "excel-a1", "text": "=B1+1"}},
+      {"address": "C2", "expression": {"dialect": "excel-a1", "text": "='Quarter Plan'!$B$2+SUM(External!A1:A2)"}}
+    ],
+    "observed_revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "value_observation": {
+    "kind": "formula.grid.values.observation",
+    "worksheet_id": "ws-model",
+    "requested_range": "A1:C2",
+    "values": [
+      {"address": "A1", "value": {"kind": "number", "value": 1}},
+      {"address": "B1", "value": {"kind": "string", "value": "ready"}},
+      {"address": "C1", "value": {"kind": "null"}},
+      {"address": "A2", "value": {"kind": "provider_error", "error": {"code": "DIV0"}}}
+    ],
+    "calculation_state": "cached",
+    "calculation_trigger": "stored_cache",
+    "dependency_scope": "provider_dynamic",
+    "observed_revision": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }
+}
