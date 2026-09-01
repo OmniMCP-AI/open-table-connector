@@ -11,6 +11,7 @@ license = { text = "Apache-2.0" }
 readme = "README.md"
 dependencies = [
   "open-table-connector-contract>=0.1,<0.2",
+  "open-table-connector-formulas>=0.1,<0.2",
   "polars>=1,<2",
   "pyarrow>=14,<24",
   "sqlglot>=30,<31",
@@ -18,6 +19,7 @@ dependencies = [
 
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
+open-table-connector-formulas = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]

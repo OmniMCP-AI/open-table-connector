@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from open_table_connector.contract.errors import _safe_value
+
 from .errors import _SAFE_DETAIL_KEYS, _is_unsafe_detail_value
 
 _SCHEMA = "otc.formula-receipt-details/v1"

@@ -83,3 +83,15 @@ def test_operation_result_rejects_invalid_state_combinations() -> None:
             verification=otc.VerificationState.SKIPPED,
             receipts=(),
         )
+
+
+def test_error_info_round_trips_invalid_formula_error_codes() -> None:
+    error = otc.ErrorInfo(
+        code=otc.ErrorCode.INVALID_FORMULA,
+        message="formula syntax rejected",
+        safe_details={"dialect": "google-sheets-a1"},
+    )
+
+    restored = otc.ErrorInfo.from_wire(error.to_wire())
+
+    assert restored.code is otc.ErrorCode.INVALID_FORMULA

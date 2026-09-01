@@ -9,7 +9,7 @@ from dataclasses import replace
 from multiprocessing import get_context
 from pathlib import Path
 from time import monotonic_ns
-from typing import Any
+from typing import TYPE_CHECKING, Any, overload
 
 import polars as pl
 from open_table_connector.contract import PluginDescriptor, TableURI, parse_adapter_endpoint
@@ -40,6 +40,11 @@ from .sql import NativeSql, PolarsPlanMapper, SqlResourceLimitError, execution_r
 from .sql import sql as prepare_sql
 from .table import Table, TableBinding
 from .temporal import execute_temporal_query
+
+if TYPE_CHECKING:
+    from open_table_connector.formulas import FieldFormulaTarget, GridFormulaTarget
+
+    from .formula import FieldFormulaView, GridFormulaView
 
 
 def _failure(message: str, code: ErrorCode, **details: object) -> OTCError:
@@ -83,6 +88,7 @@ class Client:
         self._closed = False
         self._client_id = str(uuid.uuid4())
         self._range_owner_token = object()
+        self._formula_owner_token = object()
 
     @classmethod
     def from_config(
@@ -328,6 +334,18 @@ class Client:
     def native_sql(self, target: str | TableURI) -> NativeSql:
         self._assert_open()
         return NativeSql(self, target)
+
+    @overload
+    def formulas(self, target: GridFormulaTarget) -> OperationResult[GridFormulaView]: ...
+
+    @overload
+    def formulas(self, target: FieldFormulaTarget[Table]) -> OperationResult[FieldFormulaView]: ...
+
+    def formulas(self, target):
+        self._assert_open()
+        from .formula import bind_formulas
+
+        return bind_formulas(self, target)
 
     def close(self) -> None:
         if self._closed:

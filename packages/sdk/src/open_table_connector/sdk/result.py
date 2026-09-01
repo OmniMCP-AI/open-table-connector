@@ -86,6 +86,7 @@ class VerificationState(StrEnum):
 
 class ErrorCode(StrEnum):
     INVALID_TARGET = "invalid_target"
+    INVALID_FORMULA = "invalid_formula"
     INVALID_SCHEMA = "invalid_schema"
     INVALID_PREDICATE = "invalid_predicate"
     INVALID_SQL = "invalid_sql"

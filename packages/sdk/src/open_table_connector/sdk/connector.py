@@ -21,6 +21,7 @@ from open_table_connector.contract import (
 from open_table_connector.contract import (
     TableMode as LegacyTableMode,
 )
+from open_table_connector.formulas import FormulaConnectorExtension
 
 from .model import (
     BaseModeDestination,
@@ -352,6 +353,15 @@ class LegacyConnectorAdapterBridge:
             verification=VerificationState.PASSED,
             receipts=(_receipt_from_legacy(result.receipt),),
         )
+
+    def formula_extension_for(self) -> FormulaConnectorExtension:
+        factory = getattr(self._adapter, "formula_extension_for", None)
+        if not callable(factory):
+            raise AttributeError("legacy adapter does not expose the formula extension")
+        extension = factory()
+        if not isinstance(extension, FormulaConnectorExtension):
+            raise TypeError("legacy adapter formula extension is invalid")
+        return extension
 
     def close(self) -> None:
         close = getattr(self._adapter, "close", None)

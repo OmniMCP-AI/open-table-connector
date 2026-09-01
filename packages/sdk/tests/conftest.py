@@ -4,6 +4,7 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Any
 
+import open_table_connector.formulas as otf
 import open_table_connector.sdk as otc
 import polars as pl
 import pyarrow as pa
@@ -90,6 +91,55 @@ def _frame_arrow_bytes(frame: pl.DataFrame) -> bytes:
     with pa.ipc.new_stream(sink, table.schema) as writer:
         writer.write_table(table)
     return sink.getvalue().to_pybytes()
+
+
+def _formula_hash(seed: str) -> str:
+    return _sha256(seed.encode("utf-8"))
+
+
+def _grid_formula_details(
+    *,
+    dialects: tuple[str, ...] = (otf.GOOGLE_SHEETS_A1,),
+    recalculation_scopes: tuple[str, ...] = (
+        otf.GridRecalculationScope.RANGE.value,
+        otf.GridRecalculationScope.WORKSHEET.value,
+    ),
+) -> otf.FormulaCapabilityDetails:
+    return otf.FormulaCapabilityDetails(
+        target_kind="grid",
+        dialects=dialects,
+        max_cells_per_operation=128,
+        max_expression_bytes=1024,
+        recalculation_scopes=recalculation_scopes,
+        calculation_states=(
+            otf.CalculationState.PROVIDER_CURRENT,
+            otf.CalculationState.CACHED,
+        ),
+        mutation_atomicity=otf.MutationAtomicity.ATOMIC,
+        revision_enforcement=otf.RevisionEnforcement.CHECKED,
+        idempotency_strength=otf.IdempotencyStrength.HOST_LEDGER,
+    )
+
+
+def _field_formula_details(
+    *,
+    dialects: tuple[str, ...] = (otf.MAYBE_BASE,),
+    recalculation_scopes: tuple[str, ...] = (otf.FieldRecalculationScope.FIELD.value,),
+) -> otf.FormulaCapabilityDetails:
+    return otf.FormulaCapabilityDetails(
+        target_kind="field",
+        dialects=dialects,
+        max_cells_per_operation=None,
+        max_expression_bytes=1024,
+        recalculation_scopes=recalculation_scopes,
+        calculation_states=(
+            otf.CalculationState.PROVIDER_CURRENT,
+            otf.CalculationState.UNKNOWN,
+        ),
+        mutation_atomicity=otf.MutationAtomicity.ATOMIC,
+        revision_enforcement=otf.RevisionEnforcement.CHECKED,
+        idempotency_strength=otf.IdempotencyStrength.RECONCILED,
+    )
 
 
 def _temporal_receipt(
@@ -270,6 +320,432 @@ class FakeTemporalExtension:
 
 
 @dataclass
+class FakeFormulaExtension:
+    calls: list[tuple[str, object]] = field(default_factory=list)
+    overrides: dict[str, otf.FormulaExtensionResult[object]] = field(default_factory=dict)
+    grid_capabilities: tuple[CapabilityIdentity, ...] = (
+        otf.GRID_READ,
+        otf.GRID_SET,
+        otf.GRID_VALUES_READ,
+        otf.GRID_RECALCULATE,
+    )
+    field_capabilities: tuple[CapabilityIdentity, ...] = (
+        otf.FIELD_READ,
+        otf.FIELD_SET,
+        otf.FIELD_VALUES_READ,
+        otf.FIELD_RECALCULATE,
+    )
+    grid_details: otf.FormulaCapabilityDetails = field(default_factory=_grid_formula_details)
+    field_details: otf.FormulaCapabilityDetails = field(default_factory=_field_formula_details)
+
+    def _result(
+        self,
+        method: str,
+        default: otf.FormulaExtensionResult[object],
+    ) -> otf.FormulaExtensionResult[object]:
+        return self.overrides.get(method, default)
+
+    def _grid_binding(self, target: otf.GridFormulaTarget) -> otf.GridFormulaBinding:
+        worksheet_id = target.worksheet.worksheet_id or "ws-model"
+        return otf.GridFormulaBinding(
+            target=otf.BoundGridFormulaTarget(
+                grid=target.grid.value,
+                worksheet=otf.WorksheetRef(worksheet_id=worksheet_id),
+            ),
+            capabilities=otf.FormulaCapabilitySet(self.grid_capabilities, self.grid_details),
+            observed_revision=_formula_hash("grid-bound"),
+        )
+
+    def _field_binding(self, target: otf.FieldFormulaTarget[otc.Table]) -> otf.FieldFormulaBinding[otc.Table]:
+        field_id = target.field.field_id or "fld-gross_margin"
+        return otf.FieldFormulaBinding(
+            target=otf.BoundFieldFormulaTarget(
+                table=target.table,
+                field=otf.FieldRef(field_id=field_id),
+            ),
+            capabilities=otf.FormulaCapabilitySet(self.field_capabilities, self.field_details),
+            observed_revision=_formula_hash("field-bound"),
+        )
+
+    def _grid_observation(
+        self,
+        request: otf.GridFormulaReadRequest | otf.GridFormulaSetRequest,
+        *,
+        expression: otf.FormulaExpression | None = None,
+        revision: str = "",
+    ) -> otf.GridFormulaObservation:
+        resolved_expression = expression or otf.FormulaExpression("=SUM(A1:A2)", self.grid_details.dialects[0])
+        observed_revision = revision or _formula_hash("grid-observation")
+        return otf.GridFormulaObservation(
+            worksheet_id=request.target.worksheet.worksheet_id or "ws-model",
+            requested_range=request.cell_range,
+            formulas=(otf.FormulaCell("A1", resolved_expression),),
+            observed_revision=observed_revision,
+        )
+
+    def _field_observation(
+        self,
+        request: otf.FieldFormulaReadRequest[otc.Table] | otf.FieldFormulaSetRequest[otc.Table],
+        *,
+        expression: otf.FormulaExpression | None = None,
+        revision: str = "",
+    ) -> otf.FieldFormulaObservation:
+        resolved_expression = expression or otf.FormulaExpression("gross * 0.2", self.field_details.dialects[0])
+        observed_revision = revision or _formula_hash("field-observation")
+        return otf.FieldFormulaObservation(
+            table_uri=request.target.table.uri,
+            field_id=request.target.field.field_id or "fld-gross_margin",
+            field_name="gross_margin",
+            expression=resolved_expression,
+            result_type="number",
+            observed_revision=observed_revision,
+        )
+
+    def bind_grid(
+        self,
+        request: otf.GridFormulaBindRequest,
+    ) -> otf.FormulaExtensionResult[otf.GridFormulaBinding]:
+        self.calls.append(("bind_grid", request))
+        default = otf.FormulaExtensionResult(
+            value=self._grid_binding(request.target),
+            outcome=otf.FormulaOutcome.SUCCEEDED,
+            commit=otf.FormulaCommitState.NOT_APPLICABLE,
+            verification=otf.FormulaVerificationState.PASSED,
+            receipts=(),
+        )
+        return self._result("bind_grid", default)  # type: ignore[return-value]
+
+    def read_grid(
+        self,
+        request: otf.GridFormulaReadRequest,
+    ) -> otf.FormulaExtensionResult[otf.GridFormulaObservation]:
+        self.calls.append(("read_grid", request))
+        observation = self._grid_observation(request)
+        default = otf.FormulaExtensionResult(
+            value=observation,
+            outcome=otf.FormulaOutcome.SUCCEEDED,
+            commit=otf.FormulaCommitState.NOT_APPLICABLE,
+            verification=otf.FormulaVerificationState.PASSED,
+            receipts=(
+                otf.FormulaReceiptDetails.for_grid_read(
+                    target=request.target.grid.value,
+                    selector=request.cell_range,
+                    capability=otf.GRID_READ.to_reference(),
+                    dialect=observation.formulas[0].expression.dialect,
+                    observation_sha256=otf.formula_observation_hash(observation),
+                    observed_count=len(observation.formulas),
+                    revision_after=observation.observed_revision,
+                ),
+            ),
+        )
+        return self._result("read_grid", default)  # type: ignore[return-value]
+
+    def set_grid(
+        self,
+        request: otf.GridFormulaSetRequest,
+    ) -> otf.FormulaExtensionResult[otf.FormulaMutation]:
+        self.calls.append(("set_grid", request))
+        observation = self._grid_observation(
+            request,
+            expression=request.expression,
+            revision=_formula_hash("grid-set"),
+        )
+        mutation = otf.FormulaMutation(
+            target_kind="grid",
+            affected_count=1,
+            formula_observation=observation,
+            revision_before=request.expected_revision,
+            revision_after=_formula_hash("grid-set-result"),
+        )
+        default = otf.FormulaExtensionResult(
+            value=mutation,
+            outcome=otf.FormulaOutcome.SUCCEEDED,
+            commit=otf.FormulaCommitState.COMMITTED,
+            verification=otf.FormulaVerificationState.PASSED,
+            receipts=(
+                otf.FormulaReceiptDetails.for_grid_set(
+                    target=request.target.grid.value,
+                    selector=request.cell_range,
+                    capability=otf.GRID_SET.to_reference(),
+                    dialect=request.expression.dialect,
+                    expression_sha256=request.expression.sha256,
+                    observation_sha256=otf.formula_observation_hash(observation),
+                    affected_count=mutation.affected_count,
+                    revision_before=request.expected_revision,
+                    revision_after=mutation.revision_after,
+                    mutation_atomicity=self.grid_details.mutation_atomicity.value,
+                    revision_enforcement=self.grid_details.revision_enforcement.value,
+                    verification="formula_text_readback",
+                ),
+            ),
+        )
+        return self._result("set_grid", default)  # type: ignore[return-value]
+
+    def read_grid_values(
+        self,
+        request: otf.GridFormulaValueReadRequest,
+    ) -> otf.FormulaExtensionResult[otf.GridFormulaValueObservation]:
+        self.calls.append(("read_grid_values", request))
+        observation = otf.GridFormulaValueObservation(
+            worksheet_id=request.target.worksheet.worksheet_id or "ws-model",
+            requested_range=request.cell_range,
+            values=(
+                otf.FormulaValueCell("A1", otf.FormulaValue.from_python("computed-secret")),
+            ),
+            calculation_state=otf.CalculationState.PROVIDER_CURRENT,
+            calculation_trigger=otf.CalculationTrigger.PROVIDER_READ,
+            dependency_scope="provider_dynamic",
+            observed_revision=_formula_hash("grid-values"),
+        )
+        formula_observation = self._grid_observation(
+            otf.GridFormulaReadRequest(target=request.target, cell_range=request.cell_range),
+            expression=otf.FormulaExpression("=HYPERLINK(\"https://secret.example\", \"x\")", self.grid_details.dialects[0]),
+            revision=observation.observed_revision,
+        )
+        default = otf.FormulaExtensionResult(
+            value=observation,
+            outcome=otf.FormulaOutcome.SUCCEEDED,
+            commit=otf.FormulaCommitState.NOT_APPLICABLE,
+            verification=otf.FormulaVerificationState.PASSED,
+            receipts=(
+                otf.FormulaReceiptDetails.for_grid_values_read(
+                    target=request.target.grid.value,
+                    selector=request.cell_range,
+                    capability=otf.GRID_VALUES_READ.to_reference(),
+                    dialect=formula_observation.formulas[0].expression.dialect,
+                    observation_sha256=otf.formula_observation_hash(formula_observation),
+                    value_observation_sha256=otf.formula_observation_hash(observation),
+                    observed_count=len(observation.values),
+                    revision_after=observation.observed_revision,
+                    calculation_state=observation.calculation_state.value,
+                    calculation_trigger=observation.calculation_trigger.value,
+                    dependency_scope=observation.dependency_scope,
+                ),
+            ),
+        )
+        return self._result("read_grid_values", default)  # type: ignore[return-value]
+
+    def recalculate_grid(
+        self,
+        request: otf.GridFormulaRecalculateRequest,
+    ) -> otf.FormulaExtensionResult[otf.RecalculationObservation]:
+        self.calls.append(("recalculate_grid", request))
+        value_observation = otf.GridFormulaValueObservation(
+            worksheet_id=request.target.worksheet.worksheet_id or "ws-model",
+            requested_range=request.cell_range or "A1",
+            values=(otf.FormulaValueCell("A1", otf.FormulaValue.from_python(21)),),
+            calculation_state=otf.CalculationState.PROVIDER_CURRENT,
+            calculation_trigger=otf.CalculationTrigger.EXPLICIT_RECALCULATION,
+            dependency_scope="provider_dynamic",
+            observed_revision=_formula_hash("grid-recalculate-values"),
+        )
+        default = otf.FormulaExtensionResult(
+            value=otf.RecalculationObservation(
+                target_kind="grid",
+                requested_scope=request.scope.value,
+                effective_scope=request.scope.value,
+                revision_before=request.expected_revision,
+                revision_after=_formula_hash("grid-recalculate"),
+                provider_status="completed",
+                calculation_state=otf.CalculationState.PROVIDER_CURRENT,
+                verification="passed",
+                value_observation=value_observation,
+            ),
+            outcome=otf.FormulaOutcome.SUCCEEDED,
+            commit=otf.FormulaCommitState.COMMITTED,
+            verification=otf.FormulaVerificationState.PASSED,
+            receipts=(
+                otf.FormulaReceiptDetails.for_grid_values_read(
+                    target=request.target.grid.value,
+                    selector=request.cell_range or request.scope.value,
+                    capability=otf.GRID_RECALCULATE.to_reference(),
+                    dialect=self.grid_details.dialects[0],
+                    observation_sha256=_formula_hash("grid-recalculate-observation"),
+                    value_observation_sha256=otf.formula_observation_hash(value_observation),
+                    observed_count=len(value_observation.values),
+                    revision_after=value_observation.observed_revision,
+                    calculation_state=value_observation.calculation_state.value,
+                    calculation_trigger=value_observation.calculation_trigger.value,
+                    dependency_scope=value_observation.dependency_scope,
+                ),
+            ),
+        )
+        return self._result("recalculate_grid", default)  # type: ignore[return-value]
+
+    def bind_field(
+        self,
+        request: otf.FieldFormulaBindRequest[otc.Table],
+    ) -> otf.FormulaExtensionResult[otf.FieldFormulaBinding[otc.Table]]:
+        self.calls.append(("bind_field", request))
+        default = otf.FormulaExtensionResult(
+            value=self._field_binding(request.target),
+            outcome=otf.FormulaOutcome.SUCCEEDED,
+            commit=otf.FormulaCommitState.NOT_APPLICABLE,
+            verification=otf.FormulaVerificationState.PASSED,
+            receipts=(),
+        )
+        return self._result("bind_field", default)  # type: ignore[return-value]
+
+    def read_field(
+        self,
+        request: otf.FieldFormulaReadRequest[otc.Table],
+    ) -> otf.FormulaExtensionResult[otf.FieldFormulaObservation]:
+        self.calls.append(("read_field", request))
+        observation = self._field_observation(request)
+        default = otf.FormulaExtensionResult(
+            value=observation,
+            outcome=otf.FormulaOutcome.SUCCEEDED,
+            commit=otf.FormulaCommitState.NOT_APPLICABLE,
+            verification=otf.FormulaVerificationState.PASSED,
+            receipts=(
+                otf.FormulaReceiptDetails(
+                    target_kind="field",
+                    table_mode="base",
+                    target=request.target.table.uri.value,
+                    selector=request.target.field.field_id or "fld-gross_margin",
+                    capability=otf.FIELD_READ.to_reference(),
+                    dialect=observation.expression.dialect,
+                    observation_sha256=otf.formula_observation_hash(observation),
+                    observed_count=1,
+                    revision_after=observation.observed_revision,
+                ),
+            ),
+        )
+        return self._result("read_field", default)  # type: ignore[return-value]
+
+    def set_field(
+        self,
+        request: otf.FieldFormulaSetRequest[otc.Table],
+    ) -> otf.FormulaExtensionResult[otf.FormulaMutation]:
+        self.calls.append(("set_field", request))
+        observation = self._field_observation(
+            request,
+            expression=request.expression,
+            revision=_formula_hash("field-set"),
+        )
+        mutation = otf.FormulaMutation(
+            target_kind="field",
+            affected_count=1,
+            formula_observation=observation,
+            revision_before=request.expected_revision,
+            revision_after=_formula_hash("field-set-result"),
+        )
+        default = otf.FormulaExtensionResult(
+            value=mutation,
+            outcome=otf.FormulaOutcome.SUCCEEDED,
+            commit=otf.FormulaCommitState.COMMITTED,
+            verification=otf.FormulaVerificationState.PASSED,
+            receipts=(
+                otf.FormulaReceiptDetails.for_field_set(
+                    target=request.target.table.uri.value,
+                    selector=request.target.field.field_id or "fld-gross_margin",
+                    capability=otf.FIELD_SET.to_reference(),
+                    dialect=request.expression.dialect,
+                    expression_sha256=request.expression.sha256,
+                    observation_sha256=otf.formula_observation_hash(observation),
+                    affected_count=1,
+                    revision_before=request.expected_revision,
+                    revision_after=mutation.revision_after,
+                    mutation_atomicity=self.field_details.mutation_atomicity.value,
+                    revision_enforcement=self.field_details.revision_enforcement.value,
+                    verification="formula_text_readback",
+                ),
+            ),
+        )
+        return self._result("set_field", default)  # type: ignore[return-value]
+
+    def read_field_values(
+        self,
+        request: otf.FieldFormulaValueReadRequest[otc.Table],
+    ) -> otf.FormulaExtensionResult[otf.FieldFormulaValueObservation]:
+        self.calls.append(("read_field_values", request))
+        observation = otf.FieldFormulaValueObservation(
+            table_uri=request.target.table.uri,
+            field_id=request.target.field.field_id or "fld-gross_margin",
+            field_name="gross_margin",
+            values=(otf.FormulaRecordValue("rec-1", otf.FormulaValue.from_python(42)),),
+            calculation_state=otf.CalculationState.PROVIDER_CURRENT,
+            calculation_trigger=otf.CalculationTrigger.PROVIDER_READ,
+            dependency_scope="provider_dynamic",
+            observed_revision=_formula_hash("field-values"),
+        )
+        formula_observation = self._field_observation(
+            otf.FieldFormulaReadRequest(target=request.target),
+            revision=observation.observed_revision,
+        )
+        default = otf.FormulaExtensionResult(
+            value=observation,
+            outcome=otf.FormulaOutcome.SUCCEEDED,
+            commit=otf.FormulaCommitState.NOT_APPLICABLE,
+            verification=otf.FormulaVerificationState.PASSED,
+            receipts=(
+                otf.FormulaReceiptDetails.for_field_values_read(
+                    target=request.target.table.uri.value,
+                    selector=request.target.field.field_id or "fld-gross_margin",
+                    capability=otf.FIELD_VALUES_READ.to_reference(),
+                    dialect=formula_observation.expression.dialect,
+                    observation_sha256=otf.formula_observation_hash(formula_observation),
+                    value_observation_sha256=otf.formula_observation_hash(observation),
+                    observed_count=len(observation.values),
+                    revision_after=observation.observed_revision,
+                    calculation_state=observation.calculation_state.value,
+                    calculation_trigger=observation.calculation_trigger.value,
+                    dependency_scope=observation.dependency_scope,
+                ),
+            ),
+        )
+        return self._result("read_field_values", default)  # type: ignore[return-value]
+
+    def recalculate_field(
+        self,
+        request: otf.FieldFormulaRecalculateRequest[otc.Table],
+    ) -> otf.FormulaExtensionResult[otf.RecalculationObservation]:
+        self.calls.append(("recalculate_field", request))
+        value_observation = otf.FieldFormulaValueObservation(
+            table_uri=request.target.table.uri,
+            field_id=request.target.field.field_id or "fld-gross_margin",
+            field_name="gross_margin",
+            values=(otf.FormulaRecordValue("rec-1", otf.FormulaValue.from_python(84)),),
+            calculation_state=otf.CalculationState.PROVIDER_CURRENT,
+            calculation_trigger=otf.CalculationTrigger.EXPLICIT_RECALCULATION,
+            dependency_scope="provider_dynamic",
+            observed_revision=_formula_hash("field-recalculate-values"),
+        )
+        default = otf.FormulaExtensionResult(
+            value=otf.RecalculationObservation(
+                target_kind="field",
+                requested_scope=request.scope.value,
+                effective_scope=request.scope.value,
+                revision_before=request.expected_revision,
+                revision_after=_formula_hash("field-recalculate"),
+                provider_status="completed",
+                calculation_state=otf.CalculationState.PROVIDER_CURRENT,
+                verification="passed",
+                value_observation=value_observation,
+            ),
+            outcome=otf.FormulaOutcome.SUCCEEDED,
+            commit=otf.FormulaCommitState.COMMITTED,
+            verification=otf.FormulaVerificationState.PASSED,
+            receipts=(
+                otf.FormulaReceiptDetails.for_field_values_read(
+                    target=request.target.table.uri.value,
+                    selector=request.target.field.field_id or "fld-gross_margin",
+                    capability=otf.FIELD_RECALCULATE.to_reference(),
+                    dialect=self.field_details.dialects[0],
+                    observation_sha256=_formula_hash("field-recalculate-observation"),
+                    value_observation_sha256=otf.formula_observation_hash(value_observation),
+                    observed_count=len(value_observation.values),
+                    revision_after=value_observation.observed_revision,
+                    calculation_state=value_observation.calculation_state.value,
+                    calculation_trigger=value_observation.calculation_trigger.value,
+                    dependency_scope=value_observation.dependency_scope,
+                ),
+            ),
+        )
+        return self._result("recalculate_field", default)  # type: ignore[return-value]
+
+
+@dataclass
 class FakeTransaction:
     connector: FakeSdkConnector
 
@@ -338,6 +814,8 @@ class FakeSdkConnector:
     )
     existing_destinations: set[str] = field(default_factory=lambda: {"fake://warehouse/existing"})
     temporal_extension: FakeTemporalExtension = field(default_factory=FakeTemporalExtension)
+    formula_extension: FakeFormulaExtension = field(default_factory=FakeFormulaExtension)
+    open_mode: otc.TableMode = otc.TableMode.BASE_MODE
 
     def read_native_sql(self, request: ExecutionRequest) -> ArrowReadResult:
         self.calls.append(("read_native_sql", request.statement))
@@ -372,7 +850,7 @@ class FakeSdkConnector:
         return otc.OperationResult(
             value=otc.TableBinding(
                 uri=TableURI(self.table_uri),
-                mode=otc.TableMode.BASE_MODE,
+                mode=self.open_mode,
                 schema=self.frame.schema,
                 observed_revision="rev-1",
                 connector_id=self.identity.connector_id,
@@ -564,7 +1042,7 @@ class FakeSdkConnector:
         return otc.OperationResult(
             value=otc.TableBinding(
                 uri=TableURI(uri),
-                mode=otc.TableMode.BASE_MODE,
+                mode=self.open_mode,
                 schema=self.frame.schema if not isinstance(source, pl.DataFrame) else source.schema,
                 observed_revision="rev-created",
                 connector_id=self.identity.connector_id,
@@ -585,6 +1063,10 @@ class FakeSdkConnector:
         self.temporal_extension.source.descriptor = descriptor
         return self.temporal_extension
 
+    def formula_extension_for(self):
+        self.calls.append(("formula_extension_for", self.table_uri))
+        return self.formula_extension
+
 
 class FakeLegacyAdapter:
     identity = ConnectorIdentity("legacy", "0.1.0", "1.0")
@@ -592,6 +1074,9 @@ class FakeLegacyAdapter:
     hosts: tuple[str, ...] = ()
     capabilities = (CapabilityIdentity("table.write", "1.0"),)
     modes = (LegacyTableMode.BASE,)
+
+    def __init__(self) -> None:
+        self.formula_extension = FakeFormulaExtension()
 
     def read(self, *_args):
         receipt = NeutralReceipt(
@@ -634,6 +1119,9 @@ class FakeLegacyAdapter:
             batch_count=1,
         )
         return TableWriteResult(receipt=receipt, affected_rows=table.num_rows)
+
+    def formula_extension_for(self):
+        return self.formula_extension
 
 
 def legacy_descriptor() -> PluginDescriptor:
