@@ -16,6 +16,7 @@ from open_table_connector.formulas import (
     FormulaCapabilityDetails,
     FormulaCapabilitySet,
     FormulaCommitState,
+    FormulaError,
     FormulaErrorCode,
     FormulaExtensionErrorInfo,
     FormulaExtensionResult,
@@ -232,7 +233,7 @@ def test_formula_extension_error_info_is_safe_and_json_like() -> None:
         },
     )
 
-    assert info.safe_details == {"target_kind": "grid", "nested": {"dialect": "google-sheets-a1"}}
+    assert info.safe_details == {"target_kind": "grid"}
 
     with pytest.raises(ValueError, match="exception objects"):
         FormulaExtensionErrorInfo(
@@ -240,6 +241,31 @@ def test_formula_extension_error_info_is_safe_and_json_like() -> None:
             message="bad",
             safe_details={"provider_error": RuntimeError("boom")},
         )
+
+
+def test_formula_extension_error_info_redacts_formula_only_details_and_preserves_safe_facts() -> None:
+    info = FormulaExtensionErrorInfo(
+        code=FormulaErrorCode.INVALID_FORMULA,
+        message="formula was rejected",
+        safe_details={
+            "target_kind": "grid",
+            "dialect": "google-sheets-a1",
+            "provider_status_code": 400,
+            "revision_hash": HASH_A,
+            "formula": "=SUM(A1:A2)",
+            "value": 42,
+            "provider_diagnostic": "bad formula =SUM(A1:A2)",
+            "detail": "https://provider.example/errors/123",
+            "nested": {"expression": "=A1", "affected_count": 2},
+        },
+    )
+
+    assert info.safe_details == {
+        "target_kind": "grid",
+        "dialect": "google-sheets-a1",
+        "provider_status_code": 400,
+        "revision_hash": HASH_A,
+    }
 
 
 def test_formula_bindings_capture_bound_target_capabilities_and_revision() -> None:
@@ -343,26 +369,6 @@ def test_formula_idempotency_ledger_replays_conflicts_and_preserves_unknown_entr
         payload_hash="sha256:" + "1" * 64,
     )
 
-    evict_candidate = ledger.begin(
-        connector_id="google-sheets",
-        capability="formula.grid.set/1.0",
-        target_hash="sha256:" + "9" * 64,
-        selector_hash="sha256:" + "8" * 64,
-        idempotency_key="key-3",
-        payload_hash="sha256:" + "7" * 64,
-    )
-    assert evict_candidate.disposition is FormulaIdempotencyDisposition.STARTED
-
-    replay_after_pressure = ledger.begin(
-        connector_id="google-sheets",
-        capability="formula.grid.set/1.0",
-        target_hash=HASH_A,
-        selector_hash=HASH_B,
-        idempotency_key="key-1",
-        payload_hash=HASH_C,
-    )
-    assert replay_after_pressure.disposition is FormulaIdempotencyDisposition.STARTED
-
     unknown_again = ledger.begin(
         connector_id="google-sheets",
         capability="formula.grid.set/1.0",
@@ -386,6 +392,40 @@ def test_formula_idempotency_ledger_rejects_missing_terminal_entries() -> None:
             payload_hash=HASH_C,
             operation_hash=HASH_A,
         )
+
+
+def test_formula_idempotency_ledger_rejects_new_entries_when_only_protected_entries_remain() -> None:
+    ledger = FormulaIdempotencyLedger(limit=1)
+    ledger.begin(
+        connector_id="google-sheets",
+        capability="formula.grid.set/1.0",
+        target_hash=HASH_A,
+        selector_hash=HASH_B,
+        idempotency_key="in-flight",
+        payload_hash=HASH_C,
+    )
+
+    with pytest.raises(FormulaError, match="resource limit"):
+        ledger.begin(
+            connector_id="google-sheets",
+            capability="formula.grid.set/1.0",
+            target_hash="sha256:" + "d" * 64,
+            selector_hash="sha256:" + "e" * 64,
+            idempotency_key="new",
+            payload_hash="sha256:" + "f" * 64,
+        )
+
+    assert (
+        ledger.begin(
+            connector_id="google-sheets",
+            capability="formula.grid.set/1.0",
+            target_hash=HASH_A,
+            selector_hash=HASH_B,
+            idempotency_key="in-flight",
+            payload_hash=HASH_C,
+        ).disposition
+        is FormulaIdempotencyDisposition.IN_FLIGHT
+    )
 
 
 @dataclass

@@ -10,6 +10,7 @@ from typing import Generic, TypeVar
 from .capabilities import ALL_CAPABILITIES
 from .errors import (
     FormulaCommitState,
+    FormulaError,
     FormulaErrorCode,
     FormulaExtensionErrorInfo,
     FormulaExtensionResult,
@@ -230,6 +231,7 @@ class FormulaIdempotencyLedger:
         payload_hash_text = _text(payload_hash, "payload_hash")
         entry = self._entries.get(key)
         if entry is None:
+            self._make_room()
             self._entries[key] = _LedgerEntry(
                 capability=capability_text,
                 payload_hash=payload_hash_text,
@@ -323,6 +325,16 @@ class FormulaIdempotencyLedger:
             )
             if removable is None:
                 break
+            self._entries.pop(removable)
+
+    def _make_room(self) -> None:
+        while len(self._entries) >= self._limit:
+            removable = next(
+                (key for key, entry in self._entries.items() if entry.state in {"succeeded", "failed"}),
+                None,
+            )
+            if removable is None:
+                raise FormulaError("formula idempotency ledger resource limit reached")
             self._entries.pop(removable)
 
 

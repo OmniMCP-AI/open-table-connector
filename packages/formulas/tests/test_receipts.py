@@ -70,6 +70,34 @@ def test_formula_receipts_reject_unsafe_wire_fields_and_exception_objects() -> N
         payload.pop(forbidden_key)
 
 
+def test_formula_receipts_reject_url_bearing_provider_receipt_references() -> None:
+    with pytest.raises(ValueError, match="provider_receipt_ref.*URL"):
+        FormulaReceiptDetails(
+            target_kind="grid",
+            table_mode="sheet",
+            target="gsheets://spreadsheet-id",
+            selector="A1",
+            capability="formula.grid.read/1.0",
+            dialect="google-sheets-a1",
+            observation_sha256=HASH_A,
+            observed_count=1,
+            provider_receipt_ref="https://provider.example/receipts/123",
+        )
+
+    details = FormulaReceiptDetails(
+        target_kind="grid",
+        table_mode="sheet",
+        target="gsheets://spreadsheet-id",
+        selector="A1",
+        capability="formula.grid.read/1.0",
+        dialect="google-sheets-a1",
+        observation_sha256=HASH_A,
+        observed_count=1,
+        provider_receipt_ref="receipt-123",
+    )
+    assert details.to_wire()["provider_receipt_ref"] == "receipt-123"
+
+
 def test_formula_receipts_require_calculation_metadata_for_value_evidence() -> None:
     with pytest.raises(ValueError, match="calculation_state"):
         FormulaReceiptDetails.for_grid_values_read(

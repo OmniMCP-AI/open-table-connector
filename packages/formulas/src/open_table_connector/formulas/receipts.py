@@ -37,6 +37,13 @@ def _optional_text(value: object, field_name: str) -> str | None:
     return None if value is None else _text(value, field_name)
 
 
+def _optional_provider_receipt_ref(value: object) -> str | None:
+    receipt_ref = _optional_text(value, "provider_receipt_ref")
+    if receipt_ref is not None and ("http://" in receipt_ref.casefold() or "https://" in receipt_ref.casefold()):
+        raise ValueError("provider_receipt_ref must not contain a URL")
+    return receipt_ref
+
+
 def _optional_count(value: object, field_name: str) -> int | None:
     if value is None:
         return None
@@ -131,7 +138,7 @@ class FormulaReceiptDetails:
             self, "revision_enforcement", _optional_text(self.revision_enforcement, "revision_enforcement")
         )
         object.__setattr__(self, "verification", _optional_text(self.verification, "verification"))
-        object.__setattr__(self, "provider_receipt_ref", _optional_text(self.provider_receipt_ref, "provider_receipt_ref"))
+        object.__setattr__(self, "provider_receipt_ref", _optional_provider_receipt_ref(self.provider_receipt_ref))
         object.__setattr__(self, "safe_details", _safe_details(self.safe_details))
 
         if self.affected_count is None and self.observed_count is None:

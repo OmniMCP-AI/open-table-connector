@@ -9,6 +9,41 @@ from typing import Any, Generic, TypeVar
 
 from open_table_connector.contract.errors import _safe_value
 
+_SAFE_DETAIL_KEYS = {
+    "affected_count",
+    "capability",
+    "dialect",
+    "field_id",
+    "limit",
+    "operation_hash",
+    "payload_hash",
+    "provider_status_code",
+    "range",
+    "revision_hash",
+    "safe_uri",
+    "status",
+    "target",
+    "target_kind",
+    "worksheet_id",
+}
+
+
+def _is_unsafe_detail_value(value: object) -> bool:
+    return isinstance(value, str) and (
+        value.lstrip().startswith("=")
+        or "http://" in value.casefold()
+        or "https://" in value.casefold()
+    )
+
+
+def _formula_safe_details(value: Mapping[str, Any] | None) -> dict[str, Any]:
+    details = _safe_value({} if value is None else value)
+    return {
+        key: item
+        for key, item in details.items()
+        if key.casefold() in _SAFE_DETAIL_KEYS and not _is_unsafe_detail_value(item)
+    }
+
 
 class FormulaError(ValueError):
     """Base exception for formula domain validation errors."""
@@ -70,7 +105,7 @@ class FormulaExtensionErrorInfo:
         code = self.code if isinstance(self.code, FormulaErrorCode) else FormulaErrorCode(self.code)
         if not isinstance(self.message, str) or not self.message.strip():
             raise ValueError("message must be a non-empty string")
-        safe_details = _safe_value({} if self.safe_details is None else self.safe_details)
+        safe_details = _formula_safe_details(self.safe_details)
         object.__setattr__(self, "code", code)
         object.__setattr__(self, "message", self.message.strip())
         object.__setattr__(self, "safe_details", safe_details)
