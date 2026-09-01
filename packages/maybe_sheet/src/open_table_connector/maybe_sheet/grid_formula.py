@@ -44,6 +44,10 @@ class _ProtocolFailure(Exception):
     pass
 
 
+class _EvidenceProtocolFailure(_ProtocolFailure):
+    pass
+
+
 class _LimitFailure(Exception):
     def __init__(self, message: str, limit: int) -> None:
         super().__init__(message)
@@ -459,11 +463,24 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
             raw_values = result.get("value_observation")
             if raw_values is None and "values" in result:
                 raw_values = result
-            if isinstance(raw_values, Mapping):
-                if raw_values.get("kind") == "formula.grid.values.observation":
-                    value_observation = otf.GridFormulaValueObservation.from_wire(raw_values)
-                else:
-                    value_observation = self._parse_value_observation(raw_values, request.target, otf.A1Rectangle.parse(request.cell_range or "A1"), None)
+            if raw_values is not None:
+                if not isinstance(raw_values, Mapping):
+                    raise _EvidenceProtocolFailure
+                try:
+                    effective_rectangle = self._recalculation_evidence_range(
+                        result, raw_values, request, rectangle
+                    )
+                    if raw_values.get("kind") == "formula.grid.values.observation":
+                        value_observation = otf.GridFormulaValueObservation.from_wire(raw_values)
+                    else:
+                        value_observation = self._parse_value_observation(
+                            raw_values, request.target, effective_rectangle, None
+                        )
+                    self._validate_recalculation_evidence(
+                        value_observation, request.target, effective_rectangle
+                    )
+                except (TypeError, ValueError, KeyError, json.JSONDecodeError, _ProtocolFailure):
+                    raise _EvidenceProtocolFailure from None
             observation = otf.RecalculationObservation(
                 target_kind="grid",
                 requested_scope=requested_scope,
@@ -499,6 +516,12 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
                         operation_hash=operation_hash,
                     )
             return result
+        except _EvidenceProtocolFailure:
+            self._finish_recalculation_ledger(request, context, dispatched=dispatched)
+            return _failed(
+                otf.FormulaErrorCode.PROTOCOL_FAILURE,
+                "MaybeSheet returned invalid recalculation value evidence",
+            )
         except _ProtocolFailure:
             self._finish_recalculation_ledger(request, context, dispatched=dispatched)
             if dispatched:
@@ -663,6 +686,41 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
             target.worksheet.worksheet_id or "", requested_range, tuple(parsed), otf.CalculationState(state), otf.CalculationTrigger.PROVIDER_READ, "provider_dynamic", revision
         )
 
+    def _recalculation_evidence_range(
+        self,
+        result: Mapping[str, Any],
+        evidence: Mapping[str, Any],
+        request: otf.GridFormulaRecalculateRequest,
+        requested_rectangle: otf.A1Rectangle | None,
+    ) -> otf.A1Rectangle:
+        if request.scope is otf.GridRecalculationScope.RANGE:
+            if requested_rectangle is None:
+                raise _EvidenceProtocolFailure
+            effective_range = result.get("effective_range")
+            if effective_range is not None and otf.A1Rectangle.parse(effective_range) != requested_rectangle:
+                raise _EvidenceProtocolFailure
+            return requested_rectangle
+
+        effective_range = result.get("effective_range", evidence.get("requested_range"))
+        if not isinstance(effective_range, str):
+            raise _EvidenceProtocolFailure
+        rectangle = otf.A1Rectangle.parse(effective_range)
+        if rectangle.worksheet_name is not None:
+            raise _EvidenceProtocolFailure
+        return rectangle
+
+    def _validate_recalculation_evidence(
+        self,
+        observation: otf.GridFormulaValueObservation,
+        target: otf.BoundGridFormulaTarget,
+        effective_rectangle: otf.A1Rectangle,
+    ) -> None:
+        if observation.worksheet_id != target.worksheet.worksheet_id:
+            raise _EvidenceProtocolFailure
+        observed_rectangle = otf.A1Rectangle.parse(observation.requested_range)
+        if observed_rectangle != effective_rectangle or observed_rectangle.worksheet_name is not None:
+            raise _EvidenceProtocolFailure
+
     def _matrix(self, result: Mapping[str, Any], keys: tuple[str, ...], rectangle: otf.A1Rectangle) -> list[list[Any]]:
         for key in keys:
             if key in result:
@@ -798,6 +856,9 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
                 end = position + 1
                 while end < len(expression):
                     if expression[end] == quote:
+                        if end + 1 < len(expression) and expression[end + 1] == quote:
+                            end += 2
+                            continue
                         end += 1
                         break
                     end += 1
@@ -826,7 +887,11 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
             end = match.end()
             previous = expression[position - 1] if position else ""
             following = expression[end] if end < len(expression) else ""
-            if following in {"!", "("} or (previous and (previous.isalnum() or previous == "_")):
+            if (
+                following in {"!", "("}
+                or (previous and (previous.isalnum() or previous in "_."))
+                or (following and (following.isalnum() or following in "_."))
+            ):
                 output.append(expression[position:end])
                 position = end
                 continue

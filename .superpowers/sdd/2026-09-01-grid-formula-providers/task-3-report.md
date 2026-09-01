@@ -101,3 +101,47 @@ Commit: `fix: harden Maybe Sheet formula review findings` (hash reported by fina
 
 - Static Maybe capabilities and Base/field formula paths remain disabled; ordinary table reads and writes are unchanged.
 - Full package Ruff remains blocked only by the pre-existing CLI test lint findings noted above.
+
+## Task 3 Review-Fix Round 2
+
+### RED Evidence
+
+Added focused regressions for recalculation evidence target/range validation, worksheet/workbook matrix ranges, malformed evidence, standalone identifier handling, and doubled-apostrophe worksheet names. Before the implementation fix:
+
+```text
+uv run --frozen python -m pytest packages/maybe_sheet/tests/test_grid_formula.py -q
+5 failed, 39 passed
+```
+
+### GREEN Verification
+
+```text
+uv run --frozen python -m pytest packages/maybe_sheet/tests/test_grid_formula.py packages/maybe_sheet/tests/test_connector.py packages/maybe_sheet/tests/test_cli_adapter.py packages/cli/tests/test_commands.py packages/formulas/tests -q
+157 passed in 0.47s
+```
+
+```text
+uv run --frozen ruff check packages/maybe_sheet/src/open_table_connector/maybe_sheet/grid_formula.py packages/maybe_sheet/tests/test_grid_formula.py
+All checks passed!
+```
+
+```text
+git diff --check
+[no output]
+```
+
+The requested broader `uv run --frozen ruff check packages/maybe_sheet packages/formulas packages/cli` command remains red only on pre-existing untouched `packages/cli/tests` findings (`I001`, `UP017`, and `F401`).
+
+### Changed Files
+
+- `packages/maybe_sheet/src/open_table_connector/maybe_sheet/grid_formula.py`
+- `packages/maybe_sheet/tests/test_grid_formula.py`
+- `.superpowers/sdd/2026-09-01-grid-formula-providers/task-3-report.md`
+
+Commit: `fix: harden Maybe recalculation evidence and copy-fill`
+
+### Concerns
+
+- Recalculation acknowledgements without value evidence remain successful with verification `unavailable`.
+- Static Maybe formula capabilities and ordinary table paths remain unchanged.
+- Broader package Ruff still has the pre-existing CLI test lint findings listed above; focused changed-file Ruff is clean.

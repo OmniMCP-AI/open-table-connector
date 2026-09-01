@@ -82,6 +82,21 @@ def formula_matrix(
     )
 
 
+def value_observation_wire(
+    *, worksheet_id: str = "ws-model", requested_range: str = "A1", values: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    return {
+        "kind": "formula.grid.values.observation",
+        "worksheet_id": worksheet_id,
+        "requested_range": requested_range,
+        "values": values if values is not None else [{"address": "A1", "value": {"kind": "integer", "value": 7}}],
+        "calculation_state": "provider_current",
+        "calculation_trigger": "explicit_recalculation",
+        "dependency_scope": "provider_dynamic",
+        "observed_revision": HASH_B,
+    }
+
+
 class RecordingProcess:
     def __init__(self, responses: list[dict[str, Any]]) -> None:
         self.responses = [deepcopy(response) for response in responses]
@@ -438,6 +453,127 @@ def test_recalculate_only_sends_explicit_supported_scope_and_preserves_effective
     )
 
 
+@pytest.mark.parametrize(
+    ("worksheet_id", "requested_range"),
+    [("ws-other", "A1"), ("ws-model", "B2")],
+)
+def test_recalculate_rejects_mismatched_value_observation_target_or_range(
+    worksheet_id: str, requested_range: str
+) -> None:
+    process = RecordingProcess(
+        [
+            worksheet_list(),
+            envelope(
+                "formula.recalculate",
+                {
+                    "requested_scope": "range",
+                    "effective_scope": "range",
+                    "provider_status": "completed",
+                    "calculation_state": "provider_current",
+                    "revision_before": HASH_A,
+                    "revision_after": HASH_B,
+                    "value_observation": value_observation_wire(
+                        worksheet_id=worksheet_id, requested_range=requested_range
+                    ),
+                },
+            ),
+        ]
+    )
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+
+    result = extension.recalculate_grid(
+        otf.GridFormulaRecalculateRequest(bound_target(), otf.GridRecalculationScope.RANGE, "A1")
+    )
+
+    assert result.outcome is otf.FormulaOutcome.FAILED
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.PROTOCOL_FAILURE
+
+
+@pytest.mark.parametrize(
+    "scope", [otf.GridRecalculationScope.WORKSHEET, otf.GridRecalculationScope.WORKBOOK]
+)
+def test_recalculate_parses_non_range_value_matrix_against_reported_effective_range(
+    scope: otf.GridRecalculationScope,
+) -> None:
+    process = RecordingProcess(
+        [
+            worksheet_list(),
+            envelope(
+                "formula.recalculate",
+                {
+                    "requested_scope": scope.value,
+                    "effective_scope": scope.value,
+                    "effective_range": "B2:C3",
+                    "provider_status": "completed",
+                    "calculation_state": "provider_current",
+                    "revision_before": HASH_A,
+                    "revision_after": HASH_B,
+                    "value_observation": {
+                        "worksheet_id": "ws-model",
+                        "requested_range": "B2:C3",
+                        "values": [[7, 8], [9, 10]],
+                        "formula_cells": ["B2"],
+                        "cell_metadata": [[{"kind": "formula"}, {"kind": "value"}], [{"kind": "value"}, {"kind": "value"}]],
+                        "calculation_state": "provider_current",
+                    },
+                },
+            ),
+        ]
+    )
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+
+    result = extension.recalculate_grid(
+        otf.GridFormulaRecalculateRequest(bound_target(), scope)
+    )
+
+    assert result.outcome is otf.FormulaOutcome.SUCCEEDED
+    assert result.verification is otf.FormulaVerificationState.PASSED
+    assert result.value is not None
+    assert result.value.verification == "passed"
+    assert result.value.value_observation is not None
+    assert result.value.value_observation.requested_range == "B2:C3"
+    assert [cell.address for cell in result.value.value_observation.values] == ["B2"]
+
+
+def test_recalculate_rejects_malformed_value_evidence_with_protocol_failure() -> None:
+    process = RecordingProcess(
+        [
+            worksheet_list(),
+            envelope(
+                "formula.recalculate",
+                {
+                    "requested_scope": "range",
+                    "effective_scope": "range",
+                    "provider_status": "completed",
+                    "calculation_state": "provider_current",
+                    "revision_before": HASH_A,
+                    "revision_after": HASH_B,
+                    "value_observation": {"kind": "formula.grid.values.observation"},
+                },
+            ),
+        ]
+    )
+    extension = _extension(process)
+    assert extension.bind_grid(
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+    ).outcome is otf.FormulaOutcome.SUCCEEDED
+
+    result = extension.recalculate_grid(
+        otf.GridFormulaRecalculateRequest(bound_target(), otf.GridRecalculationScope.RANGE, "A1")
+    )
+
+    assert result.outcome is otf.FormulaOutcome.FAILED
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.PROTOCOL_FAILURE
+
+
 def test_recalculate_validates_range_shape_and_cell_limit_before_dispatch() -> None:
     process = RecordingProcess([worksheet_list()])
     extension = _extension(process)
@@ -681,6 +817,14 @@ def test_formula_value_matrix_over_return_fails_closed() -> None:
             "=SUM(Table1[A1])+A1",
             [["=SUM(Table1[A1])+A1", "=SUM(Table1[A1])+B1"],
              ["=SUM(Table1[A1])+A2", "=SUM(Table1[A1])+B2"]],
+        ),
+        (
+            "=A1_NAME+A1",
+            [["=A1_NAME+A1", "=A1_NAME+B1"], ["=A1_NAME+A2", "=A1_NAME+B2"]],
+        ),
+        (
+            "='O''Brien'!A1+A1",
+            [["='O''Brien'!A1+A1", "='O''Brien'!B1+B1"], ["='O''Brien'!A2+A2", "='O''Brien'!B2+B2"]],
         ),
         (
             "='[Book.xlsx]Sheet 1'!A1+A1",
