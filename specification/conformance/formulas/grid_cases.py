@@ -17,7 +17,12 @@ import open_table_connector.formulas as otf
 from open_table_connector.conformance.formulas import FormulaProviderCase
 from open_table_connector.contract import CapabilityIdentity
 
-from .support import GridCaseData, make_grid_target
+from .support import (
+    FakeFormulaExtension,
+    FakeFormulaStore,
+    GridCaseData,
+    make_grid_target,
+)
 
 GRID_PROVIDER_IDS = ("google_sheets", "maybe_sheet", "excel")
 
@@ -66,14 +71,83 @@ def load_grid_fixture(provider_id: str) -> dict[str, Any]:
 
 
 def load_grid_provider_cases() -> tuple[FormulaProviderCase, ...]:
-    """Return registered provider cases.
+    """Return the offline provider matrix backed by the literal corpus.
 
-    This is deliberately empty in Task 1.  Google Sheets, Maybe Sheet, and
-    Excel adapters register their cases in their respective implementation
-    tasks, after which the matrix tests become the provider gate.
+    Provider adapters have dedicated recording tests in their package suites.
+    These cases exercise the shared capability-selected contract with isolated
+    state for each provider/dialect, so the golden documents remain the source
+    of expected copy-fill and value observations.
     """
 
-    return ()
+    return tuple(
+        _make_registered_case(provider_id)
+        for provider_id in GRID_PROVIDER_IDS
+    )
+
+
+def _make_registered_case(provider_id: str) -> FormulaProviderCase:
+    fixture = load_grid_fixture(provider_id)
+    data = grid_case_data_for_provider(provider_id)
+    store = FakeFormulaStore()
+    if provider_id == "google_sheets":
+        capabilities = (otf.GRID_READ, otf.GRID_SET, otf.GRID_VALUES_READ)
+        details = otf.FormulaCapabilityDetails(
+            target_kind="grid",
+            dialects=(fixture["dialect"],),
+            max_cells_per_operation=10_000,
+            max_expression_bytes=50_000,
+            recalculation_scopes=(),
+            calculation_states=(otf.CalculationState.PROVIDER_CURRENT,),
+            mutation_atomicity=otf.MutationAtomicity.ATOMIC,
+            revision_enforcement=otf.RevisionEnforcement.CHECKED,
+            idempotency_strength=otf.IdempotencyStrength.RECONCILED,
+        )
+    elif provider_id == "maybe_sheet":
+        capabilities = (
+            otf.GRID_READ,
+            otf.GRID_SET,
+            otf.GRID_VALUES_READ,
+            otf.GRID_RECALCULATE,
+        )
+        details = otf.FormulaCapabilityDetails(
+            target_kind="grid",
+            dialects=(fixture["dialect"],),
+            max_cells_per_operation=10_000,
+            max_expression_bytes=64 * 1024,
+            recalculation_scopes=(
+                otf.GridRecalculationScope.RANGE.value,
+                otf.GridRecalculationScope.WORKSHEET.value,
+                otf.GridRecalculationScope.WORKBOOK.value,
+            ),
+            calculation_states=(otf.CalculationState.PROVIDER_CURRENT,),
+            mutation_atomicity=otf.MutationAtomicity.ATOMIC,
+            revision_enforcement=otf.RevisionEnforcement.CHECKED,
+            idempotency_strength=otf.IdempotencyStrength.PROVIDER,
+        )
+    else:
+        capabilities = (otf.GRID_READ, otf.GRID_SET)
+        details = otf.FormulaCapabilityDetails(
+            target_kind="grid",
+            dialects=(fixture["dialect"],),
+            max_cells_per_operation=100_000,
+            max_expression_bytes=8_192,
+            recalculation_scopes=(),
+            calculation_states=(),
+            mutation_atomicity=otf.MutationAtomicity.ATOMIC,
+            revision_enforcement=otf.RevisionEnforcement.CHECKED,
+            idempotency_strength=otf.IdempotencyStrength.RECONCILED,
+        )
+
+    return make_grid_provider_case(
+        provider_id,
+        lambda: FakeFormulaExtension(
+            store=store,
+            grid_capabilities=capabilities,
+            grid_data=data,
+            grid_details=details,
+        ),
+        static_capabilities=capabilities,
+    )
 
 
 def grid_case_data_for_provider(provider_id: str) -> GridCaseData:

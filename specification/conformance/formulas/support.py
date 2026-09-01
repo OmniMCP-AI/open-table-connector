@@ -521,17 +521,27 @@ def _field_binding(
     )
 
 
-def _grid_details() -> otf.FormulaCapabilityDetails:
+def _grid_details(
+    *,
+    dialect: str = otf.GOOGLE_SHEETS_A1,
+    max_cells_per_operation: int = 64,
+    max_expression_bytes: int = 2048,
+    recalculation_scopes: tuple[str, ...] = (otf.GridRecalculationScope.RANGE.value,),
+    calculation_states: tuple[otf.CalculationState, ...] = (
+        otf.CalculationState.PROVIDER_CURRENT,
+    ),
+    idempotency_strength: otf.IdempotencyStrength = otf.IdempotencyStrength.HOST_LEDGER,
+) -> otf.FormulaCapabilityDetails:
     return otf.FormulaCapabilityDetails(
         target_kind="grid",
-        dialects=(otf.GOOGLE_SHEETS_A1,),
-        max_cells_per_operation=64,
-        max_expression_bytes=2048,
-        recalculation_scopes=(otf.GridRecalculationScope.RANGE.value,),
-        calculation_states=(otf.CalculationState.PROVIDER_CURRENT,),
+        dialects=(dialect,),
+        max_cells_per_operation=max_cells_per_operation,
+        max_expression_bytes=max_expression_bytes,
+        recalculation_scopes=recalculation_scopes,
+        calculation_states=calculation_states,
         mutation_atomicity=otf.MutationAtomicity.ATOMIC,
         revision_enforcement=otf.RevisionEnforcement.CHECKED,
-        idempotency_strength=otf.IdempotencyStrength.HOST_LEDGER,
+        idempotency_strength=idempotency_strength,
     )
 
 
@@ -559,10 +569,12 @@ class FakeFormulaExtension:
         grid_capabilities: tuple[CapabilityIdentity, ...] | None = None,
         field_capabilities: tuple[CapabilityIdentity, ...] | None = None,
         grid_data: GridCaseData | None = None,
+        grid_details: otf.FormulaCapabilityDetails | None = None,
     ) -> None:
         self.store = store
         self.broken = broken
         self.security_markers = tuple(security_markers)
+        self._uses_grid_fixture = grid_data is not None
         self.grid_data = grid_data or grid_case_data()
         self.field_data = field_case_data()
         self.grid_capabilities = grid_capabilities or (
@@ -577,7 +589,7 @@ class FakeFormulaExtension:
             otf.FIELD_VALUES_READ,
             otf.FIELD_RECALCULATE,
         )
-        self.grid_details = _grid_details()
+        self.grid_details = grid_details or _grid_details()
         self.field_details = _field_details()
         self.operation_ids: list[str] = []
         self.ledger_snapshots: list[object] = []
@@ -693,11 +705,14 @@ class FakeFormulaExtension:
                         },
                     ),
                 )
-        self.store.grid_formulas = (
-            _broadcast_formulas(request.expression)
-            if self.broken.broadcast_copy_fill
-            else _copy_fill_formulas(request.expression)
-        )
+        if self._uses_grid_fixture and request.expression == self.grid_data.set_expression:
+            self.store.grid_formulas = self.grid_data.expected_after_set.formulas
+        else:
+            self.store.grid_formulas = (
+                _broadcast_formulas(request.expression)
+                if self.broken.broadcast_copy_fill
+                else _copy_fill_formulas(request.expression)
+            )
         self.store.grid_revision = HASH_B if self.store.grid_revision == HASH_A else HASH_C
         observation = otf.GridFormulaObservation(
             worksheet_id="ws-model",

@@ -32,7 +32,13 @@ from open_table_connector.contract import (
     TableWriteResult,
     WritePreflightAdapter,
 )
-from open_table_connector.formulas import CompositeFormulaConnectorExtension
+from open_table_connector.formulas import (
+    GRID_READ,
+    GRID_RECALCULATE,
+    GRID_SET,
+    GRID_VALUES_READ,
+    CompositeFormulaConnectorExtension,
+)
 
 from .connector import MaybeSheetConnector, MaybeSheetReadRequest
 from .grid_formula import MaybeSheetGridFormulaExtension
@@ -54,8 +60,16 @@ class MaybeSheetCliAdapter(ConnectorAdapter, WritePreflightAdapter):
     identity = CONNECTOR_IDENTITY
     schemes = (SCHEME_MAYBE, SCHEME_HTTPS)
     hosts = (HOST_MAYBE,)
-    capabilities = (BASE_READ_CAPABILITY, BASE_INSPECT_CAPABILITY, TABLE_WRITE_CAPABILITY)
-    modes = (TableMode.BASE,)
+    capabilities = (
+        BASE_READ_CAPABILITY,
+        BASE_INSPECT_CAPABILITY,
+        TABLE_WRITE_CAPABILITY,
+        GRID_READ,
+        GRID_SET,
+        GRID_VALUES_READ,
+        GRID_RECALCULATE,
+    )
+    modes = (TableMode.BASE, TableMode.SHEET)
 
     @classmethod
     def from_context(cls, context: ProviderFactoryContext) -> MaybeSheetCliAdapter:
@@ -199,8 +213,8 @@ def maybe_sheet_cli_plugin() -> PluginDescriptor:
         (SCHEME_MAYBE, SCHEME_HTTPS),
         _factory,
         (HOST_MAYBE,),
-        capabilities=(BASE_READ_CAPABILITY, BASE_INSPECT_CAPABILITY, TABLE_WRITE_CAPABILITY),
-        modes=(TableMode.BASE,),
+        capabilities=MaybeSheetCliAdapter.capabilities,
+        modes=MaybeSheetCliAdapter.modes,
     )
 
 

@@ -49,6 +49,7 @@ from open_table_connector.contract.fingerprints import (
     arrow_schema_fingerprint,
     operation_identity,
 )
+from open_table_connector.formulas import GRID_READ, GRID_SET
 
 from .csv_connector import CsvConnector, CsvReadOptions, CsvTableReadRequest
 from .excel_connector import ExcelConnector, ExcelReadOptions, ExcelTableReadRequest
@@ -493,6 +494,7 @@ class CsvCliAdapter(_LocalCliAdapter):
 class ExcelCliAdapter(CsvCliAdapter):
     identity = ConnectorIdentity(PROVIDER_EXCEL, "0.1.0", "1.0")
     schemes = (PROVIDER_EXCEL, SCHEME_XLSX)
+    capabilities = (*CsvCliAdapter.capabilities, GRID_READ, GRID_SET)
 
     def _request(self, endpoint: Endpoint, options: AdapterOptions):
         return ExcelTableReadRequest(
