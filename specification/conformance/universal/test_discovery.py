@@ -12,7 +12,6 @@ from open_table_connector.contract import (
     ResourceLimits,
     TableMode,
 )
-from open_table_connector.formulas import ALL_CAPABILITIES
 
 from specification.conformance.universal import cases as cases_module
 from specification.conformance.universal.assertions import (
@@ -349,11 +348,20 @@ def test_all_advertised_capabilities_have_case_bindings() -> None:
         assert set(connector_case.capability_bindings) == connector_case.capabilities
 
 
-def test_current_descriptors_do_not_advertise_formula_capabilities() -> None:
-    formula_capabilities = frozenset(
-        capability.capability_id for capability in ALL_CAPABILITIES
+def _assert_formula_capabilities_are_disabled(
+    advertised: set[str],
+    *,
+    connector_name: str,
+) -> None:
+    formula_capabilities = sorted(
+        capability_id
+        for capability_id in advertised
+        if capability_id.startswith("formula.")
     )
+    assert not formula_capabilities, connector_name
 
+
+def test_current_descriptors_do_not_advertise_formula_capabilities() -> None:
     for connector_case in all_cases():
         advertised = set(connector_case.capabilities)
         manifest = getattr(connector_case.connector, "manifest", None)
@@ -365,7 +373,18 @@ def test_current_descriptors_do_not_advertise_formula_capabilities() -> None:
             if binding.identity is not None
         )
 
-        assert not formula_capabilities.intersection(advertised), connector_case.name
+        _assert_formula_capabilities_are_disabled(
+            advertised,
+            connector_name=connector_case.name,
+        )
+
+
+def test_unknown_formula_capability_is_rejected_by_disabled_discovery_checkpoint() -> None:
+    with pytest.raises(AssertionError, match="formula.future.calculate"):
+        _assert_formula_capabilities_are_disabled(
+            {"formula.future.calculate"},
+            connector_name="fixture",
+        )
 
 
 @pytest.mark.parametrize("connector_case", _CASE_NAMES, ids=str, indirect=True)
