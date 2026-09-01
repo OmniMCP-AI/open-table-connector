@@ -107,11 +107,42 @@ does not translate or evaluate it. Only an explicit `FormulaExpression` sent
 through a Formula view's `set()` method can activate a formula. Ordinary
 Table writes remain value-only.
 
-The core Formula contract is published without enabling any real provider
-capability. The grid-provider and field-provider plans must each install and
-pass their focused conformance gate before their provider identities become
-available. Until then, Formula discovery is intentionally empty and callers
-receive an unsupported-capability result rather than a fallback Table write.
+The Formula contract is provider-neutral, but provider identities are enabled
+only after the corresponding focused conformance gate passes. The certified
+grid identities are listed below; unsupported operations still return an
+unsupported-capability result rather than falling back to a Table write.
+
+#### Grid provider matrix
+
+The certified grid surface is sheet-mode only. Formula text is opaque and must
+use the dialect shown here; OTC does not translate between dialects.
+
+| Provider | Grid capabilities | Dialect | Calculated-value reads | Explicit recalculation |
+| --- | --- | --- | --- | --- |
+| Google Sheets | `formula.grid.read/1.0`, `formula.grid.set/1.0`, `formula.grid.values.read/1.0` | `google-sheets-a1` | Yes; provider-dynamic dependencies | No |
+| Maybe Sheet | `formula.grid.read/1.0`, `formula.grid.set/1.0`, `formula.grid.values.read/1.0`, `formula.grid.recalculate/1.0` | `maybe-sheet-a1` | Yes; provider-dynamic dependencies | Yes: `range`, `worksheet`, `workbook` |
+| Direct Excel `.xlsx` | `formula.grid.read/1.0`, `formula.grid.set/1.0` | `excel-a1` | No Formula value read | No Formula recalculation |
+
+Grid `set()` uses top-left copy-fill for every provider: the top-left cell
+receives the supplied expression and relative references translate for each
+destination; absolute and mixed `$` references remain anchored. A successful
+set is verified by a complete formula-text readback, not by an acknowledgement
+alone.
+
+Google and Maybe calculated values are observations of provider-managed
+dependencies (`dependency_scope=provider_dynamic`). A Maybe sheet formula may
+refer to a base-mode worksheet, for example
+`='R_Revenue Base'!$C2*0.8`; the reference remains native text and OTC does not
+bind or read a separate Base target. Excel reads and writes native formula text
+in a direct `.xlsx` workbook only. Its workbook calculation flags can request a
+later Excel recalculation, but OTC does not execute Excel and therefore exposes
+neither calculated-value reads nor a recalculation capability; managed temporal
+Excel remains formula-rejecting.
+
+Ordinary `Table` writes remain value-only and never activate formulas. Google
+ordinary writes continue to use `valueInputOption=RAW`, and the ordinary Excel
+writer preserves formula-prefixed strings as text. Use an explicit Formula view
+and `FormulaExpression` when formula activation is intended.
 
 ### SQL support
 
