@@ -91,7 +91,7 @@ def check_package_metadata(root: Path) -> list[str]:
     support = root_document.get("tool", {}).get("otc", {}).get("support", {})
     expected_support = {
         "python": ">=3.11,<3.15",
-        "pyarrow": ">=14,<20",
+        "pyarrow": ">=14,<24",
         "polars": ">=1,<2",
     }
     for name, expected in expected_support.items():

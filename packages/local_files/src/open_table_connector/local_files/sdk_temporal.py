@@ -174,7 +174,7 @@ class LocalFilesSdkTemporalExtension:
         if binding.connector_id != connector.identity.connector_id:
             raise ValueError("local-files temporal binding belongs to another connector")
         resource = connector.resolve(binding.uri, ResolveContext()).resource
-        if resource.format.value != "csv":
+        if resource.format.value != PROVIDER_CSV:
             raise ValueError("local-files temporal SDK supports CSV sources only")
         self._connector = connector
         self._binding = binding

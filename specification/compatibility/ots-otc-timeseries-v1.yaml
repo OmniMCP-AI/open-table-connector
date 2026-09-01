@@ -20,7 +20,7 @@ runtime_ranges:
   python: ">=3.11,<3.15"
   rust: ">=1.98"
   arrow_rs: "59.2.0"
-  pyarrow: ">=14,<20"
+  pyarrow: ">=14,<24"
   polars: ">=1,<2"
 timescaledb_version: "2.29.0"
 postgresql_major: 17
