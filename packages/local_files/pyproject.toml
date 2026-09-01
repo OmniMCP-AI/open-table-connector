@@ -11,6 +11,7 @@ license = { text = "Apache-2.0" }
 readme = "README.md"
 dependencies = [
   "open-table-connector-contract>=0.1,<0.2",
+  "open-table-connector-formulas>=0.1,<0.2",
   "open-table-connector-sdk>=0.1,<0.2",
   "open-table-connector-timeseries>=0.1,<0.2",
   "openpyxl>=3.1,<4",
@@ -35,6 +36,7 @@ markdown = "open_table_connector.local_files.plugin:markdown_cli_plugin"
 
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
+open-table-connector-formulas = { workspace = true }
 open-table-connector-sdk = { workspace = true }
 open-table-connector-timeseries = { workspace = true }
 

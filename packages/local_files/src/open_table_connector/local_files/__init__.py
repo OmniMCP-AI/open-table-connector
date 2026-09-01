@@ -13,6 +13,7 @@ from .cli_adapter import (
 )
 from .csv_connector import CsvConnector, CsvReadOptions, CsvTableReadRequest
 from .excel_connector import ExcelConnector, ExcelReadOptions, ExcelTableReadRequest
+from .excel_formula import ExcelFormulaExtension
 from .excel_reader import read_excel_arrow
 from .excel_writer import write_excel
 from .identity import CONNECTOR_IDENTITY
@@ -51,6 +52,7 @@ __all__ = [
     "CsvTableReadRequest",
     "CsvTemporalExecutor",
     "ExcelConnector",
+    "ExcelFormulaExtension",
     "ExcelManagedTemporalStore",
     "ExcelReadOptions",
     "ExcelTableReadRequest",

@@ -513,6 +513,16 @@ class ExcelCliAdapter(CsvCliAdapter):
             table.num_rows,
         )
 
+    def formula_extension_for(self):
+        from open_table_connector.formulas import CompositeFormulaConnectorExtension
+
+        from .excel_formula import ExcelFormulaExtension
+
+        return CompositeFormulaConnectorExtension(
+            grid=ExcelFormulaExtension(self.connector),
+            field=None,
+        )
+
 
 class MarkdownCliAdapter(CsvCliAdapter):
     identity = ConnectorIdentity(SCHEME_MD, "0.1.0", "1.0")
