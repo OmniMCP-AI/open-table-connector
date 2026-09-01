@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-connectors.dev/schemas/formula-receipt-details-v1.schema.json",
+  "title": "Formula receipt details v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "target_kind",
+    "table_mode",
+    "target",
+    "selector",
+    "capability",
+    "dialect"
+  ],
+  "properties": {
+    "schema": {
+      "const": "otc.formula-receipt-details/v1"
+    },
+    "target_kind": {
+      "enum": [
+        "grid",
+        "field"
+      ]
+    },
+    "table_mode": {
+      "enum": [
+        "sheet",
+        "base"
+      ]
+    },
+    "target": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "selector": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "capability": {
+      "enum": [
+        "formula.grid.read/1.0",
+        "formula.grid.set/1.0",
+        "formula.grid.values.read/1.0",
+        "formula.grid.recalculate/1.0",
+        "formula.field.read/1.0",
+        "formula.field.set/1.0",
+        "formula.field.values.read/1.0",
+        "formula.field.recalculate/1.0"
+      ]
+    },
+    "dialect": {
+      "enum": [
+        "google-sheets-a1",
+        "maybe-sheet-a1",
+        "excel-a1",
+        "maybe-base",
+        "feishu-bitable"
+      ]
+    },
+    "input_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "observation_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "value_observation_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "affected_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "observed_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "copy_fill_policy": {
+      "const": "top_left"
+    },
+    "calculation_state": {
+      "enum": [
+        "provider_current",
+        "cached",
+        "unknown"
+      ]
+    },
+    "calculation_trigger": {
+      "enum": [
+        "explicit_recalculation",
+        "mutation",
+        "provider_read",
+        "stored_cache"
+      ]
+    },
+    "dependency_scope": {
+      "const": "provider_dynamic"
+    },
+    "revision_before": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "revision_after": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "mutation_atomicity": {
+      "enum": [
+        "atomic",
+        "partial_reported",
+        "unknown"
+      ]
+    },
+    "revision_enforcement": {
+      "enum": [
+        "atomic",
+        "checked",
+        "unavailable"
+      ]
+    },
+    "verification": {
+      "enum": [
+        "formula_text_readback",
+        "passed",
+        "unavailable"
+      ]
+    },
+    "provider_receipt_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^(?!.*https?://).+$"
+    },
+    "safe_details": {
+      "$ref": "#/$defs/safeJsonObject"
+    }
+  },
+  "$defs": {
+    "safeJsonValue": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string",
+          "pattern": "^(?!.*https?://).*$"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/safeJsonValue"
+          }
+        },
+        {
+          "$ref": "#/$defs/safeJsonObject"
+        }
+      ]
+    },
+    "safeJsonObject": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/safeJsonValue"
+      },
+      "propertyNames": {
+        "pattern": "^(?!(expression|formula|value|values|credential|token)$).+$"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "oneOf": [
+        {
+          "required": [
+            "affected_count"
+          ],
+          "not": {
+            "required": [
+              "observed_count"
+            ]
+          }
+        },
+        {
+          "required": [
+            "observed_count"
+          ],
+          "not": {
+            "required": [
+              "affected_count"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "if": {
+        "properties": {
+          "target_kind": {
+            "const": "grid"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "table_mode": {
+            "const": "sheet"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "target_kind": {
+            "const": "field"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "table_mode": {
+            "const": "base"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "value_observation_sha256"
+        ]
+      },
+      "then": {
+        "required": [
+          "calculation_state",
+          "calculation_trigger",
+          "dependency_scope"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "enum": [
+              "formula.grid.set/1.0",
+              "formula.field.set/1.0"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "input_sha256",
+          "observation_sha256",
+          "verification"
+        ],
+        "properties": {
+          "verification": {
+            "const": "formula_text_readback"
+          }
+        }
+      }
+    }
+  ]
+}

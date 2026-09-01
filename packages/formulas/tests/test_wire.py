@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from pathlib import Path
 
+import jsonschema
 import pytest
 from open_table_connector.formulas import (
     CalculationState,
     CalculationTrigger,
     FieldFormulaObservation,
     FieldFormulaValueObservation,
+    FormulaCapabilitySet,
     FormulaExpression,
     FormulaMutation,
+    FormulaReceiptDetails,
     FormulaRecordValue,
     FormulaValue,
     FormulaValueCell,
@@ -24,6 +28,19 @@ from open_table_connector.formulas import (
 
 HASH_A = "sha256:" + "a" * 64
 HASH_B = "sha256:" + "b" * 64
+ROOT = Path(__file__).parents[3]
+SCHEMA_ROOT = ROOT / "specification" / "schemas"
+FIXTURE_ROOT = ROOT / "specification" / "fixtures" / "formulas" / "v1"
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
 
 
 def test_formula_observation_hash_is_canonical_for_reordered_keys() -> None:
@@ -135,3 +152,113 @@ def test_from_wire_rejects_extra_or_missing_keys_recursively() -> None:
 def test_formula_operation_from_wire_rejects_unknown_kind() -> None:
     with pytest.raises(ValueError, match="unsupported"):
         formula_operation_from_wire({"kind": "formula.unknown"})
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "schema_name", "decoder"),
+    [
+        (
+            "grid-sparse-observation.json",
+            "formula-observation-v1.schema.json",
+            formula_observation_from_wire,
+        ),
+        (
+            "field-observation.json",
+            "formula-observation-v1.schema.json",
+            formula_observation_from_wire,
+        ),
+        (
+            "value-observations.json",
+            "formula-observation-v1.schema.json",
+            formula_observation_from_wire,
+        ),
+        (
+            "grid-copy-fill.json",
+            "formula-operation-v1.schema.json",
+            formula_operation_from_wire,
+        ),
+    ],
+)
+def test_formula_vendored_wire_fixture_round_trips_through_schema_and_codec(
+    fixture_name: str,
+    schema_name: str,
+    decoder: object,
+) -> None:
+    fixture_text = (FIXTURE_ROOT / fixture_name).read_text(encoding="utf-8")
+    fixture = json.loads(fixture_text)
+    schema = json.loads((SCHEMA_ROOT / schema_name).read_text(encoding="utf-8"))
+
+    jsonschema.Draft202012Validator.check_schema(schema)
+    jsonschema.Draft202012Validator(schema).validate(fixture)
+
+    decoded = decoder(fixture)
+    assert _canonical_json(decoded.to_wire()) == fixture_text.strip()
+
+
+def test_formula_capability_and_receipt_schema_fixtures_round_trip_through_python_codecs() -> None:
+    capability_text = (FIXTURE_ROOT / "capability-details.json").read_text(encoding="utf-8")
+    capability_fixture = json.loads(capability_text)
+    capability_schema = json.loads(
+        (SCHEMA_ROOT / "formula-capability-details-v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    jsonschema.Draft202012Validator.check_schema(capability_schema)
+    jsonschema.Draft202012Validator(capability_schema).validate(capability_fixture)
+    assert (
+        _canonical_json(FormulaCapabilitySet.from_wire(capability_fixture).to_wire())
+        == capability_text.strip()
+    )
+
+    receipt_text = (FIXTURE_ROOT / "receipt-details.json").read_text(encoding="utf-8")
+    receipt_fixture = json.loads(receipt_text)
+    receipt_schema = json.loads(
+        (SCHEMA_ROOT / "formula-receipt-details-v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    jsonschema.Draft202012Validator.check_schema(receipt_schema)
+    jsonschema.Draft202012Validator(receipt_schema).validate(receipt_fixture)
+    assert (
+        _canonical_json(FormulaReceiptDetails.from_wire(receipt_fixture).to_wire())
+        == receipt_text.strip()
+    )
+
+
+def test_formula_schema_fixtures_reject_closed_contract_expansions_and_forbidden_variants() -> None:
+    capability_schema = json.loads(
+        (SCHEMA_ROOT / "formula-capability-details-v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    capability_fixture = json.loads(
+        (FIXTURE_ROOT / "capability-details.json").read_text(encoding="utf-8")
+    )
+    capability_fixture["details"]["dialects"] = ["google-sheets-r1c1"]
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.Draft202012Validator(capability_schema).validate(capability_fixture)
+
+    receipt_schema = json.loads(
+        (SCHEMA_ROOT / "formula-receipt-details-v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    receipt_fixture = json.loads(
+        (FIXTURE_ROOT / "receipt-details.json").read_text(encoding="utf-8")
+    )
+    receipt_fixture["formula"] = "=SUM(A:A)"
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.Draft202012Validator(receipt_schema).validate(receipt_fixture)
+
+    value_schema = json.loads(
+        (SCHEMA_ROOT / "formula-observation-v1.schema.json").read_text(encoding="utf-8")
+    )
+    value_fixture = json.loads(
+        (FIXTURE_ROOT / "value-observations.json").read_text(encoding="utf-8")
+    )
+    value_fixture["values"][0]["value"] = {
+        "kind": "provider_error",
+        "error": {"code": "DIV0", "raw": "#DIV/0!"},
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.Draft202012Validator(value_schema).validate(value_fixture)

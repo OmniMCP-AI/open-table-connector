@@ -1,0 +1,742 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-connectors.dev/schemas/formula-operation-v1.schema.json",
+  "title": "Formula operation v1",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/formulaMutation"
+    },
+    {
+      "$ref": "#/$defs/recalculationObservation"
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "nullableSha256": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tableUri": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      }
+    },
+    "cellAddress": {
+      "type": "string",
+      "pattern": "^[A-Z]+[1-9][0-9]*$"
+    },
+    "rangeSelector": {
+      "type": "string",
+      "pattern": "^[A-Z]+[1-9][0-9]*(?::[A-Z]+[1-9][0-9]*)?$",
+      "maxLength": 64
+    },
+    "dialect": {
+      "enum": [
+        "google-sheets-a1",
+        "maybe-sheet-a1",
+        "excel-a1",
+        "maybe-base",
+        "feishu-bitable"
+      ]
+    },
+    "formulaExpression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "dialect"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1048576
+        },
+        "dialect": {
+          "$ref": "#/$defs/dialect"
+        }
+      }
+    },
+    "formulaErrorValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "formulaValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "null"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "boolean"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "integer"
+            },
+            "value": {
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "number"
+            },
+            "value": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "items"
+          ],
+          "properties": {
+            "kind": {
+              "const": "sequence"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/formulaValue"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "entries"
+          ],
+          "properties": {
+            "kind": {
+              "const": "mapping"
+            },
+            "entries": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/formulaValue"
+              },
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "logical_type",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "logical"
+            },
+            "logical_type": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "value": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "error"
+          ],
+          "properties": {
+            "kind": {
+              "const": "provider_error"
+            },
+            "error": {
+              "$ref": "#/$defs/formulaErrorValue"
+            }
+          }
+        }
+      ]
+    },
+    "formulaCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "address",
+        "expression"
+      ],
+      "properties": {
+        "address": {
+          "$ref": "#/$defs/cellAddress"
+        },
+        "expression": {
+          "$ref": "#/$defs/formulaExpression"
+        }
+      }
+    },
+    "formulaValueCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "address",
+        "value"
+      ],
+      "properties": {
+        "address": {
+          "$ref": "#/$defs/cellAddress"
+        },
+        "value": {
+          "$ref": "#/$defs/formulaValue"
+        }
+      }
+    },
+    "formulaRecordValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_id",
+        "value"
+      ],
+      "properties": {
+        "record_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "value": {
+          "$ref": "#/$defs/formulaValue"
+        }
+      }
+    },
+    "gridFormulaObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "worksheet_id",
+        "requested_range",
+        "formulas",
+        "observed_revision"
+      ],
+      "properties": {
+        "kind": {
+          "const": "formula.grid.observation"
+        },
+        "worksheet_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "requested_range": {
+          "$ref": "#/$defs/rangeSelector"
+        },
+        "formulas": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/formulaCell"
+          }
+        },
+        "observed_revision": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "fieldFormulaObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "table_uri",
+        "field_id",
+        "field_name",
+        "expression",
+        "result_type",
+        "observed_revision"
+      ],
+      "properties": {
+        "kind": {
+          "const": "formula.field.observation"
+        },
+        "table_uri": {
+          "$ref": "#/$defs/tableUri"
+        },
+        "field_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "field_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expression": {
+          "$ref": "#/$defs/formulaExpression"
+        },
+        "result_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "observed_revision": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "gridFormulaValueObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "worksheet_id",
+        "requested_range",
+        "values",
+        "calculation_state",
+        "calculation_trigger",
+        "dependency_scope",
+        "observed_revision"
+      ],
+      "properties": {
+        "kind": {
+          "const": "formula.grid.values.observation"
+        },
+        "worksheet_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "requested_range": {
+          "$ref": "#/$defs/rangeSelector"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/formulaValueCell"
+          }
+        },
+        "calculation_state": {
+          "enum": [
+            "provider_current",
+            "cached",
+            "unknown"
+          ]
+        },
+        "calculation_trigger": {
+          "enum": [
+            "explicit_recalculation",
+            "mutation",
+            "provider_read",
+            "stored_cache"
+          ]
+        },
+        "dependency_scope": {
+          "const": "provider_dynamic"
+        },
+        "observed_revision": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "fieldFormulaValueObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "table_uri",
+        "field_id",
+        "field_name",
+        "values",
+        "calculation_state",
+        "calculation_trigger",
+        "dependency_scope",
+        "observed_revision"
+      ],
+      "properties": {
+        "kind": {
+          "const": "formula.field.values.observation"
+        },
+        "table_uri": {
+          "$ref": "#/$defs/tableUri"
+        },
+        "field_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "field_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/formulaRecordValue"
+          }
+        },
+        "calculation_state": {
+          "enum": [
+            "provider_current",
+            "cached",
+            "unknown"
+          ]
+        },
+        "calculation_trigger": {
+          "enum": [
+            "explicit_recalculation",
+            "mutation",
+            "provider_read",
+            "stored_cache"
+          ]
+        },
+        "dependency_scope": {
+          "const": "provider_dynamic"
+        },
+        "observed_revision": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "formulaMutation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "target_kind",
+        "affected_count",
+        "formula_observation",
+        "revision_before",
+        "revision_after"
+      ],
+      "properties": {
+        "kind": {
+          "const": "formula.mutation"
+        },
+        "target_kind": {
+          "enum": [
+            "grid",
+            "field"
+          ]
+        },
+        "affected_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "formula_observation": true,
+        "revision_before": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "revision_after": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "target_kind": {
+                "const": "grid"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "formula_observation": {
+                "$ref": "#/$defs/gridFormulaObservation"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "target_kind": {
+                "const": "field"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "formula_observation": {
+                "$ref": "#/$defs/fieldFormulaObservation"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "recalculationObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "target_kind",
+        "requested_scope",
+        "effective_scope",
+        "revision_before",
+        "revision_after",
+        "provider_status",
+        "calculation_state",
+        "verification",
+        "value_observation"
+      ],
+      "properties": {
+        "kind": {
+          "const": "formula.recalculation"
+        },
+        "target_kind": {
+          "enum": [
+            "grid",
+            "field"
+          ]
+        },
+        "requested_scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "effective_scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "revision_before": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "revision_after": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "provider_status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "calculation_state": {
+          "enum": [
+            "provider_current",
+            "cached",
+            "unknown"
+          ]
+        },
+        "verification": {
+          "enum": [
+            "passed",
+            "unavailable"
+          ]
+        },
+        "value_observation": true
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "target_kind": {
+                "const": "grid"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "requested_scope": {
+                "enum": [
+                  "range",
+                  "worksheet",
+                  "workbook"
+                ]
+              },
+              "effective_scope": {
+                "enum": [
+                  "range",
+                  "worksheet",
+                  "workbook"
+                ]
+              },
+              "value_observation": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/gridFormulaValueObservation"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "target_kind": {
+                "const": "field"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "requested_scope": {
+                "enum": [
+                  "field",
+                  "table"
+                ]
+              },
+              "effective_scope": {
+                "enum": [
+                  "field",
+                  "table"
+                ]
+              },
+              "value_observation": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/fieldFormulaValueObservation"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verification": {
+                "const": "passed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value_observation": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verification": {
+                "const": "unavailable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value_observation": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

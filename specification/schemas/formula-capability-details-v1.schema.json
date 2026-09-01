@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-connectors.dev/schemas/formula-capability-details-v1.schema.json",
+  "title": "Formula capability details v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "capabilities",
+    "details"
+  ],
+  "properties": {
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "capability_id",
+          "capability_version"
+        ],
+        "properties": {
+          "capability_id": {
+            "enum": [
+              "formula.grid.read",
+              "formula.grid.set",
+              "formula.grid.values.read",
+              "formula.grid.recalculate",
+              "formula.field.read",
+              "formula.field.set",
+              "formula.field.values.read",
+              "formula.field.recalculate"
+            ]
+          },
+          "capability_version": {
+            "const": "1.0"
+          }
+        }
+      }
+    },
+    "details": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_kind",
+        "dialects",
+        "max_cells_per_operation",
+        "max_expression_bytes",
+        "recalculation_scopes",
+        "calculation_states",
+        "mutation_atomicity",
+        "revision_enforcement",
+        "idempotency_strength"
+      ],
+      "properties": {
+        "target_kind": {
+          "enum": [
+            "grid",
+            "field"
+          ]
+        },
+        "dialects": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "google-sheets-a1",
+              "maybe-sheet-a1",
+              "excel-a1",
+              "maybe-base",
+              "feishu-bitable"
+            ]
+          }
+        },
+        "max_cells_per_operation": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "max_expression_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "recalculation_scopes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "calculation_states": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "provider_current",
+              "cached",
+              "unknown"
+            ]
+          }
+        },
+        "mutation_atomicity": {
+          "enum": [
+            "atomic",
+            "partial_reported",
+            "unknown"
+          ]
+        },
+        "revision_enforcement": {
+          "enum": [
+            "atomic",
+            "checked",
+            "unavailable"
+          ]
+        },
+        "idempotency_strength": {
+          "enum": [
+            "provider",
+            "host_ledger",
+            "reconciled"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "target_kind": {
+                "const": "grid"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "recalculation_scopes": {
+                "items": {
+                  "enum": [
+                    "range",
+                    "worksheet",
+                    "workbook"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "target_kind": {
+                "const": "field"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "recalculation_scopes": {
+                "items": {
+                  "enum": [
+                    "field",
+                    "table"
+                  ]
+                }
+              },
+              "max_cells_per_operation": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "details": {
+            "properties": {
+              "target_kind": {
+                "const": "grid"
+              }
+            },
+            "required": [
+              "target_kind"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "capabilities": {
+            "items": {
+              "properties": {
+                "capability_id": {
+                  "pattern": "^formula\\.grid\\."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "details": {
+            "properties": {
+              "target_kind": {
+                "const": "field"
+              }
+            },
+            "required": [
+              "target_kind"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "capabilities": {
+            "items": {
+              "properties": {
+                "capability_id": {
+                  "pattern": "^formula\\.field\\."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

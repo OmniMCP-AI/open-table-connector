@@ -1,0 +1,1 @@
+{"formulas":[{"address":"A1","expression":{"dialect":"google-sheets-a1","text":"=B1+1"}},{"address":"C2","expression":{"dialect":"google-sheets-a1","text":"='Q4 Plan'!$B$2+SUM(External!A1:A2)"}}],"kind":"formula.grid.observation","observed_revision":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","requested_range":"A1:C3","worksheet_id":"17"}
