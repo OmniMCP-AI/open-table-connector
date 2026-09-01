@@ -358,7 +358,10 @@ def _assert_formula_capabilities_are_disabled(
         for capability_id in advertised
         if capability_id.startswith("formula.")
     )
-    assert not formula_capabilities, connector_name
+    assert not formula_capabilities, (
+        f"{connector_name} advertises disabled formula capabilities: "
+        f"{', '.join(formula_capabilities)}"
+    )
 
 
 def test_current_descriptors_do_not_advertise_formula_capabilities() -> None:
@@ -380,7 +383,10 @@ def test_current_descriptors_do_not_advertise_formula_capabilities() -> None:
 
 
 def test_unknown_formula_capability_is_rejected_by_disabled_discovery_checkpoint() -> None:
-    with pytest.raises(AssertionError, match="formula.future.calculate"):
+    with pytest.raises(
+        AssertionError,
+        match=r"fixture advertises disabled formula capabilities: formula\.future\.calculate",
+    ):
         _assert_formula_capabilities_are_disabled(
             {"formula.future.calculate"},
             connector_name="fixture",
