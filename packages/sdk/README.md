@@ -99,6 +99,34 @@ portable time-series additions. Temporal queries still return `Query` values
 and evaluate to Polars `DataFrame` results. Managed temporal lifecycle calls
 return the same normalized `OperationResult[T]` envelope used elsewhere.
 
+Managed snapshot recovery is public and provider-neutral:
+
+```python
+series = table.time_series(descriptor)
+state = series.storage.current().require_value()
+if state is not None:
+    snapshot = state.snapshot
+    frame = series.storage.readback(snapshot).require_value()
+```
+
+`current()` returns `None` only when the logical time-series target has no
+committed current snapshot. A returned `ManagedSnapshotState` includes the
+public `ManagedSnapshot` handle and the recovered Arrow schema; callers never
+need to inspect provider metadata or physical artifact paths.
+
+Temporal SQL Lite is a closed portable profile. It accepts bounded `ScanRange`
+queries, typed `Latest` queries, `BucketAggregate` queries, and `GapFill`
+queries with `locf` or `interpolate`. `AsOf` remains available as the typed
+helper `series.as_of(...)` and is intentionally rejected as SQL. Accepted SQL
+uses numbered typed parameters, exact half-open event-time bounds, a positive
+literal `LIMIT`, and complete deterministic ordering.
+
+Duplicate policy is part of the descriptor contract. `first` and `last`
+aggregates require a policy that resolves duplicate events; they are rejected
+for `preserve`. `replace-latest` additionally requires an ingestion-time field
+and a complete replacement key. These checks are applied before a portable
+plan is constructed and again by the evaluator.
+
 ## CLI relationship
 
 The `otc` CLI is a thin parser and renderer over this SDK. It exists to
