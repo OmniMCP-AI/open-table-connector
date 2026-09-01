@@ -233,6 +233,7 @@ def test_read_field_values_uses_stable_record_ids_and_limits_every_page() -> Non
                     "has_more": True,
                     "next_offset": 1,
                     "calculation_state": "unknown",
+                    "revision": HASH_A,
                 },
             ),
             envelope(
@@ -242,6 +243,7 @@ def test_read_field_values_uses_stable_record_ids_and_limits_every_page() -> Non
                     "records": [{"record_id": "rec-2", "fields": {"fld-gross-margin": None}}],
                     "has_more": False,
                     "calculation_state": "unknown",
+                    "revision": HASH_A,
                 },
             ),
         ]

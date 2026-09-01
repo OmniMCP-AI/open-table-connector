@@ -7,6 +7,7 @@ import json
 import threading
 from collections import OrderedDict
 from collections.abc import Mapping
+from time import monotonic
 from typing import Any
 
 import open_table_connector.formulas as otf
@@ -53,6 +54,10 @@ class _LimitFailure(Exception):
     def __init__(self, message: str, limit: int) -> None:
         super().__init__(message)
         self.limit = limit
+
+
+class _SnapshotFailure(Exception):
+    pass
 
 
 def _hash_payload(value: object) -> str:
@@ -126,7 +131,7 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
         self._process = connector_or_process if self._connector is None else None
         self._credentials = dict(credentials or {})
         self._timeout = timeout
-        self._bindings: dict[tuple[int, str], tuple[str, dict[str, Any], otf.FormulaCapabilityDetails]] = {}
+        self._bindings: dict[tuple[int, str], tuple[str, dict[str, Any], otf.FormulaCapabilityDetails, str]] = {}
         self._ledger = otf.FormulaIdempotencyLedger(limit=_LEDGER_LIMIT)
         self._completed: OrderedDict[str, otf.FormulaExtensionResult[Any]] = OrderedDict()
         self._lock = threading.RLock()
@@ -161,7 +166,7 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
                 observed_revision=revision,
             )
             with self._lock:
-                self._bindings[(id(table), field_id)] = (table_id, dict(field), details)
+                self._bindings[(id(table), field_id)] = (table_id, dict(field), details, revision)
             return _success(bound)
         except _ProviderFailure as exc:
             return _rejected(exc.code, "MaybeSheet rejected the formula field binding")
@@ -181,7 +186,7 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
         request: otf.FieldFormulaReadRequest[Any],
     ) -> otf.FormulaExtensionResult[otf.FieldFormulaObservation]:
         try:
-            table_id, before, _details = self._binding(request.target)
+            table_id, before, _details, _binding_revision = self._binding(request.target)
             uri, _mode = self._table_info(request.target.table)
             payload = self._call(
                 self._formula_read_argv(uri, request.target.field),
@@ -223,18 +228,19 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
         context: tuple[str, str, str] | None = None
         dispatched = False
         try:
-            table_id, before, details = self._binding(request.target)
+            table_id, before, details, binding_revision = self._binding(request.target)
             uri, _mode = self._table_info(request.target.table)
             if request.expression.dialect != otf.MAYBE_BASE:
                 return _rejected(otf.FormulaErrorCode.INVALID_FORMULA, "MaybeSheet field formulas require the maybe-base dialect")
             if request.expression.byte_count > self._expression_limit(request, details):
                 raise _LimitFailure("formula expression exceeds the configured byte limit", self._expression_limit(request, details))
             fresh_before = self._read_metadata(uri, request.target.field, table_id)
-            if request.expected_revision is not None and fresh_before[2] != request.expected_revision:
+            expected_revision = request.expected_revision or binding_revision
+            if fresh_before[2] != expected_revision:
                 return _rejected(otf.FormulaErrorCode.STALE_REVISION, "formula field revision is stale", {"revision_hash": fresh_before[2]})
             target_hash = _hash_payload({"table_id": table_id, "field_id": request.target.field.field_id})
             selector_hash = _hash_payload({"field_id": request.target.field.field_id})
-            payload_hash = _hash_payload({"table_id": table_id, "field_id": request.target.field.field_id, "expression_sha256": request.expression.sha256, "dialect": request.expression.dialect, "expected_revision": request.expected_revision})
+            payload_hash = _hash_payload({"table_id": table_id, "field_id": request.target.field.field_id, "expression_sha256": request.expression.sha256, "dialect": request.expression.dialect, "expected_revision": expected_revision})
             context = (target_hash, selector_hash, payload_hash)
             decision = None
             if request.idempotency_key is not None:
@@ -266,19 +272,20 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
             if request.idempotency_key is not None:
                 argv.extend(("--idempotency-key", request.idempotency_key))
             argv.append("--verify")
-            if request.expected_revision is not None:
-                argv.extend(("--expected-revision", request.expected_revision))
+            argv.extend(("--expected-revision", expected_revision))
             argv.extend(("--output", "json"))
             dispatched = True
             self._call(tuple(argv), operation="formula.set")
             fresh_after = self._read_metadata(uri, request.target.field, table_id)
             if not self._metadata_isolated(fresh_before[0], fresh_after[0]):
+                self._finish_ledger(request, context, True)
                 return _failed(otf.FormulaErrorCode.READBACK_MISMATCH, "formula field metadata changed outside the expression", commit=otf.FormulaCommitState.COMMITTED, verification=otf.FormulaVerificationState.FAILED)
             after_field = fresh_after[1]
             if self._expression(after_field) != request.expression.text:
+                self._finish_ledger(request, context, True)
                 return _failed(otf.FormulaErrorCode.READBACK_MISMATCH, "formula field readback did not match the requested expression", commit=otf.FormulaCommitState.COMMITTED, verification=otf.FormulaVerificationState.FAILED)
             observation = self._observation(uri, after_field, {"revision": fresh_after[2]}, fallback=fresh_before[0], expression=request.expression)
-            mutation = otf.FormulaMutation("field", 1, observation, request.expected_revision or fresh_before[2], fresh_after[2])
+            mutation = otf.FormulaMutation("field", 1, observation, expected_revision, fresh_after[2])
             receipt = otf.FormulaReceiptDetails.for_field_set(
                 target=uri.value,
                 selector=observation.field_id,
@@ -313,7 +320,8 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
             return _rejected(otf.FormulaErrorCode.TARGET_NOT_FOUND, "MaybeSheet formula field binding is required")
         except ConnectorError as exc:
             self._finish_ledger(request, context, dispatched)
-            if dispatched and exc.code is not ConnectorErrorCode.TIMEOUT:
+            before_dispatch = exc.code is ConnectorErrorCode.TIMEOUT and exc.safe_details.get("before_dispatch") is True
+            if dispatched and not before_dispatch:
                 return _unknown()
             return self._transport_error(exc)
         except (_ProtocolFailure, TypeError, ValueError, KeyError):
@@ -328,7 +336,7 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
         request: otf.FieldFormulaValueReadRequest[Any],
     ) -> otf.FormulaExtensionResult[otf.FieldFormulaValueObservation]:
         try:
-            table_id, before, _details = self._binding(request.target)
+            table_id, before, _details, _binding_revision = self._binding(request.target)
             uri, _mode = self._table_info(request.target.table)
             max_records, max_bytes = self._value_limits(request.limits)
             records: list[otf.FormulaRecordValue] = []
@@ -336,6 +344,10 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
             offset = 0
             pages: list[Mapping[str, Any]] = []
             state: otf.CalculationState | None = None
+            snapshot_revision: str | None = None
+            response_bytes = 0
+            started = monotonic()
+            timeout_seconds = self._timeout if request.limits is None or request.limits.timeout_seconds is None else request.limits.timeout_seconds
             while True:
                 payload = self._call(
                     (
@@ -348,6 +360,21 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
                 )
                 result = self._result(payload)
                 pages.append(result)
+                if self._table_id(result) != table_id:
+                    raise _ProtocolFailure
+                page_revision = result.get("snapshot_revision", result.get("revision"))
+                if not self._is_hash(page_revision):
+                    raise _SnapshotFailure
+                if snapshot_revision is None:
+                    snapshot_revision = page_revision
+                elif snapshot_revision != page_revision:
+                    raise _SnapshotFailure
+                response_bytes += len(json.dumps(payload, ensure_ascii=False, allow_nan=False).encode())
+                if response_bytes > max_bytes:
+                    raise _LimitFailure("formula field values exceeded the configured response byte limit", max_bytes)
+                elapsed_ms = (monotonic() - started) * 1000
+                if elapsed_ms > timeout_seconds * 1000:
+                    raise _LimitFailure("formula field values exceeded the configured timeout", int(timeout_seconds * 1000))
                 page_state = self._calculation_state(result.get("calculation_state"))
                 if state is None:
                     state = page_state
@@ -376,7 +403,9 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
                 if isinstance(next_offset, bool) or not isinstance(next_offset, int) or next_offset <= offset:
                     raise _ProtocolFailure
                 offset = next_offset
-            revision = self._revision_from_pages(pages)
+            if snapshot_revision is None:
+                raise _SnapshotFailure
+            revision = snapshot_revision
             observation = otf.FieldFormulaValueObservation(
                 table_uri=uri,
                 field_id=request.target.field.field_id or "",
@@ -403,6 +432,8 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
             return _success(observation, (receipt,))
         except _LimitFailure as exc:
             return _rejected(otf.FormulaErrorCode.RESOURCE_LIMIT, str(exc), {"limit": exc.limit})
+        except _SnapshotFailure:
+            return _rejected(otf.FormulaErrorCode.SNAPSHOT_UNAVAILABLE, "MaybeSheet could not prove a stable formula value snapshot")
         except _BindingFailure:
             return _rejected(otf.FormulaErrorCode.TARGET_NOT_FOUND, "MaybeSheet formula field binding is required")
         except _ProviderFailure as exc:
@@ -418,18 +449,44 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
         self,
         request: otf.FieldFormulaRecalculateRequest[Any],
     ) -> otf.FormulaExtensionResult[otf.RecalculationObservation]:
+        context: tuple[str, str, str] | None = None
         dispatched = False
         try:
-            table_id, before, details = self._binding(request.target)
+            table_id, before, details, binding_revision = self._binding(request.target)
             if request.scope.value not in details.recalculation_scopes:
                 return _rejected(otf.FormulaErrorCode.UNSUPPORTED_CAPABILITY, "MaybeSheet does not support the requested field recalculation scope")
             uri, _mode = self._table_info(request.target.table)
+            expected_revision = request.expected_revision or binding_revision
+            target_hash = _hash_payload({"table_id": table_id, "field_id": request.target.field.field_id})
+            selector_hash = _hash_payload({"scope": request.scope.value})
+            payload_hash = _hash_payload({"table_id": table_id, "field_id": request.target.field.field_id, "scope": request.scope.value, "expected_revision": expected_revision})
+            context = (target_hash, selector_hash, payload_hash)
+            decision = None
+            if request.idempotency_key is not None:
+                with self._lock:
+                    decision = self._ledger.begin(
+                        connector_id="maybe_sheet",
+                        capability=otf.FIELD_RECALCULATE.to_reference(),
+                        target_hash=target_hash,
+                        selector_hash=selector_hash,
+                        idempotency_key=request.idempotency_key,
+                        payload_hash=payload_hash,
+                    )
+                if decision.disposition is otf.FormulaIdempotencyDisposition.CONFLICT:
+                    return _rejected(otf.FormulaErrorCode.IDEMPOTENCY_CONFLICT, "formula recalculation idempotency key conflicts with a prior request")
+                if decision.disposition is otf.FormulaIdempotencyDisposition.IN_FLIGHT:
+                    return _rejected(otf.FormulaErrorCode.IDEMPOTENCY_CONFLICT, "formula recalculation idempotency key is already in flight")
+                if decision.disposition is otf.FormulaIdempotencyDisposition.UNKNOWN:
+                    return _unknown("formula recalculation remains uncertain")
+                if decision.disposition is otf.FormulaIdempotencyDisposition.REPLAY:
+                    with self._lock:
+                        cached = self._completed.get(decision.operation_hash or "")
+                    return cached if cached is not None else _unknown("formula recalculation replay result is unavailable")
             argv = ["mbs", "formula", "recalculate", "--target", _mbs_target(uri)]
             if request.scope is otf.FieldRecalculationScope.FIELD:
                 argv.extend(("--field-id", request.target.field.field_id or ""))
             argv.append("--verify")
-            if request.expected_revision is not None:
-                argv.extend(("--expected-revision", request.expected_revision))
+            argv.extend(("--expected-revision", expected_revision))
             argv.extend(("--output", "json"))
             dispatched = True
             payload = self._call(tuple(argv), operation="formula.recalculate")
@@ -449,24 +506,38 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
                 target_kind="field",
                 requested_scope=request.scope.value,
                 effective_scope=str(result.get("effective_scope", request.scope.value)),
-                revision_before=request.expected_revision,
-                revision_after=self._optional_revision(result.get("revision")),
+                revision_before=expected_revision,
+                revision_after=self._optional_revision(result.get("revision", expected_revision)),
                 provider_status=self._safe_text(result.get("status", "completed")),
                 calculation_state=state,
                 verification="passed" if value_observation is not None else "unavailable",
                 value_observation=value_observation,
             )
             verification = otf.FormulaVerificationState.PASSED if value_observation is not None else otf.FormulaVerificationState.UNAVAILABLE
-            return otf.FormulaExtensionResult(observation, otf.FormulaOutcome.SUCCEEDED, otf.FormulaCommitState.COMMITTED, verification, ())
+            final = otf.FormulaExtensionResult(observation, otf.FormulaOutcome.SUCCEEDED, otf.FormulaCommitState.COMMITTED, verification, ())
+            if request.idempotency_key is not None and context is not None:
+                operation_hash = _hash_payload(observation.to_wire())
+                with self._lock:
+                    self._completed[operation_hash] = final
+                    self._completed.move_to_end(operation_hash)
+                    while len(self._completed) > _LEDGER_LIMIT:
+                        self._completed.popitem(last=False)
+                    self._ledger.succeed(connector_id="maybe_sheet", target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2], operation_hash=operation_hash)
+            return final
         except _ProviderFailure as exc:
+            self._finish_recalc_ledger(request, context, False)
             return _rejected(exc.code, "MaybeSheet rejected the formula field recalculation")
         except _BindingFailure:
             return _rejected(otf.FormulaErrorCode.TARGET_NOT_FOUND, "MaybeSheet formula field binding is required")
         except ConnectorError as exc:
-            return _unknown() if dispatched else self._transport_error(exc)
+            self._finish_recalc_ledger(request, context, dispatched)
+            before_dispatch = exc.code is ConnectorErrorCode.TIMEOUT and exc.safe_details.get("before_dispatch") is True
+            return _unknown() if dispatched and not before_dispatch else self._transport_error(exc)
         except (_ProtocolFailure, TypeError, ValueError, KeyError):
+            self._finish_recalc_ledger(request, context, dispatched)
             return _unknown() if dispatched else _failed(otf.FormulaErrorCode.PROTOCOL_FAILURE, "MaybeSheet returned an invalid recalculation response")
         except Exception:
+            self._finish_recalc_ledger(request, context, dispatched)
             return _unknown() if dispatched else _failed(otf.FormulaErrorCode.EXECUTION_FAILED, "MaybeSheet formula field recalculation failed")
 
     def _table_info(self, table: Any):
@@ -626,6 +697,10 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
             return value
         return _hash_payload(value)
 
+    @staticmethod
+    def _is_hash(value: object) -> bool:
+        return isinstance(value, str) and value.startswith("sha256:") and len(value) == 71
+
     @classmethod
     def _capability_details(cls, result: Mapping[str, Any]) -> otf.FormulaCapabilityDetails:
         raw_scopes = result.get("recalculation_scopes", ["field", "table"])
@@ -763,6 +838,32 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
                 self._ledger.mark_unknown(connector_id="maybe_sheet", target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2])
             else:
                 self._ledger.fail_known(connector_id="maybe_sheet", target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2])
+
+    def _finish_recalc_ledger(
+        self,
+        request: otf.FieldFormulaRecalculateRequest[Any],
+        context: tuple[str, str, str] | None,
+        dispatched: bool,
+    ) -> None:
+        if request.idempotency_key is None or context is None:
+            return
+        with self._lock:
+            if dispatched:
+                self._ledger.mark_unknown(
+                    connector_id="maybe_sheet",
+                    target_hash=context[0],
+                    selector_hash=context[1],
+                    idempotency_key=request.idempotency_key,
+                    payload_hash=context[2],
+                )
+            else:
+                self._ledger.fail_known(
+                    connector_id="maybe_sheet",
+                    target_hash=context[0],
+                    selector_hash=context[1],
+                    idempotency_key=request.idempotency_key,
+                    payload_hash=context[2],
+                )
 
     @staticmethod
     def _transport_error(exc: ConnectorError) -> otf.FormulaExtensionResult[Any]:
