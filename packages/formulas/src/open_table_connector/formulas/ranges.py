@@ -7,10 +7,12 @@ from dataclasses import dataclass
 
 _A1_PATTERN = re.compile(
     r"^(?:(?P<sheet>(?:'[^']+'|[A-Za-z0-9_ .-]+))!)?"
-    r"(?P<start>\$?[A-Za-z]+\$?\d+)"
-    r"(?::(?P<end>\$?[A-Za-z]+\$?\d+))?$"
+    r"(?P<start>\$?[A-Za-z]+\$?[1-9]\d*)"
+    r"(?::(?P<end>\$?[A-Za-z]+\$?[1-9]\d*))?$"
 )
-_CELL_PATTERN = re.compile(r"^(?P<abs_col>\$?)(?P<col>[A-Za-z]+)(?P<abs_row>\$?)(?P<row>\d+)$")
+_CELL_PATTERN = re.compile(
+    r"^(?P<abs_col>\$?)(?P<col>[A-Za-z]+)(?P<abs_row>\$?)(?P<row>[1-9]\d*)$"
+)
 
 
 def _column_index(label: str) -> int:
@@ -44,7 +46,7 @@ class A1Rectangle:
     end_row: int
 
     @classmethod
-    def parse(cls, selector: str) -> "A1Rectangle":
+    def parse(cls, selector: str) -> A1Rectangle:
         if not isinstance(selector, str) or not selector.strip():
             raise ValueError("A1 selector must be a non-empty string")
         match = _A1_PATTERN.fullmatch(selector.strip())
@@ -79,7 +81,7 @@ class A1Rectangle:
     def cell_count(self) -> int:
         return self.height * self.width
 
-    def require_unbound_selector(self, selector: str) -> "A1Rectangle":
+    def require_unbound_selector(self, selector: str) -> A1Rectangle:
         if "!" in selector:
             raise ValueError("worksheet prefix is not allowed after binding")
         return self.parse(selector)

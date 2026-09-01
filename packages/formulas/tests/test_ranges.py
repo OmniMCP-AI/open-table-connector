@@ -15,7 +15,10 @@ def test_a1_range_parses_cells_and_preserves_absolute_markers() -> None:
     assert rectangle.cell_count == 6
 
 
-@pytest.mark.parametrize("selector", ["A:A", "2:2", "A2:A", "B4:A1", "A1,B2"])
+@pytest.mark.parametrize(
+    "selector",
+    ["A:A", "2:2", "A2:A", "B4:A1", "A1,B2", "A0", "A00", "$B0:C2"],
+)
 def test_a1_range_rejects_unbounded_reversed_or_disjoint_selectors(selector: str) -> None:
     with pytest.raises(ValueError):
         A1Rectangle.parse(selector)
