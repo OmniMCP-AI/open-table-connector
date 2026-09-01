@@ -276,6 +276,7 @@ version = "0.1.0"
 source = { editable = "packages/conformance" }
 dependencies = [
     { name = "open-table-connector-contract" },
+    { name = "open-table-connector-formulas" },
     { name = "open-table-connector-timeseries" },
     { name = "pyarrow" },
 ]
@@ -283,6 +284,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "open-table-connector-contract", editable = "packages/contract" },
+    { name = "open-table-connector-formulas", editable = "packages/formulas" },
     { name = "open-table-connector-timeseries", editable = "packages/timeseries" },
     { name = "pyarrow", specifier = ">=14,<24" },
 ]
@@ -468,6 +470,7 @@ version = "0.1.0"
 source = { editable = "packages/sdk" }
 dependencies = [
     { name = "open-table-connector-contract" },
+    { name = "open-table-connector-formulas" },
     { name = "polars" },
     { name = "pyarrow" },
     { name = "sqlglot" },
@@ -476,6 +479,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "open-table-connector-contract", editable = "packages/contract" },
+    { name = "open-table-connector-formulas", editable = "packages/formulas" },
     { name = "polars", specifier = ">=1,<2" },
     { name = "pyarrow", specifier = ">=14,<24" },
     { name = "sqlglot", specifier = ">=30,<31" },
