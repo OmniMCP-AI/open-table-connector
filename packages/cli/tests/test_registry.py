@@ -215,7 +215,7 @@ def test_registry_injects_maybe_sheet_process_transport() -> None:
 
     assert result.table.to_pylist() == [{"id": "1"}]
     assert process.calls[0] == (
-        ("mbs", "db-table", "read", "--uri", "maybe://doc/R_orders", "--target", "R_orders", "--limit", "1"),
+        ("mbs", "db-table", "read", "--uri", "https://www.maybe.ai/docs/spreadsheets/d/doc", "--name", "R_orders", "--limit", "1"),
         {"access_token": "cli-secret"},
         None,
     )
@@ -253,7 +253,7 @@ def test_maybe_sheet_https_document_uses_explicit_target() -> None:
 
     registry.connector_for(endpoint).read(endpoint, CliOptions(target="R_orders"))
 
-    assert process.calls[0][0][-2:] == ("--target", "R_orders")
+    assert process.calls[0][0][-2:] == ("--name", "R_orders")
 
 
 @pytest.mark.parametrize(

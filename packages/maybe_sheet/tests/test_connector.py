@@ -1,5 +1,6 @@
 import json
 import subprocess
+from pathlib import Path
 
 import polars as pl
 import pytest
@@ -52,6 +53,38 @@ class OverReturningProcess:
         }
 
 
+class ResultEnvelopeProcess:
+    def __init__(self, payload):
+        self.payload = payload
+        self.calls = []
+
+    def run(self, argv, *, credentials=None, stdin=None, timeout=None):
+        self.calls.append((argv, credentials, stdin, timeout))
+        return self.payload
+
+
+class WriteProcess:
+    def __init__(self):
+        self.calls = []
+        self.rows_payloads = []
+
+    def run(self, argv, *, credentials=None, stdin=None, timeout=None):
+        self.calls.append((argv, credentials, stdin, timeout))
+        rows_path = Path(argv[argv.index("--frame-in") + 1])
+        self.rows_payloads.append(json.loads(rows_path.read_text(encoding="utf-8")))
+        return {
+            "contract_version": "1.0",
+            "ok": True,
+            "operation": "table.insert",
+            "target": {},
+            "warnings": [],
+            "request_id": "write-ref",
+            "result": {"inserted_rows": len(self.rows_payloads[-1])},
+            "verification": {"status": "passed", "checks": ["row_count_delta"]},
+            "trace": None,
+        }
+
+
 def test_maybe_sheet_has_explicit_base_and_sheet_argv_and_receipts() -> None:
     process = Process()
     connector = MaybeSheetConnector(process)
@@ -63,10 +96,62 @@ def test_maybe_sheet_has_explicit_base_and_sheet_argv_and_receipts() -> None:
     assert process.calls[0][0][:3] == ("mbs", "db-table", "read")
     assert process.calls[0][0] == (
         "mbs", "db-table", "read", "--uri",
-        "https://www.maybe.ai/docs/spreadsheets/d/doc", "--target", "R_orders",
+        "https://www.maybe.ai/docs/spreadsheets/d/doc", "--name", "R_orders",
     )
     assert process.calls[0][1] == {}
     assert result.receipt.vendor_receipt_ref == "safe-ref"
+
+
+def test_maybe_sheet_reads_values_from_mbs_result_envelope() -> None:
+    process = ResultEnvelopeProcess(
+        {
+            "success": True,
+            "endpoint": "/api/v1/excel/read_sheet",
+            "result": {"values": [["id", "amount"], ["1", "2.50"]]},
+            "target": {"worksheet_name": "R_orders"},
+        }
+    )
+
+    result = MaybeSheetConnector(process).read_arrow(
+        MaybeSheetReadRequest(
+            TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"),
+            TableMode.BASE,
+            "R_orders",
+        )
+    )
+
+    assert result.table.to_pylist() == [{"id": "1", "amount": "2.50"}]
+
+
+def test_maybe_sheet_sheet_read_uses_worksheet_name_and_applies_limit_locally() -> None:
+    process = ResultEnvelopeProcess(
+        {
+            "success": True,
+            "endpoint": "/api/v1/excel/read_sheet",
+            "result": {"values": [["id"], ["1"], ["2"]]},
+            "target": {"worksheet_name": "Orders"},
+        }
+    )
+
+    result = MaybeSheetConnector(process).read_arrow(
+        MaybeSheetReadRequest(
+            TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"),
+            TableMode.SHEET,
+            "Orders",
+            ResourceLimits(max_rows=1),
+        )
+    )
+
+    assert result.table.to_pylist() == [{"id": "1"}]
+    assert process.calls[0][0] == (
+        "mbs",
+        "excel-worksheet",
+        "read",
+        "--uri",
+        "https://www.maybe.ai/docs/spreadsheets/d/doc",
+        "--worksheet-name",
+        "Orders",
+    )
 
 
 def test_maybe_sheet_read_enforces_max_rows_when_process_over_returns() -> None:
@@ -81,6 +166,7 @@ def test_maybe_sheet_read_enforces_max_rows_when_process_over_returns() -> None:
     result = MaybeSheetConnector(process).read_arrow(request)
 
     assert result.table.to_pylist() == [{"id": "1"}]
+    assert process.calls[0][0][4] == "https://www.maybe.ai/docs/spreadsheets/d/doc"
     assert process.calls[0][0][-2:] == ("--limit", "1")
     assert result.receipt.row_count == 1
     assert result.receipt.schema_fingerprint == arrow_schema_fingerprint(result.table.schema)
@@ -130,35 +216,40 @@ def test_maybe_sheet_binary_must_be_absolute_and_executable(tmp_path) -> None:
         _absolute_executable("mbs")
 
 
-def test_maybe_sheet_write_sends_jsonl_to_process() -> None:
-    process = Process()
+def test_maybe_sheet_write_uses_table_insert_and_json_rows_file() -> None:
+    process = WriteProcess()
     result = MaybeSheetConnector(process).write(
         TableWriteRequest(
-            TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"),
+            TableURI("maybe://doc/R_orders"),
             pl.DataFrame({"id": ["1"]}),
             table="R_orders",
             if_exists="append",
         )
     )
 
-    assert process.calls[0][0] == (
+    call = process.calls[0]
+    assert call[0][:7] == (
         "mbs",
-        "db-table",
-        "write",
-        "--uri",
-        "https://www.maybe.ai/docs/spreadsheets/d/doc",
+        "table",
+        "insert",
         "--target",
+        "https://www.maybe.ai/docs/spreadsheets/d/doc",
+        "--table-name",
         "R_orders",
-        "--input",
-        "-",
     )
-    assert process.calls[0][2] == '{"id":"1"}\n'
+    assert call[0][7] == "--frame-in"
+    rows_path = Path(call[0][8])
+    assert rows_path.suffix == ".json"
+    assert call[0][9:] == ("--output", "json")
+    assert call[2] is None
+    assert process.rows_payloads == [[{"id": "1"}]]
+    assert not rows_path.exists()
     assert result.affected_rows == 1
-    assert result.receipt.vendor_receipt_ref == "safe-ref"
+    assert result.receipt.vendor_receipt_ref == "write-ref"
 
 
 def test_maybe_sheet_write_normalizes_non_finite_floats_to_strict_json() -> None:
-    process = Process()
+    process = WriteProcess()
 
     MaybeSheetConnector(process).write(
         TableWriteRequest(
@@ -169,21 +260,12 @@ def test_maybe_sheet_write_normalizes_non_finite_floats_to_strict_json() -> None
         )
     )
 
-    rows = [
-        json.loads(
-            line,
-            parse_constant=lambda constant: pytest.fail(
-                f"non-standard JSON constant emitted: {constant}"
-            ),
-        )
-        for line in process.calls[0][2].splitlines()
-    ]
-    assert rows == [
+    assert process.rows_payloads == [[
         {"value": 1.25},
         {"value": None},
         {"value": None},
         {"value": None},
-    ]
+    ]]
 
 
 def test_maybe_sheet_write_serialization_errors_are_secret_safe_and_skip_process() -> None:
@@ -212,7 +294,7 @@ def test_maybe_sheet_write_serialization_errors_are_secret_safe_and_skip_process
 
 
 def test_maybe_sheet_write_passes_explicit_credentials_without_serializing_them() -> None:
-    process = Process()
+    process = WriteProcess()
     access_token = "explicit-write-token"
     result = MaybeSheetConnector(process).write(
         TableWriteRequest(
@@ -226,7 +308,7 @@ def test_maybe_sheet_write_passes_explicit_credentials_without_serializing_them(
 
     assert process.calls[0][1] == {"access_token": access_token}
     assert access_token not in repr(process.calls[0][0])
-    assert access_token not in process.calls[0][2]
+    assert process.calls[0][2] is None
     assert access_token not in repr(result)
     assert access_token not in repr(result.receipt.to_wire())
 

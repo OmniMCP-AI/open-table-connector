@@ -767,9 +767,16 @@ def _maybe_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
                 "source_revision": "fixture-maybe-sheet-rev",
                 "receipt_id": "fixture-sheet-read-ref",
             },
-            "db-table:write": {
-                "rows_written": 2,
-                "receipt_id": "fixture-write-ref",
+            "table:insert": {
+                "contract_version": "1.0",
+                "ok": True,
+                "operation": "table.insert",
+                "target": {},
+                "warnings": [],
+                "request_id": "fixture-write-ref",
+                "result": {"inserted_rows": 2},
+                "verification": {"status": "passed", "checks": ["row_count_delta"]},
+                "trace": None,
             },
         }
     )

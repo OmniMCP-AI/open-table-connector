@@ -1,5 +1,6 @@
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import open_table_connector.sdk as otc
 import polars as pl
@@ -58,8 +59,20 @@ class RecordingProcess:
     def run(self, argv, *, credentials=None, stdin=None):
         self.calls.append((argv, credentials, stdin))
         self.stdin_payload = stdin
-        if argv[2] == "write":
-            return {"rows_written": 1, "receipt_id": "write-ref"}
+        if argv[:3] == ("mbs", "table", "insert"):
+            rows_path = Path(argv[argv.index("--frame-in") + 1])
+            rows = json.loads(rows_path.read_text(encoding="utf-8"))
+            return {
+                "contract_version": "1.0",
+                "ok": True,
+                "operation": "table.insert",
+                "target": {},
+                "warnings": [],
+                "request_id": "write-ref",
+                "result": {"inserted_rows": len(rows)},
+                "verification": {"status": "passed", "checks": ["row_count_delta"]},
+                "trace": None,
+            }
         return {"rows": [{"id": "a"}], "receipt_id": "read-ref"}
 
 
@@ -538,7 +551,7 @@ def test_csv_to_google_sheets_import_sends_header_and_rows(tmp_path) -> None:
     }
 
 
-def test_google_sheets_to_maybe_sheet_import_sends_jsonl_to_process(tmp_path) -> None:
+def test_google_sheets_to_maybe_sheet_import_sends_rows_file_to_process(tmp_path) -> None:
     source = tmp_path / "orders.jsonl"
     source.write_text('{"id":"a"}\n')
     process = RecordingProcess()
@@ -560,20 +573,22 @@ def test_google_sheets_to_maybe_sheet_import_sends_jsonl_to_process(tmp_path) ->
     assert summary.destination_receipt.vendor_receipt_ref == "write-ref"
     assert process.calls[0][1] == {"access_token": "explicit-write-token"}
     assert "explicit-write-token" not in repr(process.calls[0][0])
-    assert "explicit-write-token" not in process.stdin_payload
+    assert process.stdin_payload is None
     assert "explicit-write-token" not in repr(summary.destination_receipt.to_wire())
-    assert process.calls[0][0] == (
+    argv = process.calls[0][0]
+    assert argv[:7] == (
         "mbs",
-        "db-table",
-        "write",
-        "--uri",
-        "maybe://doc/R_orders",
+        "table",
+        "insert",
         "--target",
+        "https://www.maybe.ai/docs/spreadsheets/d/doc",
+        "--table-name",
         "R_orders",
-        "--input",
-        "-",
     )
-    assert process.stdin_payload == '{"id":"a"}\n'
+    assert argv[7] == "--frame-in"
+    assert Path(argv[8]).suffix == ".json"
+    assert not Path(argv[8]).exists()
+    assert argv[9:] == ("--output", "json")
 
 
 def test_feishu_to_jsonl_preserves_record_id(tmp_path) -> None:

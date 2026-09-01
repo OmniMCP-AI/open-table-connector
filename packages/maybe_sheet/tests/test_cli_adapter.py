@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pyarrow as pa
 from open_table_connector.contract import (
     CREDENTIAL_ACCESS_TOKEN,
@@ -58,7 +60,7 @@ def test_maybe_plugin_descriptor_declares_document_route() -> None:
     assert descriptor.hosts == (HOST_MAYBE,)
 
 
-def test_maybe_write_uses_target_and_scoped_credentials() -> None:
+def test_maybe_write_uses_table_insert_and_scoped_credentials() -> None:
     process = RecordingProcess()
     adapter = MaybeSheetCliAdapter.from_context(
         ProviderFactoryContext(
@@ -72,4 +74,19 @@ def test_maybe_write_uses_target_and_scoped_credentials() -> None:
         pa.table({"name": ["Ada"]}),
         AdapterOptions(if_exists="append"),
     )
-    assert process.calls[0][0][-2:] == ("--input", "-")
+    argv = process.calls[0][0]
+    assert argv[:7] == (
+        "mbs",
+        "table",
+        "insert",
+        "--target",
+        "https://www.maybe.ai/docs/spreadsheets/d/doc",
+        "--table-name",
+        "table",
+    )
+    assert argv[7] == "--frame-in"
+    assert Path(argv[8]).suffix == ".json"
+    assert not Path(argv[8]).exists()
+    assert argv[9:] == ("--output", "json")
+    assert process.calls[0][1]["credentials"] == {CREDENTIAL_ACCESS_TOKEN: "access-secret"}
+    assert process.calls[0][1]["stdin"] is None

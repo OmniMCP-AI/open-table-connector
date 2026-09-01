@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import string
 import subprocess
+from dataclasses import dataclass
+from pathlib import Path
 
 import polars as pl
 import pytest
@@ -340,7 +341,7 @@ def test_maybe_sheet_reads_record_argv_timeout_target_limit_and_credentials(
             "read",
             "--uri",
             "https://www.maybe.ai/docs/spreadsheets/d/fixture-doc",
-            "--target",
+            "--name",
             "R_orders",
             "--limit",
             "2",
@@ -352,10 +353,8 @@ def test_maybe_sheet_reads_record_argv_timeout_target_limit_and_credentials(
             "read",
             "--uri",
             "https://www.maybe.ai/docs/spreadsheets/d/fixture-doc",
-            "--target",
+            "--worksheet-name",
             "Orders",
-            "--limit",
-            "2",
         )
     )
     assert call.argv == expected_argv
@@ -537,7 +536,7 @@ def test_feishu_write_records_batch_shape_timeout_and_credentials(
     )
 
 
-def test_maybe_sheet_write_records_stdin_jsonl_argv_and_credential_locality(
+def test_maybe_sheet_write_records_rows_file_argv_and_credential_locality(
     write_frame: pl.DataFrame,
 ) -> None:
     connector_case = case("maybe_sheet")
@@ -550,22 +549,21 @@ def test_maybe_sheet_write_records_stdin_jsonl_argv_and_credential_locality(
     recording = fixture.process
     assert isinstance(recording, RecordingProcessClient)
     call = recording.calls[-1]
-    assert call.argv == (
+    assert call.argv[:7] == (
         "mbs",
-        "db-table",
-        "write",
-        "--uri",
-        "https://www.maybe.ai/docs/spreadsheets/d/fixture-doc",
+        "table",
+        "insert",
         "--target",
+        "https://www.maybe.ai/docs/spreadsheets/d/fixture-doc",
+        "--table-name",
         "R_orders",
-        "--input",
-        "-",
     )
+    assert call.argv[7] == "--frame-in"
+    assert Path(call.argv[8]).suffix == ".json"
+    assert not Path(call.argv[8]).exists()
+    assert call.argv[9:] == ("--output", "json")
     assert call.timeout is None
-    assert call.stdin == (
-        '{"id":"write-1","amount":"3.50"}\n'
-        '{"id":"write-2","amount":"4.00"}\n'
-    )
+    assert call.stdin is None
     assert call.credentials == {"access_token": "fixture-token"}
     _assert_credential_is_local(
         "fixture-token",

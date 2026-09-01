@@ -840,7 +840,7 @@ def test_cli_target_reaches_maybe_sheet_process_boundary() -> None:
         "read",
         "--uri",
         "https://www.maybe.ai/docs/spreadsheets/d/fixture-doc",
-        "--target",
+        "--name",
         "R_orders",
         "--limit",
         "2",
