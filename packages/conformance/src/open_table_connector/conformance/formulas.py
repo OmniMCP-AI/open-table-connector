@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import re
+import warnings
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, fields, is_dataclass
 from typing import Any
@@ -79,6 +82,8 @@ class FormulaProviderCase:
     supports_independent_sessions: bool = True
     configured_live_evidence: str | None = None
     security_markers: tuple[str, ...] = ()
+    security_expression: otf.FormulaExpression | None = None
+    security_probe_values: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.provider_id, str) or not self.provider_id.strip():
@@ -120,22 +125,42 @@ class FormulaProviderCase:
                 raise ValueError("field_case dialect must match FormulaProviderCase dialect")
         if self.configured_live_evidence is not None and not self.configured_live_evidence.strip():
             raise ValueError("configured_live_evidence must be non-empty when provided")
+        if self.security_expression is not None and self.security_expression.dialect != self.dialect:
+            raise ValueError("security_expression dialect must match FormulaProviderCase dialect")
         object.__setattr__(self, "security_markers", tuple(marker for marker in self.security_markers if marker))
+        object.__setattr__(self, "security_probe_values", tuple(value for value in self.security_probe_values if value))
+
+
+@dataclass(frozen=True, slots=True)
+class FormulaSecurityProbe:
+    result: otf.FormulaExtensionResult[Any]
+    warnings: tuple[str, ...]
+    logs: tuple[str, ...]
+    reprs: tuple[object, ...]
+    ledger_snapshots: tuple[object, ...]
+    operation_ids: tuple[object, ...]
+
+    @property
+    def mutation(self) -> otf.FormulaMutation | None:
+        return self.result.value if isinstance(self.result.value, otf.FormulaMutation) else None
 
 
 def load_formula_cases(*groups: FormulaProviderCase | Iterable[FormulaProviderCase]) -> tuple[FormulaProviderCase, ...]:
     """Flatten and validate formula conformance cases."""
 
     loaded: list[FormulaProviderCase] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
     for group in groups:
         cases = (group,) if isinstance(group, FormulaProviderCase) else tuple(group)
         for case in cases:
             if not isinstance(case, FormulaProviderCase):
                 raise TypeError("load_formula_cases expects FormulaProviderCase instances")
-            key = (case.provider_id, case.target_kind)
+            key = (case.provider_id, case.target_kind, case.dialect)
             if key in seen:
-                raise ValueError(f"duplicate formula provider case: {case.provider_id}[{case.target_kind}]")
+                raise ValueError(
+                    "duplicate formula provider case: "
+                    f"{case.provider_id}[{case.target_kind}:{case.dialect}]"
+                )
             seen.add(key)
             loaded.append(case)
     return tuple(loaded)
@@ -190,19 +215,19 @@ def _case_params(
             continue
         if capability is not None and capability not in case.static_capabilities:
             continue
-        filtered.append(pytest.param(case, id=f"{case.provider_id}[{target_kind}]"))
+        filtered.append(pytest.param(case, id=f"{case.provider_id}[{target_kind}:{case.dialect}]"))
     return tuple(filtered)
 
 
 def assert_formula_receipt_safe(
-    receipts: object | Sequence[object],
+    receipts: otf.FormulaReceiptDetails | Sequence[object],
     *,
     forbidden_texts: Iterable[str] = (),
 ) -> None:
     """Assert that safe receipt evidence does not leak raw formulas or marker strings."""
 
     forbidden = tuple(text for text in forbidden_texts if text)
-    values = (receipts,) if _is_scalar(receipts) else tuple(receipts)
+    values = (receipts,) if isinstance(receipts, otf.FormulaReceiptDetails) else tuple(receipts)
     for receipt in values:
         payload = _materialize(receipt)
         _assert_safe_surface(payload, forbidden, context="receipt payload")
@@ -211,17 +236,91 @@ def assert_formula_receipt_safe(
             assert otf.FormulaReceiptDetails.from_wire(receipt.to_wire()) == receipt
 
 
+def assert_formula_security_safe(case: FormulaProviderCase) -> FormulaSecurityProbe:
+    """Probe one provider case and reject formula text in every safe evidence channel."""
+
+    if case.security_expression is None:
+        raise ValueError(f"{case.provider_id}: security_expression is required for a security probe")
+    extension = case.extension_factory()
+    target_factory = case.grid_target_factory if case.target_kind == "grid" else case.field_target_factory
+    if target_factory is None:
+        raise AssertionError(f"{case.provider_id}: security probe target factory is missing")
+    target = target_factory()
+    forbidden_texts = _case_forbidden_texts(case)
+    if case.target_kind == "grid":
+        binding_result = extension.bind_grid(otf.GridFormulaBindRequest(target))
+    else:
+        binding_result = extension.bind_field(otf.FieldFormulaBindRequest(target))
+    binding = _require_success(
+        binding_result,
+        otf.GridFormulaBinding if case.target_kind == "grid" else otf.FieldFormulaBinding,
+        context=f"{case.provider_id}: security bind",
+        forbidden_texts=forbidden_texts,
+    )
+
+    log_capture = _LogCapture()
+    root_logger = logging.getLogger()
+    root_logger.addHandler(log_capture)
+    try:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            if case.target_kind == "grid":
+                assert case.grid_case is not None
+                result = extension.set_grid(
+                    otf.GridFormulaSetRequest(
+                        target=binding.target,
+                        cell_range=case.grid_case.formula_range,
+                        expression=case.security_expression,
+                        expected_revision=binding.observed_revision,
+                        idempotency_key=f"formula-security-{case.provider_id}-{case.dialect}",
+                    )
+                )
+            else:
+                result = extension.set_field(
+                    otf.FieldFormulaSetRequest(
+                        target=binding.target,
+                        expression=case.security_expression,
+                        expected_revision=binding.observed_revision,
+                        idempotency_key=f"formula-security-{case.provider_id}-{case.dialect}",
+                    )
+                )
+            warning_texts = tuple(str(item.message) for item in caught)
+    finally:
+        root_logger.removeHandler(log_capture)
+
+    normalized = _require_result(
+        result,
+        context=f"{case.provider_id}: security probe",
+        forbidden_texts=forbidden_texts,
+    )
+    probe = FormulaSecurityProbe(
+        result=normalized,
+        warnings=warning_texts,
+        logs=tuple(log_capture.messages),
+        reprs=tuple(getattr(extension, "reprs", ())),
+        ledger_snapshots=tuple(getattr(extension, "ledger_snapshots", ())),
+        operation_ids=tuple(getattr(extension, "operation_ids", ())),
+    )
+    _assert_safe_surface(probe.warnings, forbidden_texts, context="security warnings")
+    _assert_safe_surface(probe.logs, forbidden_texts, context="security logs")
+    _assert_safe_surface(probe.reprs, forbidden_texts, context="security reprs")
+    _assert_safe_surface(probe.ledger_snapshots, forbidden_texts, context="security ledger")
+    _assert_safe_surface(probe.operation_ids, forbidden_texts, context="security operation ids")
+    return probe
+
+
 def assert_grid_formula_conformance(case: FormulaProviderCase) -> None:
     """Run the shared grid-formula conformance assertions for one provider case."""
 
     _require_target_kind(case, "grid")
     extension = case.extension_factory()
     target = case.grid_target_factory()
+    forbidden_texts = _case_forbidden_texts(case)
     bind = _require_success(
         extension.bind_grid(otf.GridFormulaBindRequest(target)),
         otf.GridFormulaBinding,
         context=f"{case.provider_id}: bind_grid",
-        forbidden_texts=case.security_markers,
+        forbidden_texts=forbidden_texts,
     )
     _assert_capability_set(case, bind.capabilities)
     assert case.grid_case is not None
@@ -232,7 +331,7 @@ def assert_grid_formula_conformance(case: FormulaProviderCase) -> None:
             ),
             otf.GridFormulaObservation,
             context=f"{case.provider_id}: read_grid literal",
-            forbidden_texts=case.security_markers,
+            forbidden_texts=forbidden_texts,
         )
         assert literal == case.grid_case.expected_literal_read, (
             f"{case.provider_id}: literal strings beginning with leading = must not be inferred "
@@ -250,13 +349,13 @@ def assert_grid_formula_conformance(case: FormulaProviderCase) -> None:
                 )
             ),
             context=f"{case.provider_id}: set_grid",
-            forbidden_texts=case.security_markers,
+            forbidden_texts=forbidden_texts,
         )
         mutation = _require_success(
             set_result,
             otf.FormulaMutation,
             context=f"{case.provider_id}: set_grid",
-            forbidden_texts=case.security_markers,
+            forbidden_texts=forbidden_texts,
         )
         assert mutation.formula_observation == case.grid_case.expected_after_set, (
             f"{case.provider_id}: grid set must follow top-left copy-fill semantics instead of "
@@ -277,26 +376,27 @@ def assert_grid_formula_conformance(case: FormulaProviderCase) -> None:
                 otf.GRID_SET.to_reference(),
             ),
         )
-        readback_extension = case.extension_factory() if case.supports_independent_sessions else extension
-        readback_binding = bind
-        if case.supports_independent_sessions:
-            readback_binding = _require_success(
-                readback_extension.bind_grid(otf.GridFormulaBindRequest(case.grid_target_factory())),
-                otf.GridFormulaBinding,
-                context=f"{case.provider_id}: bind_grid readback",
-                forbidden_texts=case.security_markers,
+        if otf.GRID_READ in case.static_capabilities:
+            readback_extension = case.extension_factory() if case.supports_independent_sessions else extension
+            readback_binding = bind
+            if case.supports_independent_sessions:
+                readback_binding = _require_success(
+                    readback_extension.bind_grid(otf.GridFormulaBindRequest(case.grid_target_factory())),
+                    otf.GridFormulaBinding,
+                    context=f"{case.provider_id}: bind_grid readback",
+                    forbidden_texts=forbidden_texts,
+                )
+            readback = _require_success(
+                readback_extension.read_grid(
+                    otf.GridFormulaReadRequest(readback_binding.target, case.grid_case.formula_range)
+                ),
+                otf.GridFormulaObservation,
+                context=f"{case.provider_id}: read_grid readback",
+                forbidden_texts=forbidden_texts,
             )
-        readback = _require_success(
-            readback_extension.read_grid(
-                otf.GridFormulaReadRequest(readback_binding.target, case.grid_case.formula_range)
-            ),
-            otf.GridFormulaObservation,
-            context=f"{case.provider_id}: read_grid readback",
-            forbidden_texts=case.security_markers,
-        )
-        assert readback == mutation.formula_observation, (
-            f"{case.provider_id}: independent readback must match the committed formula text"
-        )
+            assert readback == mutation.formula_observation, (
+                f"{case.provider_id}: independent readback must match the committed formula text"
+            )
         if bind.capabilities.details.revision_enforcement is not otf.RevisionEnforcement.UNAVAILABLE:
             stale = _require_result(
                 extension.set_grid(
@@ -309,7 +409,7 @@ def assert_grid_formula_conformance(case: FormulaProviderCase) -> None:
                     )
                 ),
                 context=f"{case.provider_id}: stale grid revision probe",
-                forbidden_texts=case.security_markers,
+                forbidden_texts=forbidden_texts,
             )
             _assert_error_code(
                 stale,
@@ -332,7 +432,7 @@ def assert_grid_formula_conformance(case: FormulaProviderCase) -> None:
                     )
                 ),
                 context=f"{case.provider_id}: grid idempotency conflict probe",
-                forbidden_texts=case.security_markers,
+                forbidden_texts=forbidden_texts,
             )
             _assert_error_code(
                 conflict,
@@ -345,7 +445,7 @@ def assert_grid_formula_conformance(case: FormulaProviderCase) -> None:
                 otf.GridFormulaValueReadRequest(bind.target, case.grid_case.formula_range)
             ),
             context=f"{case.provider_id}: read_grid_values",
-            forbidden_texts=case.security_markers,
+            forbidden_texts=forbidden_texts,
         )
         if not isinstance(value_result.value, otf.GridFormulaValueObservation):
             dependency_scope = getattr(value_result.value, "dependency_scope", None)
@@ -357,7 +457,7 @@ def assert_grid_formula_conformance(case: FormulaProviderCase) -> None:
             value_result,
             otf.GridFormulaValueObservation,
             context=f"{case.provider_id}: read_grid_values",
-            forbidden_texts=case.security_markers,
+            forbidden_texts=forbidden_texts,
         )
         assert values == case.grid_case.expected_values, (
             f"{case.provider_id}: grid value observations must keep dependency_scope=provider_dynamic"
@@ -379,7 +479,7 @@ def assert_grid_formula_conformance(case: FormulaProviderCase) -> None:
             ),
             otf.RecalculationObservation,
             context=f"{case.provider_id}: recalculate_grid",
-            forbidden_texts=case.security_markers,
+            forbidden_texts=forbidden_texts,
         )
         assert recalculation == case.grid_case.expected_recalculation
 
@@ -390,11 +490,12 @@ def assert_field_formula_conformance(case: FormulaProviderCase) -> None:
     _require_target_kind(case, "field")
     extension = case.extension_factory()
     target = case.field_target_factory()
+    forbidden_texts = _case_forbidden_texts(case)
     bind = _require_success(
         extension.bind_field(otf.FieldFormulaBindRequest(target)),
         otf.FieldFormulaBinding,
         context=f"{case.provider_id}: bind_field",
-        forbidden_texts=case.security_markers,
+        forbidden_texts=forbidden_texts,
     )
     _assert_capability_set(case, bind.capabilities)
     assert case.field_case is not None
@@ -403,7 +504,7 @@ def assert_field_formula_conformance(case: FormulaProviderCase) -> None:
             extension.read_field(otf.FieldFormulaReadRequest(bind.target)),
             otf.FieldFormulaObservation,
             context=f"{case.provider_id}: read_field",
-            forbidden_texts=case.security_markers,
+            forbidden_texts=forbidden_texts,
         )
         assert initial.field_id == bind.target.field.field_id, (
             f"{case.provider_id}: field read must resolve to the stable bound field id"
@@ -420,7 +521,7 @@ def assert_field_formula_conformance(case: FormulaProviderCase) -> None:
             ),
             otf.FormulaMutation,
             context=f"{case.provider_id}: set_field",
-            forbidden_texts=case.security_markers,
+            forbidden_texts=forbidden_texts,
         )
         assert mutation.formula_observation == case.field_case.expected_after_set, (
             f"{case.provider_id}: field set must preserve the stable field_id instead of converting "
@@ -430,24 +531,25 @@ def assert_field_formula_conformance(case: FormulaProviderCase) -> None:
             f"{case.provider_id}: field mutations must preserve the stable field_id"
         )
         assert mutation.revision_after == mutation.formula_observation.observed_revision
-        readback_extension = case.extension_factory() if case.supports_independent_sessions else extension
-        readback_binding = bind
-        if case.supports_independent_sessions:
-            readback_binding = _require_success(
-                readback_extension.bind_field(otf.FieldFormulaBindRequest(case.field_target_factory())),
-                otf.FieldFormulaBinding,
-                context=f"{case.provider_id}: bind_field readback",
-                forbidden_texts=case.security_markers,
+        if otf.FIELD_READ in case.static_capabilities:
+            readback_extension = case.extension_factory() if case.supports_independent_sessions else extension
+            readback_binding = bind
+            if case.supports_independent_sessions:
+                readback_binding = _require_success(
+                    readback_extension.bind_field(otf.FieldFormulaBindRequest(case.field_target_factory())),
+                    otf.FieldFormulaBinding,
+                    context=f"{case.provider_id}: bind_field readback",
+                    forbidden_texts=forbidden_texts,
+                )
+            readback = _require_success(
+                readback_extension.read_field(otf.FieldFormulaReadRequest(readback_binding.target)),
+                otf.FieldFormulaObservation,
+                context=f"{case.provider_id}: read_field readback",
+                forbidden_texts=forbidden_texts,
             )
-        readback = _require_success(
-            readback_extension.read_field(otf.FieldFormulaReadRequest(readback_binding.target)),
-            otf.FieldFormulaObservation,
-            context=f"{case.provider_id}: read_field readback",
-            forbidden_texts=case.security_markers,
-        )
-        assert readback == mutation.formula_observation, (
-            f"{case.provider_id}: independent field readback must match the committed formula"
-        )
+            assert readback == mutation.formula_observation, (
+                f"{case.provider_id}: independent field readback must match the committed formula"
+            )
         if bind.capabilities.details.revision_enforcement is not otf.RevisionEnforcement.UNAVAILABLE:
             stale = _require_result(
                 extension.set_field(
@@ -459,7 +561,7 @@ def assert_field_formula_conformance(case: FormulaProviderCase) -> None:
                     )
                 ),
                 context=f"{case.provider_id}: stale field revision probe",
-                forbidden_texts=case.security_markers,
+                forbidden_texts=forbidden_texts,
             )
             _assert_error_code(
                 stale,
@@ -481,7 +583,7 @@ def assert_field_formula_conformance(case: FormulaProviderCase) -> None:
                     )
                 ),
                 context=f"{case.provider_id}: field idempotency conflict probe",
-                forbidden_texts=case.security_markers,
+                forbidden_texts=forbidden_texts,
             )
             _assert_error_code(
                 conflict,
@@ -493,7 +595,7 @@ def assert_field_formula_conformance(case: FormulaProviderCase) -> None:
             extension.read_field_values(otf.FieldFormulaValueReadRequest(bind.target)),
             otf.FieldFormulaValueObservation,
             context=f"{case.provider_id}: read_field_values",
-            forbidden_texts=case.security_markers,
+            forbidden_texts=forbidden_texts,
         )
         assert values == case.field_case.expected_values
     if otf.FIELD_RECALCULATE in case.static_capabilities:
@@ -508,9 +610,39 @@ def assert_field_formula_conformance(case: FormulaProviderCase) -> None:
             ),
             otf.RecalculationObservation,
             context=f"{case.provider_id}: recalculate_field",
-            forbidden_texts=case.security_markers,
+            forbidden_texts=forbidden_texts,
         )
         assert recalculation == case.field_case.expected_recalculation
+
+
+class _LogCapture(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(level=logging.NOTSET)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+def _case_forbidden_texts(case: FormulaProviderCase) -> tuple[str, ...]:
+    texts: list[str] = [*case.security_markers, *case.security_probe_values]
+    if case.security_expression is not None:
+        texts.append(case.security_expression.text)
+    if case.grid_case is not None:
+        texts.extend(
+            (
+                case.grid_case.set_expression.text,
+                case.grid_case.conflicting_expression.text,
+            )
+        )
+    if case.field_case is not None:
+        texts.extend(
+            (
+                case.field_case.set_expression.text,
+                case.field_case.conflicting_expression.text,
+            )
+        )
+    return tuple(dict.fromkeys(text for text in texts if text))
 
 
 def _require_target_kind(case: FormulaProviderCase, expected: str) -> None:
@@ -677,8 +809,14 @@ def _assert_safe_surface(
         if "http://" in casefold or "https://" in casefold:
             raise AssertionError(f"{context}: URL marker leaked into a safe surface")
         for marker in forbidden_texts:
-            if marker in value:
+            normalized_value = re.sub(r"\s+", "", casefold)
+            normalized_marker = re.sub(r"\s+", "", marker.casefold())
+            if marker in value or marker.casefold() in casefold or normalized_marker in normalized_value:
                 raise AssertionError(f"{context}: receipt contains forbidden formula marker")
+        return
+    materialized = _materialize(value)
+    if materialized is not value:
+        _assert_safe_surface(materialized, forbidden_texts, context=context)
 
 
 def _is_scalar(value: object) -> bool:
@@ -687,10 +825,12 @@ def _is_scalar(value: object) -> bool:
 
 __all__ = [
     "FieldFormulaCase",
+    "FormulaSecurityProbe",
     "FormulaProviderCase",
     "GridFormulaCase",
     "assert_field_formula_conformance",
     "assert_formula_receipt_safe",
+    "assert_formula_security_safe",
     "assert_grid_formula_conformance",
     "field_formula_case_params",
     "grid_formula_case_params",

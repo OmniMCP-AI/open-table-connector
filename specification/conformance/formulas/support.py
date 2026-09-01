@@ -40,18 +40,18 @@ def stable_hash(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _copy_fill_formulas() -> tuple[otf.FormulaCell, ...]:
+def _copy_fill_formulas(source_expression: otf.FormulaExpression) -> tuple[otf.FormulaCell, ...]:
     return (
-        otf.FormulaCell("A1", otf.FormulaExpression("=A1", otf.GOOGLE_SHEETS_A1)),
-        otf.FormulaCell("B1", otf.FormulaExpression("=B1", otf.GOOGLE_SHEETS_A1)),
-        otf.FormulaCell("A2", otf.FormulaExpression("=A2", otf.GOOGLE_SHEETS_A1)),
-        otf.FormulaCell("B2", otf.FormulaExpression("=B2", otf.GOOGLE_SHEETS_A1)),
+        otf.FormulaCell("A1", source_expression),
+        otf.FormulaCell("B1", otf.FormulaExpression("=B1", source_expression.dialect)),
+        otf.FormulaCell("A2", otf.FormulaExpression("=A2", source_expression.dialect)),
+        otf.FormulaCell("B2", otf.FormulaExpression("=B2", source_expression.dialect)),
     )
 
 
-def _broadcast_formulas() -> tuple[otf.FormulaCell, ...]:
+def _broadcast_formulas(source_expression: otf.FormulaExpression) -> tuple[otf.FormulaCell, ...]:
     return tuple(
-        otf.FormulaCell(address, otf.FormulaExpression("=A1", otf.GOOGLE_SHEETS_A1))
+        otf.FormulaCell(address, source_expression)
         for address in ("A1", "B1", "A2", "B2")
     )
 
@@ -109,11 +109,14 @@ class SecurityProbe:
     ledger_snapshots: tuple[object, ...]
 
 
-def grid_case_data() -> GridCaseData:
+def grid_case_data(
+    *, set_expression: otf.FormulaExpression | None = None
+) -> GridCaseData:
+    set_expression = set_expression or otf.FormulaExpression("=A1", otf.GOOGLE_SHEETS_A1)
     expected_after_set = otf.GridFormulaObservation(
         worksheet_id="ws-model",
         requested_range="A1:B2",
-        formulas=_copy_fill_formulas(),
+        formulas=_copy_fill_formulas(set_expression),
         observed_revision=HASH_B,
     )
     expected_values = otf.GridFormulaValueObservation(
@@ -152,7 +155,7 @@ def grid_case_data() -> GridCaseData:
     return GridCaseData(
         formula_range="A1:B2",
         literal_range="C3",
-        set_expression=SECURITY_EXPRESSION,
+        set_expression=set_expression,
         conflicting_expression=otf.FormulaExpression("=Z9", otf.GOOGLE_SHEETS_A1),
         expected_after_set=expected_after_set,
         expected_literal_read=otf.GridFormulaObservation(
@@ -244,15 +247,22 @@ class BrokenBehavior:
     allow_idempotency_reuse: bool = False
     unsupported_capabilities: tuple[str, ...] = ()
     security_leak_channel: str | None = None
+    reject_grid_read: bool = False
+    reject_field_read: bool = False
 
 
 DEFAULT_BROKEN = BrokenBehavior()
 
 
-def _receipt_target(expression: otf.FormulaExpression, *, broken: BrokenBehavior) -> str:
-    if broken.receipt_leak:
-        return f"gridfake://warehouse/model::{expression.text}"
-    return "gridfake://warehouse/model"
+def _receipt_target(
+    target: str,
+    *,
+    expression: otf.FormulaExpression | None = None,
+    broken: BrokenBehavior,
+) -> str:
+    if broken.receipt_leak and expression is not None:
+        return f"{target}::{expression.text}"
+    return target
 
 
 def _unsupported_result(target_kind: str, capability: str) -> otf.FormulaExtensionResult[None]:
@@ -360,19 +370,22 @@ class FakeFormulaExtension:
         store: FakeFormulaStore,
         broken: BrokenBehavior = DEFAULT_BROKEN,
         security_markers: Iterable[str] = (),
+        grid_capabilities: tuple[CapabilityIdentity, ...] | None = None,
+        field_capabilities: tuple[CapabilityIdentity, ...] | None = None,
+        grid_data: GridCaseData | None = None,
     ) -> None:
         self.store = store
         self.broken = broken
         self.security_markers = tuple(security_markers)
-        self.grid_data = grid_case_data()
+        self.grid_data = grid_data or grid_case_data()
         self.field_data = field_case_data()
-        self.grid_capabilities = (
+        self.grid_capabilities = grid_capabilities or (
             otf.GRID_READ,
             otf.GRID_SET,
             otf.GRID_VALUES_READ,
             otf.GRID_RECALCULATE,
         )
-        self.field_capabilities = (
+        self.field_capabilities = field_capabilities or (
             otf.FIELD_READ,
             otf.FIELD_SET,
             otf.FIELD_VALUES_READ,
@@ -400,6 +413,8 @@ class FakeFormulaExtension:
         self,
         request: otf.GridFormulaReadRequest,
     ) -> otf.FormulaExtensionResult[otf.GridFormulaObservation]:
+        if self.broken.reject_grid_read:
+            raise AssertionError("unadvertised grid read was called")
         if request.cell_range == self.grid_data.literal_range:
             formulas = ()
             if self.broken.infer_formula_from_leading_equals:
@@ -491,7 +506,9 @@ class FakeFormulaExtension:
                     ),
                 )
         self.store.grid_formulas = (
-            _broadcast_formulas() if self.broken.broadcast_copy_fill else _copy_fill_formulas()
+            _broadcast_formulas(request.expression)
+            if self.broken.broadcast_copy_fill
+            else _copy_fill_formulas(request.expression)
         )
         self.store.grid_revision = HASH_B if self.store.grid_revision == HASH_A else HASH_C
         observation = otf.GridFormulaObservation(
@@ -508,7 +525,11 @@ class FakeFormulaExtension:
             revision_after=observation.observed_revision,
         )
         receipt = otf.FormulaReceiptDetails.for_grid_set(
-            target=_receipt_target(request.expression, broken=self.broken),
+            target=_receipt_target(
+                request.target.grid.value,
+                expression=request.expression,
+                broken=self.broken,
+            ),
             selector=request.cell_range,
             capability=otf.GRID_SET.to_reference(),
             dialect=request.expression.dialect,
@@ -553,7 +574,28 @@ class FakeFormulaExtension:
                 ]
             }
         )
-        self.reprs.append(repr(mutation))
+        self.reprs.append(
+            repr(
+                {
+                    "target_kind": mutation.target_kind,
+                    "affected_count": mutation.affected_count,
+                    "revision_after": mutation.revision_after,
+                }
+            )
+        )
+        if self.broken.security_leak_channel == "error":
+            return otf.FormulaExtensionResult(
+                value=None,
+                outcome=otf.FormulaOutcome.FAILED,
+                commit=otf.FormulaCommitState.COMMITTED,
+                verification=otf.FormulaVerificationState.FAILED,
+                receipts=(receipt,),
+                error=otf.FormulaExtensionErrorInfo(
+                    code=otf.FormulaErrorCode.EXECUTION_FAILED,
+                    message=self.security_markers[0],
+                    safe_details={"target_kind": "grid"},
+                ),
+            )
         return otf.FormulaExtensionResult(
             value=mutation,
             outcome=otf.FormulaOutcome.SUCCEEDED,
@@ -639,6 +681,8 @@ class FakeFormulaExtension:
         self,
         request: otf.FieldFormulaReadRequest[FakeTable],
     ) -> otf.FormulaExtensionResult[otf.FieldFormulaObservation]:
+        if self.broken.reject_field_read:
+            raise AssertionError("unadvertised field read was called")
         value = otf.FieldFormulaObservation(
             table_uri=request.target.table.uri,
             field_id=request.target.field.field_id or "fld-gross_margin",
@@ -727,7 +771,11 @@ class FakeFormulaExtension:
             revision_after=observation.observed_revision,
         )
         receipt = otf.FormulaReceiptDetails.for_field_set(
-            target=request.target.table.uri.value,
+            target=_receipt_target(
+                request.target.table.uri.value,
+                expression=request.expression,
+                broken=self.broken,
+            ),
             selector=field_id,
             capability=otf.FIELD_SET.to_reference(),
             dialect=request.expression.dialect,
@@ -751,6 +799,48 @@ class FakeFormulaExtension:
                 idempotency_key=request.idempotency_key,
                 payload_hash=request.expression.sha256,
                 operation_hash=stable_hash("field-op"),
+            )
+        for marker in self.security_markers:
+            _maybe_emit_security_leak(
+                self.broken,
+                self.broken.security_leak_channel or "",
+                marker,
+                operation_ids=self.operation_ids,
+                ledger_snapshots=self.ledger_snapshots,
+                reprs=self.reprs,
+            )
+        self.operation_ids.append(stable_hash("field-op-id"))
+        self.ledger_snapshots.append(
+            {
+                "entries": [
+                    {
+                        "payload_hash": request.expression.sha256,
+                        "state": "succeeded",
+                    }
+                ]
+            }
+        )
+        self.reprs.append(
+            repr(
+                {
+                    "target_kind": mutation.target_kind,
+                    "affected_count": mutation.affected_count,
+                    "revision_after": mutation.revision_after,
+                }
+            )
+        )
+        if self.broken.security_leak_channel == "error":
+            return otf.FormulaExtensionResult(
+                value=None,
+                outcome=otf.FormulaOutcome.FAILED,
+                commit=otf.FormulaCommitState.COMMITTED,
+                verification=otf.FormulaVerificationState.FAILED,
+                receipts=(receipt,),
+                error=otf.FormulaExtensionErrorInfo(
+                    code=otf.FormulaErrorCode.EXECUTION_FAILED,
+                    message=self.security_markers[0],
+                    safe_details={"target_kind": "field"},
+                ),
             )
         return otf.FormulaExtensionResult(
             value=mutation,
@@ -804,49 +894,76 @@ class FakeFormulaExtension:
         )
 
 
-def grid_case_kwargs(*, broken: BrokenBehavior = DEFAULT_BROKEN) -> dict[str, Any]:
+def grid_case_kwargs(
+    *,
+    broken: BrokenBehavior = DEFAULT_BROKEN,
+    static_capabilities: tuple[CapabilityIdentity, ...] | None = None,
+    provider_id: str = "gridfake",
+    set_expression: otf.FormulaExpression | None = None,
+) -> dict[str, Any]:
     store = FakeFormulaStore()
+    case_data = grid_case_data(set_expression=set_expression)
+    capabilities = static_capabilities or (
+        otf.GRID_READ,
+        otf.GRID_SET,
+        otf.GRID_VALUES_READ,
+        otf.GRID_RECALCULATE,
+    )
 
     def extension_factory() -> FakeFormulaExtension:
-        return FakeFormulaExtension(store=store, broken=broken, security_markers=SECURITY_MARKERS)
+        return FakeFormulaExtension(
+            store=store,
+            broken=broken,
+            security_markers=SECURITY_MARKERS,
+            grid_capabilities=capabilities,
+            grid_data=case_data,
+        )
 
     return {
-        "provider_id": "gridfake",
+        "provider_id": provider_id,
         "target_kind": "grid",
         "dialect": otf.GOOGLE_SHEETS_A1,
-        "static_capabilities": (
-            otf.GRID_READ,
-            otf.GRID_SET,
-            otf.GRID_VALUES_READ,
-            otf.GRID_RECALCULATE,
-        ),
+        "static_capabilities": capabilities,
         "extension_factory": extension_factory,
         "grid_target_factory": make_grid_target,
         "field_target_factory": None,
-        "grid_case": grid_case_data(),
+        "grid_case": case_data,
         "field_case": None,
         "supports_independent_sessions": True,
         "configured_live_evidence": None,
-        "security_markers": SECURITY_MARKERS,
+        "security_markers": (),
+        "security_expression": SECURITY_EXPRESSION,
+        "security_probe_values": SECURITY_MARKERS,
     }
 
 
-def field_case_kwargs(*, broken: BrokenBehavior = DEFAULT_BROKEN) -> dict[str, Any]:
+def field_case_kwargs(
+    *,
+    broken: BrokenBehavior = DEFAULT_BROKEN,
+    static_capabilities: tuple[CapabilityIdentity, ...] | None = None,
+    provider_id: str = "fieldfake",
+) -> dict[str, Any]:
     store = FakeFormulaStore()
+    capabilities = static_capabilities or (
+        otf.FIELD_READ,
+        otf.FIELD_SET,
+        otf.FIELD_VALUES_READ,
+        otf.FIELD_RECALCULATE,
+    )
 
     def extension_factory() -> FakeFormulaExtension:
-        return FakeFormulaExtension(store=store, broken=broken)
+        return FakeFormulaExtension(
+            store=store,
+            broken=broken,
+            security_markers=SECURITY_MARKERS,
+            field_capabilities=capabilities,
+        )
 
     return {
-        "provider_id": "fieldfake",
+        "provider_id": provider_id,
         "target_kind": "field",
         "dialect": otf.MAYBE_BASE,
-        "static_capabilities": (
-            otf.FIELD_READ,
-            otf.FIELD_SET,
-            otf.FIELD_VALUES_READ,
-            otf.FIELD_RECALCULATE,
-        ),
+        "static_capabilities": capabilities,
         "extension_factory": extension_factory,
         "grid_target_factory": None,
         "field_target_factory": make_field_target,
@@ -855,6 +972,8 @@ def field_case_kwargs(*, broken: BrokenBehavior = DEFAULT_BROKEN) -> dict[str, A
         "supports_independent_sessions": True,
         "configured_live_evidence": "configured-live:tenant-a",
         "security_markers": (),
+        "security_expression": otf.FormulaExpression(SECURITY_EXPRESSION.text, otf.MAYBE_BASE),
+        "security_probe_values": SECURITY_MARKERS,
     }
 
 
