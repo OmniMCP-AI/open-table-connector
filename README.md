@@ -29,6 +29,9 @@ The main workspace packages are:
 - `open-table-connector-sdk`: pure-Python client SDK with `Client`, `Table`,
   `Query`, Polars DataFrame integration, normalized results, and SQL/time-series
   facades;
+- `open-table-connector-formulas`: provider-neutral Formula Extension targets,
+  opaque provider-native expressions, typed observations, and closed wire
+  contracts;
 - `open-table-connector-conformance`: reusable parity and dependency-direction
   checks; and
 - `open-table-connector-timeseries`: the closed portable temporal plan,
@@ -89,6 +92,26 @@ operations. There is no `TableRef`, `TableHandle`, `MaterializedTable`,
 Mode names are normalized as `base-mode` and `sheet-mode`. A worksheet or
 arbitrary A1 range is not itself a `Table`; sheet-mode means a bounded,
 header-aware table region inside a sheet grid.
+
+### Formula Extension
+
+Formula operations are exposed through the SDK's explicit `Client.formulas(...)`
+facade. A `GridFormulaTarget` binds a grid URI and worksheet for bounded A1
+formula operations; a `FieldFormulaTarget` binds an opened base-mode `Table`
+and an existing formula field. These are separate target kinds, and a
+worksheet or arbitrary cell range is not a `Table`.
+
+Formula text is provider-native and opaque. Callers supply a required dialect
+such as `google-sheets-a1` or `feishu-bitable`; OTC preserves that text and
+does not translate or evaluate it. Only an explicit `FormulaExpression` sent
+through a Formula view's `set()` method can activate a formula. Ordinary
+Table writes remain value-only.
+
+The core Formula contract is published without enabling any real provider
+capability. The grid-provider and field-provider plans must each install and
+pass their focused conformance gate before their provider identities become
+available. Until then, Formula discovery is intentionally empty and callers
+receive an unsupported-capability result rather than a fallback Table write.
 
 ### SQL support
 

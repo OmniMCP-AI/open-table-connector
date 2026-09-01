@@ -73,6 +73,51 @@ sheet grid. A worksheet or arbitrary cell range is not itself a `Table`.
 During migration, the SDK accepts legacy contract values `base` and `sheet`
 only at compatibility boundaries.
 
+## Formula Extension
+
+Formula support is an optional, typed facade over the two existing modes. Use
+`Client.formulas(...)` with one of two closed target kinds:
+
+- `GridFormulaTarget(grid=..., worksheet=...)` binds a sheet-mode grid and
+  returns a `GridFormulaView`, whose operations accept bounded A1 rectangles.
+- `FieldFormulaTarget(table=..., field=...)` binds an opened base-mode
+  `Table` and returns a `FieldFormulaView` for an existing formula field.
+
+For example:
+
+```python
+grid = client.formulas(
+    otc.GridFormulaTarget(
+        grid="gsheets://spreadsheet-id",
+        worksheet=otc.WorksheetRef(name="Model"),
+    )
+).require_value()
+grid.set(
+    "A1:B2",
+    otc.FormulaExpression("=A1+1", "google-sheets-a1"),
+).require_value()
+
+orders = client.open("feishu://app/table").require_value()
+margin = client.formulas(
+    otc.FieldFormulaTarget(orders, otc.FieldRef(name="gross_margin"))
+).require_value()
+margin.set(
+    otc.FormulaExpression("=revenue-cost", "feishu-bitable"),
+).require_value()
+```
+
+Formula expressions are provider-native and opaque. The dialect is required
+and must match the bound provider; the SDK does not translate or evaluate
+formula text. Formula activation is explicit: only a `FormulaExpression`
+passed to a Formula view's `set()` method can activate a formula. Ordinary
+`Table` writes remain value-only and do not gain formula behavior.
+
+The Formula Extension is disabled for real providers at this core checkpoint.
+No provider capability is available until its corresponding grid-provider or
+field-provider plan is installed and its focused conformance gate passes.
+Effective capabilities may still be a subset of a future provider's static
+declaration. Unsupported Formula operations fail before provider I/O.
+
 ## SQL lanes
 
 The SDK exposes three explicit SQL lanes:

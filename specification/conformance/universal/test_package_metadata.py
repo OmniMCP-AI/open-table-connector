@@ -4,7 +4,6 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
-
 ROOT = Path(__file__).resolve().parents[3]
 CHECKER = ROOT / "scripts/check_package_metadata.py"
 
@@ -36,3 +35,11 @@ def test_hosted_packages_declare_imported_dependencies() -> None:
             "polars",
             "pyarrow",
         }
+
+
+def test_formula_consumers_declare_formula_workspace_dependency() -> None:
+    checker = _checker_module()
+
+    for package in ("sdk", "conformance"):
+        metadata = checker.package_metadata(ROOT / f"packages/{package}/pyproject.toml")
+        assert "open-table-connector-formulas" in metadata.dependencies

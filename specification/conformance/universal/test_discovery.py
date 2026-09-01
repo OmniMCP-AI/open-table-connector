@@ -1,20 +1,24 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import importlib
+from dataclasses import dataclass
 
 import pytest
-
 from open_table_connector.cli.model import parse_endpoint
 from open_table_connector.cli.registry import build_default_registry
-from open_table_connector.contract import CapabilityIdentity, CapabilityManifest, ResourceLimits, TableMode
+from open_table_connector.contract import (
+    CapabilityIdentity,
+    CapabilityManifest,
+    ResourceLimits,
+    TableMode,
+)
+from open_table_connector.formulas import ALL_CAPABILITIES
 
+from specification.conformance.universal import cases as cases_module
 from specification.conformance.universal.assertions import (
     assert_capabilities_are_unique,
     assert_identity_round_trip,
 )
-
-from specification.conformance.universal import cases as cases_module
 from specification.conformance.universal.cases import ConnectorCase, all_cases, case
 
 _CASE_NAMES = (
@@ -343,6 +347,25 @@ def test_manifestless_capabilities_use_public_binding_identities(
 def test_all_advertised_capabilities_have_case_bindings() -> None:
     for connector_case in all_cases():
         assert set(connector_case.capability_bindings) == connector_case.capabilities
+
+
+def test_current_descriptors_do_not_advertise_formula_capabilities() -> None:
+    formula_capabilities = frozenset(
+        capability.capability_id for capability in ALL_CAPABILITIES
+    )
+
+    for connector_case in all_cases():
+        advertised = set(connector_case.capabilities)
+        manifest = getattr(connector_case.connector, "manifest", None)
+        if manifest is not None:
+            advertised.update(item.capability_id for item in manifest.capabilities)
+        advertised.update(
+            binding.identity.capability_id
+            for binding in connector_case.capability_bindings.values()
+            if binding.identity is not None
+        )
+
+        assert not formula_capabilities.intersection(advertised), connector_case.name
 
 
 @pytest.mark.parametrize("connector_case", _CASE_NAMES, ids=str, indirect=True)
