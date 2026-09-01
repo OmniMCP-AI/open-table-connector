@@ -323,6 +323,7 @@ class FakeTemporalExtension:
 class FakeFormulaExtension:
     calls: list[tuple[str, object]] = field(default_factory=list)
     overrides: dict[str, otf.FormulaExtensionResult[object]] = field(default_factory=dict)
+    failures: dict[str, Exception] = field(default_factory=dict)
     grid_capabilities: tuple[CapabilityIdentity, ...] = (
         otf.GRID_READ,
         otf.GRID_SET,
@@ -343,6 +344,9 @@ class FakeFormulaExtension:
         method: str,
         default: otf.FormulaExtensionResult[object],
     ) -> otf.FormulaExtensionResult[object]:
+        failure = self.failures.get(method)
+        if failure is not None:
+            raise failure
         return self.overrides.get(method, default)
 
     def _grid_binding(self, target: otf.GridFormulaTarget) -> otf.GridFormulaBinding:

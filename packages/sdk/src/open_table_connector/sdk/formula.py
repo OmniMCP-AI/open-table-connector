@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
+from math import isfinite
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 from open_table_connector.contract import CapabilityIdentity, TableURI
@@ -135,7 +137,7 @@ def _formula_result(
         if result.error is not None:
             error = ErrorInfo(
                 code=ErrorCode(result.error.code.value),
-                message=result.error.message,
+                message="formula extension reported an operation error",
                 safe_details=dict(result.error.safe_details),
             )
         normalized = OperationResult(
@@ -159,6 +161,31 @@ def _formula_result(
     )
 
 
+def _invoke_formula(
+    client: Client,
+    invocation: Callable[[], FormulaExtensionResult[_T]],
+    *,
+    connector_id: str,
+    expected_type: type[_T],
+) -> OperationResult[_T]:
+    try:
+        result = invocation()
+    except Exception:
+        pass
+    else:
+        return _formula_result(
+            client,
+            result,
+            connector_id=connector_id,
+            expected_type=expected_type,
+        )
+    raise _error(
+        "connector formula extension invocation failed",
+        ErrorCode.PROTOCOL_FAILURE,
+        connector_id=connector_id,
+    )
+
+
 def _formula_extension_for(connector: object, *, connector_id: str) -> FormulaConnectorExtension:
     factory = getattr(connector, "formula_extension_for", None)
     if not callable(factory):
@@ -167,14 +194,28 @@ def _formula_extension_for(connector: object, *, connector_id: str) -> FormulaCo
             ErrorCode.UNSUPPORTED_CAPABILITY,
             connector_id=connector_id,
         )
-    extension = factory()
-    if not isinstance(extension, FormulaConnectorExtension):
+    missing = False
+    try:
+        extension = factory()
+        valid = isinstance(extension, FormulaConnectorExtension)
+    except AttributeError:
+        missing = True
+    except Exception:
+        pass
+    else:
+        if valid:
+            return extension
+    if missing:
         raise _error(
-            "connector formula extension is invalid",
-            ErrorCode.PROTOCOL_FAILURE,
+            "connector does not expose the formula extension",
+            ErrorCode.UNSUPPORTED_CAPABILITY,
             connector_id=connector_id,
         )
-    return extension
+    raise _error(
+        "connector formula extension is invalid",
+        ErrorCode.PROTOCOL_FAILURE,
+        connector_id=connector_id,
+    )
 
 
 class _FormulaViewBase:
@@ -232,10 +273,37 @@ class _FormulaViewBase:
             )
         return expected_revision
 
-    @staticmethod
-    def _validate_limits(limits: FormulaResourceLimits | None) -> FormulaResourceLimits | None:
+    def _validate_limits(
+        self, limits: FormulaResourceLimits | None
+    ) -> FormulaResourceLimits | None:
         if limits is not None and not isinstance(limits, FormulaResourceLimits):
             raise TypeError("limits must be a FormulaResourceLimits when provided")
+        if limits is None:
+            return None
+        for field_name in ("max_cells", "max_records", "max_response_bytes"):
+            value = getattr(limits, field_name)
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int) or value <= 0
+            ):
+                raise _error(
+                    "formula resource limits must be positive integers",
+                    ErrorCode.RESOURCE_LIMIT,
+                    connector_id=self._connector_id,
+                    limit=field_name,
+                )
+        timeout = limits.timeout_seconds
+        if timeout is not None and (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not isfinite(timeout)
+            or timeout <= 0
+        ):
+            raise _error(
+                "formula timeout limit must be a positive finite number",
+                ErrorCode.RESOURCE_LIMIT,
+                connector_id=self._connector_id,
+                limit="timeout_seconds",
+            )
         return limits
 
     def _validate_expression(self, expression: FormulaExpression) -> None:
@@ -298,12 +366,25 @@ class GridFormulaView(_FormulaViewBase):
         self._binding = binding
         self.target: BoundGridFormulaTarget = binding.target
 
-    def _validate_range(self, cell_range: str) -> str:
+    def _validate_range(
+        self,
+        cell_range: str,
+        *,
+        limits: FormulaResourceLimits | None = None,
+    ) -> str:
         try:
             rectangle = A1Rectangle.parse(cell_range)
         except ValueError as exc:
             raise _error(str(exc), ErrorCode.INVALID_TARGET, connector_id=self._connector_id) from exc
-        limit = self.capabilities.details.max_cells_per_operation
+        provider_limit = self.capabilities.details.max_cells_per_operation
+        caller_limit = None if limits is None else limits.max_cells
+        limit = (
+            caller_limit
+            if provider_limit is None
+            else provider_limit
+            if caller_limit is None
+            else min(provider_limit, caller_limit)
+        )
         if limit is not None and rectangle.cell_count > limit:
             raise _error(
                 "formula range exceeded the target cell limit",
@@ -322,15 +403,15 @@ class GridFormulaView(_FormulaViewBase):
     ) -> OperationResult[GridFormulaObservation]:
         self._assert_ready()
         self._require_capability(GRID_READ)
-        result = _formula_result(
+        validated_limits = self._validate_limits(limits)
+        request = GridFormulaReadRequest(
+            target=self.target,
+            cell_range=self._validate_range(cell_range, limits=validated_limits),
+            limits=validated_limits,
+        )
+        result = _invoke_formula(
             self._client,
-            self._extension.read_grid(
-                GridFormulaReadRequest(
-                    target=self.target,
-                    cell_range=self._validate_range(cell_range),
-                    limits=self._validate_limits(limits),
-                )
-            ),
+            lambda: self._extension.read_grid(request),
             connector_id=self._connector_id,
             expected_type=GridFormulaObservation,
         )
@@ -349,18 +430,18 @@ class GridFormulaView(_FormulaViewBase):
         self._assert_ready()
         self._require_capability(GRID_SET)
         self._validate_expression(expression)
-        result = _formula_result(
+        validated_limits = self._validate_limits(limits)
+        request = GridFormulaSetRequest(
+            target=self.target,
+            cell_range=self._validate_range(cell_range, limits=validated_limits),
+            expression=expression,
+            expected_revision=self._validate_expected_revision(expected_revision),
+            idempotency_key=idempotency_key,
+            limits=validated_limits,
+        )
+        result = _invoke_formula(
             self._client,
-            self._extension.set_grid(
-                GridFormulaSetRequest(
-                    target=self.target,
-                    cell_range=self._validate_range(cell_range),
-                    expression=expression,
-                    expected_revision=self._validate_expected_revision(expected_revision),
-                    idempotency_key=idempotency_key,
-                    limits=self._validate_limits(limits),
-                )
-            ),
+            lambda: self._extension.set_grid(request),
             connector_id=self._connector_id,
             expected_type=FormulaMutation,
         )
@@ -375,15 +456,15 @@ class GridFormulaView(_FormulaViewBase):
     ) -> OperationResult[GridFormulaValueObservation]:
         self._assert_ready()
         self._require_capability(GRID_VALUES_READ)
-        result = _formula_result(
+        validated_limits = self._validate_limits(limits)
+        request = GridFormulaValueReadRequest(
+            target=self.target,
+            cell_range=self._validate_range(cell_range, limits=validated_limits),
+            limits=validated_limits,
+        )
+        result = _invoke_formula(
             self._client,
-            self._extension.read_grid_values(
-                GridFormulaValueReadRequest(
-                    target=self.target,
-                    cell_range=self._validate_range(cell_range),
-                    limits=self._validate_limits(limits),
-                )
-            ),
+            lambda: self._extension.read_grid_values(request),
             connector_id=self._connector_id,
             expected_type=GridFormulaValueObservation,
         )
@@ -418,9 +499,9 @@ class GridFormulaView(_FormulaViewBase):
             )
         except ValueError as exc:
             raise _error(str(exc), ErrorCode.INVALID_TARGET, connector_id=self._connector_id) from exc
-        result = _formula_result(
+        result = _invoke_formula(
             self._client,
-            self._extension.recalculate_grid(request),
+            lambda: self._extension.recalculate_grid(request),
             connector_id=self._connector_id,
             expected_type=RecalculationObservation,
         )
@@ -454,9 +535,10 @@ class FieldFormulaView(_FormulaViewBase):
     def read(self) -> OperationResult[FieldFormulaObservation]:
         self._assert_ready()
         self._require_capability(FIELD_READ)
-        result = _formula_result(
+        request = FieldFormulaReadRequest(target=self.target)
+        result = _invoke_formula(
             self._client,
-            self._extension.read_field(FieldFormulaReadRequest(target=self.target)),
+            lambda: self._extension.read_field(request),
             connector_id=self._connector_id,
             expected_type=FieldFormulaObservation,
         )
@@ -473,16 +555,15 @@ class FieldFormulaView(_FormulaViewBase):
         self._assert_ready()
         self._require_capability(FIELD_SET)
         self._validate_expression(expression)
-        result = _formula_result(
+        request = FieldFormulaSetRequest(
+            target=self.target,
+            expression=expression,
+            expected_revision=self._validate_expected_revision(expected_revision),
+            idempotency_key=idempotency_key,
+        )
+        result = _invoke_formula(
             self._client,
-            self._extension.set_field(
-                FieldFormulaSetRequest(
-                    target=self.target,
-                    expression=expression,
-                    expected_revision=self._validate_expected_revision(expected_revision),
-                    idempotency_key=idempotency_key,
-                )
-            ),
+            lambda: self._extension.set_field(request),
             connector_id=self._connector_id,
             expected_type=FormulaMutation,
         )
@@ -496,14 +577,13 @@ class FieldFormulaView(_FormulaViewBase):
     ) -> OperationResult[FieldFormulaValueObservation]:
         self._assert_ready()
         self._require_capability(FIELD_VALUES_READ)
-        result = _formula_result(
+        request = FieldFormulaValueReadRequest(
+            target=self.target,
+            limits=self._validate_limits(limits),
+        )
+        result = _invoke_formula(
             self._client,
-            self._extension.read_field_values(
-                FieldFormulaValueReadRequest(
-                    target=self.target,
-                    limits=self._validate_limits(limits),
-                )
-            ),
+            lambda: self._extension.read_field_values(request),
             connector_id=self._connector_id,
             expected_type=FieldFormulaValueObservation,
         )
@@ -526,16 +606,15 @@ class FieldFormulaView(_FormulaViewBase):
                 connector_id=self._connector_id,
                 scope=scope.value,
             )
-        result = _formula_result(
+        request = FieldFormulaRecalculateRequest(
+            target=self.target,
+            scope=scope,
+            expected_revision=self._validate_expected_revision(expected_revision),
+            idempotency_key=idempotency_key,
+        )
+        result = _invoke_formula(
             self._client,
-            self._extension.recalculate_field(
-                FieldFormulaRecalculateRequest(
-                    target=self.target,
-                    scope=scope,
-                    expected_revision=self._validate_expected_revision(expected_revision),
-                    idempotency_key=idempotency_key,
-                )
-            ),
+            lambda: self._extension.recalculate_field(request),
             connector_id=self._connector_id,
             expected_type=RecalculationObservation,
         )
@@ -553,7 +632,16 @@ def _grid_view_from_binding(
     binding = binding_result.require_value()
     if not isinstance(binding, GridFormulaBinding):
         raise _error("connector formula binding is invalid", ErrorCode.PROTOCOL_FAILURE)
-    if binding.target.grid != target.grid or binding.target.worksheet.worksheet_id is None:
+    bound_worksheet_id = binding.target.worksheet.worksheet_id
+    requested_worksheet_id = target.worksheet.worksheet_id
+    if (
+        binding.target.grid != target.grid
+        or bound_worksheet_id is None
+        or (
+            requested_worksheet_id is not None
+            and bound_worksheet_id != requested_worksheet_id
+        )
+    ):
         raise _error("connector formula binding does not match the requested grid target", ErrorCode.PROTOCOL_FAILURE)
     return replace(
         binding_result,
@@ -577,7 +665,13 @@ def _field_view_from_binding(
     binding = binding_result.require_value()
     if not isinstance(binding, FieldFormulaBinding):
         raise _error("connector formula binding is invalid", ErrorCode.PROTOCOL_FAILURE)
-    if binding.target.table is not target.table or binding.target.field.field_id is None:
+    bound_field_id = binding.target.field.field_id
+    requested_field_id = target.field.field_id
+    if (
+        binding.target.table is not target.table
+        or bound_field_id is None
+        or (requested_field_id is not None and bound_field_id != requested_field_id)
+    ):
         raise _error("connector formula binding does not match the requested field target", ErrorCode.PROTOCOL_FAILURE)
     return replace(
         binding_result,
@@ -614,9 +708,10 @@ def bind_formulas(client: Client, target: object):
                 connector_id=connector_id,
             )
         extension = _formula_extension_for(connector, connector_id=connector_id)
-        grid_bound_result = _formula_result(
+        grid_request = GridFormulaBindRequest(target=target)
+        grid_bound_result = _invoke_formula(
             client,
-            extension.bind_grid(GridFormulaBindRequest(target=target)),
+            lambda: extension.bind_grid(grid_request),
             connector_id=connector_id,
             expected_type=GridFormulaBinding,
         )
@@ -634,9 +729,10 @@ def bind_formulas(client: Client, target: object):
         connector = client._connector_for_binding(target.table._binding)
         connector_id = target.table.connector_id
         extension = _formula_extension_for(connector, connector_id=connector_id)
-        field_bound_result = _formula_result(
+        field_request = FieldFormulaBindRequest(target=target)
+        field_bound_result = _invoke_formula(
             client,
-            extension.bind_field(FieldFormulaBindRequest(target=target)),
+            lambda: extension.bind_field(field_request),
             connector_id=connector_id,
             expected_type=FieldFormulaBinding,
         )

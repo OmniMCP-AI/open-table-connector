@@ -7,7 +7,7 @@ import open_table_connector.sdk as otc
 import pytest
 from open_table_connector.contract import ConnectorIdentity, TableURI
 
-from .conftest import FakeSdkConnector, legacy_descriptor
+from .conftest import FakeLegacyAdapter, FakeSdkConnector, legacy_descriptor
 
 HASH_A = "sha256:" + "a" * 64
 HASH_B = "sha256:" + "b" * 64
@@ -183,6 +183,65 @@ def test_client_rejects_foreign_field_targets_before_provider_io(
     assert raised.value.result.error is not None
     assert raised.value.result.error.code is otc.ErrorCode.INVALID_TARGET
     assert other_connector.formula_extension.calls == []
+
+
+def test_grid_binding_rejects_a_changed_caller_supplied_stable_worksheet_id() -> None:
+    connector = _grid_connector()
+    target = otc.GridFormulaTarget(
+        "gridfake://warehouse/model",
+        otc.WorksheetRef(worksheet_id="ws-requested"),
+    )
+    binding = connector.formula_extension._grid_binding(target)
+    connector.formula_extension.overrides["bind_grid"] = otf.FormulaExtensionResult(
+        value=replace(
+            binding,
+            target=otf.BoundGridFormulaTarget(
+                grid="gridfake://warehouse/model",
+                worksheet=otc.WorksheetRef(worksheet_id="ws-redirected"),
+            ),
+        ),
+        outcome=otf.FormulaOutcome.SUCCEEDED,
+        commit=otf.FormulaCommitState.NOT_APPLICABLE,
+        verification=otf.FormulaVerificationState.PASSED,
+        receipts=(),
+    )
+    client = otc.Client(registry=otc.ConnectorRegistry([connector]))
+
+    with pytest.raises(otc.OTCError) as raised:
+        client.formulas(target)
+
+    assert raised.value.result.error is not None
+    assert raised.value.result.error.code is otc.ErrorCode.PROTOCOL_FAILURE
+    assert [name for name, _ in connector.formula_extension.calls] == ["bind_grid"]
+
+
+def test_field_binding_rejects_a_changed_caller_supplied_stable_field_id(
+    fake_connector: FakeSdkConnector,
+) -> None:
+    client = otc.Client(registry=otc.ConnectorRegistry([fake_connector]))
+    table = client.open("fake://warehouse/orders").require_value()
+    target = otc.FieldFormulaTarget(table, otc.FieldRef(field_id="fld-requested"))
+    binding = fake_connector.formula_extension._field_binding(target)
+    fake_connector.formula_extension.overrides["bind_field"] = otf.FormulaExtensionResult(
+        value=replace(
+            binding,
+            target=replace(
+                binding.target,
+                field=otc.FieldRef(field_id="fld-redirected"),
+            ),
+        ),
+        outcome=otf.FormulaOutcome.SUCCEEDED,
+        commit=otf.FormulaCommitState.NOT_APPLICABLE,
+        verification=otf.FormulaVerificationState.PASSED,
+        receipts=(),
+    )
+
+    with pytest.raises(otc.OTCError) as raised:
+        client.formulas(target)
+
+    assert raised.value.result.error is not None
+    assert raised.value.result.error.code is otc.ErrorCode.PROTOCOL_FAILURE
+    assert [name for name, _ in fake_connector.formula_extension.calls] == ["bind_field"]
 
 
 def test_formula_views_reject_use_after_client_close_before_provider_io() -> None:
@@ -407,6 +466,54 @@ def test_malformed_formula_results_do_not_chain_sensitive_provider_values() -> N
     assert raised.value.__context__ is None
 
 
+def test_provider_exceptions_become_unchained_safe_protocol_failures() -> None:
+    secret = '=HYPERLINK("https://secret.example/?credential=token", "42")'
+    connector = _grid_connector()
+    client = otc.Client(registry=otc.ConnectorRegistry([connector]))
+    view = client.formulas(_grid_target()).require_value()
+    connector.formula_extension.failures["read_grid"] = RuntimeError(secret)
+
+    with pytest.raises(otc.OTCError) as raised:
+        view.read("A1")
+
+    assert raised.value.result.error is not None
+    assert raised.value.result.error.code is otc.ErrorCode.PROTOCOL_FAILURE
+    rendered = str(raised.value) + repr(raised.value.result)
+    for sensitive_part in ("HYPERLINK", "secret.example", "credential=token", '"42"'):
+        assert sensitive_part not in rendered
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+
+
+def test_provider_error_messages_are_not_copied_into_sdk_errors() -> None:
+    secret = '=HYPERLINK("https://secret.example/?credential=token", "42")'
+    connector = _grid_connector()
+    connector.formula_extension.overrides["read_grid"] = otf.FormulaExtensionResult(
+        value=None,
+        outcome=otf.FormulaOutcome.REJECTED,
+        commit=otf.FormulaCommitState.NOT_STARTED,
+        verification=otf.FormulaVerificationState.SKIPPED,
+        receipts=(),
+        error=otf.FormulaExtensionErrorInfo(
+            code=otf.FormulaErrorCode.INVALID_FORMULA,
+            message=f"provider rejected {secret}",
+        ),
+    )
+    client = otc.Client(registry=otc.ConnectorRegistry([connector]))
+    view = client.formulas(_grid_target()).require_value()
+
+    with pytest.raises(otc.OTCError) as raised:
+        view.read("A1")
+
+    assert raised.value.result.error is not None
+    assert raised.value.result.error.code is otc.ErrorCode.INVALID_FORMULA
+    rendered = (
+        raised.value.result.error.message + str(raised.value) + repr(raised.value.result)
+    )
+    for sensitive_part in ("HYPERLINK", "secret.example", "credential=token", '"42"'):
+        assert sensitive_part not in rendered
+
+
 def test_client_formulas_uses_legacy_bridge_formula_forwarding() -> None:
     config = otc.ClientConfig.empty()
     client = otc.Client.from_config(
@@ -423,3 +530,76 @@ def test_client_formulas_uses_legacy_bridge_formula_forwarding() -> None:
 
     assert observation.table_uri == TableURI("legacy://warehouse/orders")
     assert observation.field_id == "fld-gross_margin"
+
+
+def test_legacy_bridge_missing_formula_extension_is_an_unsupported_capability() -> None:
+    adapter = FakeLegacyAdapter()
+    adapter.formula_extension_for = None  # type: ignore[method-assign]
+    bridge = otc.LegacyConnectorAdapterBridge(adapter)
+    client = otc.Client(registry=otc.ConnectorRegistry([bridge]))
+    table = client.open("legacy://warehouse/orders").require_value()
+
+    with pytest.raises(otc.OTCError) as raised:
+        client.formulas(otc.FieldFormulaTarget(table, otc.FieldRef(name="gross_margin")))
+
+    assert raised.value.result.error is not None
+    assert raised.value.result.error.code is otc.ErrorCode.UNSUPPORTED_CAPABILITY
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+
+
+def test_legacy_bridge_invalid_formula_extension_is_a_safe_protocol_failure() -> None:
+    adapter = FakeLegacyAdapter()
+    adapter.formula_extension = object()  # type: ignore[assignment]
+    bridge = otc.LegacyConnectorAdapterBridge(adapter)
+    client = otc.Client(registry=otc.ConnectorRegistry([bridge]))
+    table = client.open("legacy://warehouse/orders").require_value()
+
+    with pytest.raises(otc.OTCError) as raised:
+        client.formulas(otc.FieldFormulaTarget(table, otc.FieldRef(name="gross_margin")))
+
+    assert raised.value.result.error is not None
+    assert raised.value.result.error.code is otc.ErrorCode.PROTOCOL_FAILURE
+    assert "TypeError" not in str(raised.value)
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+
+
+@pytest.mark.parametrize(
+    "limits",
+    [
+        otc.FormulaResourceLimits(max_cells=0),
+        otc.FormulaResourceLimits(max_records=-1),
+        otc.FormulaResourceLimits(max_response_bytes=True),
+        otc.FormulaResourceLimits(max_cells=1.5),  # type: ignore[arg-type]
+        otc.FormulaResourceLimits(timeout_seconds=False),
+        otc.FormulaResourceLimits(timeout_seconds=float("nan")),
+        otc.FormulaResourceLimits(timeout_seconds=float("inf")),
+    ],
+)
+def test_formula_views_reject_invalid_resource_limits_before_provider_io(
+    limits: otc.FormulaResourceLimits,
+) -> None:
+    connector = _grid_connector()
+    client = otc.Client(registry=otc.ConnectorRegistry([connector]))
+    view = client.formulas(_grid_target()).require_value()
+
+    with pytest.raises(otc.OTCError) as raised:
+        view.read("A1", limits=limits)
+
+    assert raised.value.result.error is not None
+    assert raised.value.result.error.code is otc.ErrorCode.RESOURCE_LIMIT
+    assert [name for name, _ in connector.formula_extension.calls] == ["bind_grid"]
+
+
+def test_grid_range_exceeding_caller_max_cells_is_rejected_before_provider_io() -> None:
+    connector = _grid_connector()
+    client = otc.Client(registry=otc.ConnectorRegistry([connector]))
+    view = client.formulas(_grid_target()).require_value()
+
+    with pytest.raises(otc.OTCError) as raised:
+        view.read("A1:B2", limits=otc.FormulaResourceLimits(max_cells=2))
+
+    assert raised.value.result.error is not None
+    assert raised.value.result.error.code is otc.ErrorCode.RESOURCE_LIMIT
+    assert [name for name, _ in connector.formula_extension.calls] == ["bind_grid"]
