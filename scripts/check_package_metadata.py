@@ -78,6 +78,14 @@ def _runtime_ranges(path: Path) -> dict[str, str]:
     return ranges
 
 
+def _imports_formula_package(package_root: Path) -> bool:
+    for source_file in package_root.glob("src/**/*.py"):
+        text = source_file.read_text(encoding="utf-8")
+        if "open_table_connector.formulas" in text:
+            return True
+    return False
+
+
 def check_package_metadata(root: Path) -> list[str]:
     root = root.resolve()
     errors: list[str] = []
@@ -145,6 +153,14 @@ def check_package_metadata(root: Path) -> list[str]:
                     errors.append(
                         f"{metadata.name}: {dependency} range must be {expected!r}"
                     )
+        if (
+            metadata.name != "open-table-connector-formulas"
+            and _imports_formula_package(pyproject.parent)
+            and "open-table-connector-formulas" not in metadata.dependencies
+        ):
+            errors.append(
+                f"{metadata.name}: missing dependency open-table-connector-formulas"
+            )
 
     for package in _HOSTED_CONNECTORS:
         hosted_metadata = metadata_by_member.get(f"packages/{package}")

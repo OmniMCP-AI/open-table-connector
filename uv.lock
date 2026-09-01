@@ -9,6 +9,7 @@ members = [
     "open-table-connector-contract",
     "open-table-connector-dbt",
     "open-table-connector-feishu-bitable",
+    "open-table-connector-formulas",
     "open-table-connector-google-sheets",
     "open-table-connector-local-files",
     "open-table-connector-maybe-sheet",
@@ -329,6 +330,21 @@ requires-dist = [
     { name = "open-table-connector-contract", editable = "packages/contract" },
     { name = "polars", specifier = ">=1,<2" },
     { name = "pyarrow", specifier = ">=14,<24" },
+]
+
+[[package]]
+name = "open-table-connector-formulas"
+version = "0.1.0"
+source = { editable = "packages/formulas" }
+dependencies = [
+    { name = "jsonschema" },
+    { name = "open-table-connector-contract" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jsonschema", specifier = ">=4.23,<5" },
+    { name = "open-table-connector-contract", editable = "packages/contract" },
 ]
 
 [[package]]

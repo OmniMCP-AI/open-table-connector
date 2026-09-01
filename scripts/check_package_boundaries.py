@@ -9,6 +9,7 @@ from pathlib import Path
 _ORDER = {
     "open-table-connector-contract": 0,
     "open-table-connector-timeseries": 1,
+    "open-table-connector-formulas": 1,
     "open-table-connector-local-files": 2,
     "open-table-connector-sqlite": 2,
     "open-table-connector-postgres": 2,
