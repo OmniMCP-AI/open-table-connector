@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
+import jsonschema
 import pytest
 from open_table_connector.formulas import FormulaReceiptDetails
 
@@ -9,6 +11,7 @@ HASH_A = "sha256:" + "a" * 64
 HASH_B = "sha256:" + "b" * 64
 HASH_C = "sha256:" + "c" * 64
 HASH_D = "sha256:" + "d" * 64
+ROOT = Path(__file__).parents[3]
 
 
 def test_formula_receipt_contains_hashes_not_formula_text() -> None:
@@ -162,3 +165,40 @@ def test_formula_set_receipts_require_readback_hashes_and_forbid_value_verificat
             revision_enforcement="checked",
             verification="passed",
         )
+
+
+def test_formula_receipt_schema_accepts_runtime_safe_details_round_trip() -> None:
+    details = FormulaReceiptDetails(
+        target_kind="grid",
+        table_mode="sheet",
+        target="gsheets://spreadsheet-id",
+        selector="A1:B2",
+        capability="formula.grid.read/1.0",
+        dialect="google-sheets-a1",
+        observation_sha256=HASH_A,
+        observed_count=1,
+        revision_after=HASH_B,
+        safe_details={
+            "status": "committed",
+            "target_kind": "grid",
+            "revision_hash": HASH_A,
+            "provider_status_code": 200,
+            "provider_status": "dropped",
+            "nested": {"field_id": "fld-1"},
+        },
+    )
+    payload = details.to_wire()
+    schema = json.loads(
+        (
+            ROOT / "specification/schemas/formula-receipt-details-v1.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert payload["safe_details"] == {
+        "status": "committed",
+        "target_kind": "grid",
+        "revision_hash": HASH_A,
+        "provider_status_code": 200,
+    }
+    jsonschema.Draft202012Validator(schema).validate(payload)
+    assert FormulaReceiptDetails.from_wire(payload).safe_details == payload["safe_details"]

@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from open_table_connector.contract.errors import _safe_value
+from .errors import _SAFE_DETAIL_KEYS, _is_unsafe_detail_value
 
 _SCHEMA = "otc.formula-receipt-details/v1"
 _TARGET_KINDS = {"grid", "field"}
@@ -77,7 +78,13 @@ def _safe_details(value: Mapping[str, Any] | None) -> dict[str, Any]:
     details = _safe_value({} if value is None else value)
     _reject_unsafe_strings(details)
     _reject_forbidden_names(details.keys())
-    return dict(details)
+    return {
+        key: item
+        for key, item in details.items()
+        if key.casefold() in _SAFE_DETAIL_KEYS
+        and (item is None or isinstance(item, (str, int, float, bool)))
+        and not _is_unsafe_detail_value(item)
+    }
 
 
 @dataclass(frozen=True, slots=True)

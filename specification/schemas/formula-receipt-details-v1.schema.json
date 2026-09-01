@@ -135,6 +135,102 @@
       "minLength": 1,
       "maxLength": 256,
       "pattern": "^(?!.*https?://).+$"
+    },
+    "safe_details": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "affected_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capability": {
+          "enum": [
+            "formula.grid.read/1.0",
+            "formula.grid.set/1.0",
+            "formula.grid.values.read/1.0",
+            "formula.grid.recalculate/1.0",
+            "formula.field.read/1.0",
+            "formula.field.set/1.0",
+            "formula.field.values.read/1.0",
+            "formula.field.recalculate/1.0"
+          ]
+        },
+        "dialect": {
+          "enum": [
+            "google-sheets-a1",
+            "maybe-sheet-a1",
+            "excel-a1",
+            "maybe-base",
+            "feishu-bitable"
+          ]
+        },
+        "field_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?!\\s*=)(?!.*https?://).+$"
+        },
+        "limit": {
+          "type": [
+            "integer",
+            "number"
+          ],
+          "minimum": 0
+        },
+        "operation_hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "payload_hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "provider_status_code": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "range": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?!\\s*=)(?!.*https?://).+$"
+        },
+        "revision_hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "safe_uri": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^(?!\\s*=)(?!.*https?://).+$"
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^(?!\\s*=)(?!.*https?://).+$"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^(?!\\s*=)(?!.*https?://).+$"
+        },
+        "target_kind": {
+          "enum": [
+            "grid",
+            "field"
+          ]
+        },
+        "worksheet_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?!\\s*=)(?!.*https?://).+$"
+        }
+      }
     }
   },
   "allOf": [
