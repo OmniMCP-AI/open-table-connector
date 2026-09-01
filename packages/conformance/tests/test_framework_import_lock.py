@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from open_table_connector.conformance.static_suite import assert_framework_import_free
 
 

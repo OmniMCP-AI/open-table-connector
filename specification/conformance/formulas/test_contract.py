@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from copy import deepcopy
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from copy import deepcopy
 from pathlib import Path
 
 import jsonschema

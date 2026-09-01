@@ -4,11 +4,15 @@ from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 
-import pyarrow as pa
 import polars as pl
 import pyarrow as pa
 import pytest
-
+from open_table_connector.conformance.assertions import (
+    assert_arrow_polars_equal,
+    assert_read_connector_conformance,
+    assert_receipt_safe,
+)
+from open_table_connector.conformance.timeseries import load_temporal_cases
 from open_table_connector.contract import (
     ArrowReadResult,
     ArrowTableReader,
@@ -22,13 +26,6 @@ from open_table_connector.contract import (
     TableReadRequest,
     TableURI,
 )
-from open_table_connector.conformance.assertions import (
-    assert_arrow_polars_equal,
-    assert_read_connector_conformance,
-    assert_receipt_safe,
-)
-from open_table_connector.conformance.timeseries import load_temporal_cases
-
 
 ROOT = Path(__file__).resolve().parents[3]
 

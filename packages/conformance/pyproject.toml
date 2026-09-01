@@ -11,12 +11,14 @@ license = { text = "Apache-2.0" }
 readme = "README.md"
 dependencies = [
   "open-table-connector-contract>=0.1,<0.2",
+  "open-table-connector-formulas>=0.1,<0.2",
   "open-table-connector-timeseries>=0.1,<0.2",
   "pyarrow>=14,<24",
 ]
 
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
+open-table-connector-formulas = { workspace = true }
 open-table-connector-timeseries = { workspace = true }
 
 [tool.setuptools.packages.find]
