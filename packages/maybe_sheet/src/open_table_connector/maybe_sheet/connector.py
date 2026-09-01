@@ -132,11 +132,12 @@ class MaybeSheetConnector:
     def formula_extension_for(self):
         from open_table_connector.formulas import CompositeFormulaConnectorExtension
 
+        from .field_formula import MaybeSheetFieldFormulaExtension
         from .grid_formula import MaybeSheetGridFormulaExtension
 
         return CompositeFormulaConnectorExtension(
             grid=MaybeSheetGridFormulaExtension(self),
-            field=None,
+            field=MaybeSheetFieldFormulaExtension(self),
         )
 
     def __init__(self, process_client: ProcessClient) -> None:

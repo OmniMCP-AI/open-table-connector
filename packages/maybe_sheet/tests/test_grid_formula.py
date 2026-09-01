@@ -950,7 +950,7 @@ def test_adapter_composes_grid_delegate_and_optional_field_delegate() -> None:
     extension = adapter.formula_extension_for()
     assert isinstance(extension, otf.CompositeFormulaConnectorExtension)
     assert extension.grid.__class__.__name__ == "MaybeSheetGridFormulaExtension"
-    assert extension.field is None
+    assert extension.field.__class__.__name__ == "MaybeSheetFieldFormulaExtension"
 
 
 def _extension(process: RecordingProcess, *, token: str = "token"):
