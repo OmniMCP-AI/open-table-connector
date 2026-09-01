@@ -62,6 +62,15 @@ def test_client_from_config_opens_through_a_descriptor_registry(fake_connector) 
     assert table.schema == fake_connector.frame.schema
 
 
+def test_client_open_can_attach_a_declared_schema_to_an_existing_table(fake_connector) -> None:
+    client = otc.Client(registry=otc.ConnectorRegistry([fake_connector]))
+    declared = pl.Schema({"order_id": pl.Int64, "status": pl.String})
+
+    table = client.open("fake://warehouse/orders", schema=declared).require_value()
+
+    assert table.schema == declared
+
+
 def test_client_open_routes_path_targets_without_forcing_table_uri(fake_connector) -> None:
     fake_connector.schemes = ("file",)
     fake_connector.local = True

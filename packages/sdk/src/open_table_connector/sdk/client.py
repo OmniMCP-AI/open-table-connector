@@ -113,13 +113,27 @@ class Client:
         )
         return cls(registry=registry)
 
-    def open(self, target: str | TableURI | ExistingTableAddress):
+    def open(
+        self,
+        target: str | TableURI | ExistingTableAddress,
+        *,
+        schema: pl.Schema | None = None,
+    ):
         self._assert_open()
         route_target, address = self._normalize_open_target(target)
         connector = self._registry.connector_for(route_target)
         result = connector.open_table(address)
         delivered = self._deliver(result)
-        return replace(delivered, value=self._wrap_binding(delivered.require_value()))
+        binding = delivered.require_value()
+        if schema is not None:
+            declared_schema = schema if isinstance(schema, pl.Schema) else pl.Schema(schema)
+            if tuple(binding.schema.names()) != tuple(declared_schema.names()):
+                raise _failure(
+                    "declared schema columns do not match the opened table",
+                    ErrorCode.PROTOCOL_FAILURE,
+                )
+            binding = replace(binding, schema=declared_schema)
+        return replace(delivered, value=self._wrap_binding(binding))
 
     def materialize(self, source: object, *, to: str | TableDestination):
         self._assert_open()
