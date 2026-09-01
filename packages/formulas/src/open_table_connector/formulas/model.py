@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 from open_table_connector.contract import TableURI
 
@@ -26,6 +27,13 @@ def _normalize_optional_text(value: str | None, field_name: str) -> str | None:
 def _require_exactly_one(name: str | None, stable_id: str | None, *, label: str) -> None:
     if (name is None) == (stable_id is None):
         raise ValueError(f"{label} requires exactly one of name or stable ID")
+
+
+def _closed_wire(payload: Mapping[str, Any], required: set[str], label: str) -> None:
+    if set(payload) != required:
+        missing = sorted(required.difference(payload))
+        extra = sorted(set(payload).difference(required))
+        raise ValueError(f"{label} wire keys mismatch; missing={missing}, extra={extra}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +101,14 @@ class FormulaExpression:
             f"byte_count={self.byte_count}, "
             f"sha256={self.sha256!r})"
         )
+
+    def to_wire(self) -> dict[str, str]:
+        return {"text": self.text, "dialect": self.dialect}
+
+    @classmethod
+    def from_wire(cls, payload: Mapping[str, Any]) -> FormulaExpression:
+        _closed_wire(payload, {"text", "dialect"}, "FormulaExpression")
+        return cls(text=payload["text"], dialect=payload["dialect"])
 
 
 @dataclass(frozen=True, slots=True)
