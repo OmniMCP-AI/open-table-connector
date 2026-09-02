@@ -4,6 +4,6 @@
   "contract_version": "1.0",
   "status": "implemented",
   "intended_mode": "base",
-  "intended_capabilities": ["table.read.arrow", "table.read.polars", "table.inspect", "table.write"],
-  "available_capabilities": ["uri.resolve", "table.read.arrow", "table.read.polars", "table.inspect", "table.write"]
+  "intended_capabilities": ["table.read.arrow", "table.read.polars", "table.inspect", "table.write", "formula.field.read", "formula.field.set", "formula.field.values.read"],
+  "available_capabilities": ["uri.resolve", "table.read.arrow", "table.read.polars", "table.inspect", "table.write", "formula.field.read", "formula.field.set", "formula.field.values.read"]
 }

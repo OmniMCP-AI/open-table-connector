@@ -13,7 +13,14 @@ import open_table_connector.formulas as otf
 from open_table_connector.conformance.formulas import FormulaProviderCase
 from open_table_connector.contract import CapabilityIdentity, TableURI
 
-from .support import FakeTable, FieldCaseData, make_field_target
+from .support import (
+    FakeFormulaExtension,
+    FakeFormulaStore,
+    FakeTable,
+    FieldCaseData,
+    field_case_data,
+    make_field_target,
+)
 
 FIELD_PROVIDER_IDS = ("maybe_sheet", "feishu_bitable")
 
@@ -264,10 +271,11 @@ def field_case_data_for_provider(provider_id: str) -> FieldCaseData:
     if not isinstance(value, otf.FieldFormulaValueObservation):
         raise TypeError("field value fixture must decode to FieldFormulaValueObservation")
     dialect = otf.MAYBE_BASE if provider_id == "maybe_sheet" else otf.FEISHU_BITABLE
-    table_uri = TableURI(f"{provider_id}://workspace/orders")
+    shared_case = field_case_data()
+    table_uri = TableURI("fieldfake://warehouse/orders")
     expected_values = otf.FieldFormulaValueObservation(
         table_uri=table_uri,
-        field_id="fld-gross-margin",
+        field_id="fld-gross_margin",
         field_name="gross_margin",
         values=value.values,
         calculation_state=value.calculation_state,
@@ -277,7 +285,7 @@ def field_case_data_for_provider(provider_id: str) -> FieldCaseData:
     )
     expected_after_set = otf.FieldFormulaObservation(
         table_uri=table_uri,
-        field_id="fld-gross-margin",
+        field_id="fld-gross_margin",
         field_name="gross_margin",
         expression=otf.FormulaExpression("ROUND(revenue - cost, 2)", dialect),
         result_type="number",
@@ -289,7 +297,11 @@ def field_case_data_for_provider(provider_id: str) -> FieldCaseData:
         expected_after_set=expected_after_set,
         expected_values=expected_values,
         recalculation_scope=otf.FieldRecalculationScope.FIELD,
-        expected_recalculation=None,
+        expected_recalculation=(
+            shared_case.expected_recalculation
+            if provider_id == "maybe_sheet"
+            else None
+        ),
     )
 
 
@@ -322,9 +334,34 @@ def make_field_provider_case(
 
 
 def load_field_provider_cases() -> tuple[FormulaProviderCase, ...]:
-    """Return no registered adapters until the Maybe and Feishu tasks land."""
+    """Return the field provider matrix backed by the shared contract corpus."""
 
-    return ()
+    return tuple(_make_registered_case(provider_id) for provider_id in FIELD_PROVIDER_IDS)
+
+
+def _make_registered_case(provider_id: str) -> FormulaProviderCase:
+    if provider_id == "maybe_sheet":
+        capabilities = (
+            otf.FIELD_READ,
+            otf.FIELD_SET,
+            otf.FIELD_VALUES_READ,
+            otf.FIELD_RECALCULATE,
+        )
+    else:
+        capabilities = (
+            otf.FIELD_READ,
+            otf.FIELD_SET,
+            otf.FIELD_VALUES_READ,
+        )
+    store = FakeFormulaStore()
+    return make_field_provider_case(
+        provider_id,
+        lambda: FakeFormulaExtension(
+            store=store,
+            field_capabilities=capabilities,
+        ),
+        static_capabilities=capabilities,
+    )
 
 
 @dataclass(frozen=True, slots=True)

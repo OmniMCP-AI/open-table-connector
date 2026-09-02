@@ -772,6 +772,21 @@ def _feishu_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
             expected_mode=TableMode.BASE,
             write=lambda frame, if_exists: connector.write(make_write_request(frame, if_exists)),
         ),
+        "formula.field.read": _binding(
+            otf.FIELD_READ,
+            expected_mode=TableMode.BASE,
+            invoke=connector.formula_extension_for,
+        ),
+        "formula.field.set": _binding(
+            otf.FIELD_SET,
+            expected_mode=TableMode.BASE,
+            invoke=connector.formula_extension_for,
+        ),
+        "formula.field.values.read": _binding(
+            otf.FIELD_VALUES_READ,
+            expected_mode=TableMode.BASE,
+            invoke=connector.formula_extension_for,
+        ),
     }
 
     return ConnectorCase(
@@ -937,6 +952,26 @@ def _maybe_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
             expected_mode=TableMode.SHEET,
             invoke=connector.formula_extension_for,
         ),
+        "formula.field.read": _binding(
+            otf.FIELD_READ,
+            expected_mode=TableMode.BASE,
+            invoke=connector.formula_extension_for,
+        ),
+        "formula.field.set": _binding(
+            otf.FIELD_SET,
+            expected_mode=TableMode.BASE,
+            invoke=connector.formula_extension_for,
+        ),
+        "formula.field.values.read": _binding(
+            otf.FIELD_VALUES_READ,
+            expected_mode=TableMode.BASE,
+            invoke=connector.formula_extension_for,
+        ),
+        "formula.field.recalculate": _binding(
+            otf.FIELD_RECALCULATE,
+            expected_mode=TableMode.BASE,
+            invoke=connector.formula_extension_for,
+        ),
     }
 
     return ConnectorCase(
@@ -953,6 +988,10 @@ def _maybe_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
             otf.GRID_SET,
             otf.GRID_VALUES_READ,
             otf.GRID_RECALCULATE,
+            otf.FIELD_READ,
+            otf.FIELD_SET,
+            otf.FIELD_VALUES_READ,
+            otf.FIELD_RECALCULATE,
         ),
         modes=frozenset({TableMode.BASE, TableMode.SHEET}),
         schemes=frozenset({"https", "maybe"}),

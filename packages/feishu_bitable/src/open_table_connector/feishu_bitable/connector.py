@@ -42,6 +42,15 @@ from open_table_connector.contract.fingerprints import (
     arrow_schema_fingerprint,
     operation_identity,
 )
+from open_table_connector.formulas import (
+    FIELD_READ as FORMULA_FIELD_READ_CAPABILITY,
+)
+from open_table_connector.formulas import (
+    FIELD_SET as FORMULA_FIELD_SET_CAPABILITY,
+)
+from open_table_connector.formulas import (
+    FIELD_VALUES_READ as FORMULA_FIELD_VALUES_READ_CAPABILITY,
+)
 
 from .identity import FEISHU_RECORD_ID_FIELD
 
@@ -54,7 +63,21 @@ TABLE_READ_POLARS_CAPABILITY = CapabilityIdentity("table.read.polars", "1.0")
 TABLE_WRITE_CAPABILITY = CapabilityIdentity("table.write", "1.0")
 FEISHU_BATCH_CREATE_LIMIT = 500
 FEISHU_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
-CAPABILITY_MANIFEST = CapabilityManifest(CONNECTOR_IDENTITY, (URI_RESOLVER_CAPABILITY, TABLE_INSPECT_CAPABILITY, TABLE_READ_ARROW_CAPABILITY, TABLE_READ_POLARS_CAPABILITY, TABLE_WRITE_CAPABILITY), (TableMode.BASE,), (SCHEME_FEISHU, PROVIDER_FEISHU_BITABLE))
+CAPABILITY_MANIFEST = CapabilityManifest(
+    CONNECTOR_IDENTITY,
+    (
+        URI_RESOLVER_CAPABILITY,
+        TABLE_INSPECT_CAPABILITY,
+        TABLE_READ_ARROW_CAPABILITY,
+        TABLE_READ_POLARS_CAPABILITY,
+        TABLE_WRITE_CAPABILITY,
+        FORMULA_FIELD_READ_CAPABILITY,
+        FORMULA_FIELD_SET_CAPABILITY,
+        FORMULA_FIELD_VALUES_READ_CAPABILITY,
+    ),
+    (TableMode.BASE,),
+    (SCHEME_FEISHU, PROVIDER_FEISHU_BITABLE),
+)
 
 
 class FeishuTransport(Protocol):
