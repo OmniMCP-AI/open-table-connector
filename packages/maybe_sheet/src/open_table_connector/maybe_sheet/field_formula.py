@@ -262,6 +262,7 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
                     return cached if cached is not None else _unknown("formula field replay result is unavailable")
             fresh_before = self._read_metadata(uri, request.target.field, table_id)
             if fresh_before[2] != expected_revision:
+                self._finish_ledger(request, context, False)
                 return _rejected(otf.FormulaErrorCode.STALE_REVISION, "formula field revision is stale", {"revision_hash": fresh_before[2]})
             argv = [
                 "mbs", "formula", "set", "--target", _mbs_target(uri),

@@ -257,6 +257,33 @@ def test_set_field_replays_before_fresh_revision_preflight() -> None:
     assert len(process.calls) == 4
 
 
+def test_set_field_stale_preflight_releases_idempotency_ledger() -> None:
+    process = RecordingProcess(
+        [
+            envelope("formula.read", metadata_result()),
+            envelope("formula.read", metadata_result(revision=HASH_B)),
+            envelope("formula.read", metadata_result(revision=HASH_B)),
+        ]
+    )
+    extension = MaybeSheetFieldFormulaExtension(process)
+    binding = _bind(extension, process)
+    request = otf.FieldFormulaSetRequest(
+        binding.target,
+        otf.FormulaExpression("ROUND(price - cost, 2)", otf.MAYBE_BASE),
+        expected_revision=HASH_A,
+        idempotency_key="stale-key",
+    )
+
+    first = extension.set_field(request)
+    retry = extension.set_field(request)
+
+    assert first.error is not None
+    assert first.error.code is otf.FormulaErrorCode.STALE_REVISION
+    assert retry.error is not None
+    assert retry.error.code is otf.FormulaErrorCode.STALE_REVISION
+    assert len(process.calls) == 3
+
+
 def test_read_field_values_uses_stable_record_ids_and_limits_every_page() -> None:
     process = RecordingProcess(
         [
