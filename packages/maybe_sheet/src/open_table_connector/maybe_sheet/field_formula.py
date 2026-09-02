@@ -234,10 +234,7 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
                 return _rejected(otf.FormulaErrorCode.INVALID_FORMULA, "MaybeSheet field formulas require the maybe-base dialect")
             if request.expression.byte_count > self._expression_limit(request, details):
                 raise _LimitFailure("formula expression exceeds the configured byte limit", self._expression_limit(request, details))
-            fresh_before = self._read_metadata(uri, request.target.field, table_id)
             expected_revision = request.expected_revision or binding_revision
-            if fresh_before[2] != expected_revision:
-                return _rejected(otf.FormulaErrorCode.STALE_REVISION, "formula field revision is stale", {"revision_hash": fresh_before[2]})
             target_hash = _hash_payload({"table_id": table_id, "field_id": request.target.field.field_id})
             selector_hash = _hash_payload({"field_id": request.target.field.field_id})
             payload_hash = _hash_payload({"table_id": table_id, "field_id": request.target.field.field_id, "expression_sha256": request.expression.sha256, "dialect": request.expression.dialect, "expected_revision": expected_revision})
@@ -263,6 +260,9 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
                     with self._lock:
                         cached = self._completed.get(decision.operation_hash or "")
                     return cached if cached is not None else _unknown("formula field replay result is unavailable")
+            fresh_before = self._read_metadata(uri, request.target.field, table_id)
+            if fresh_before[2] != expected_revision:
+                return _rejected(otf.FormulaErrorCode.STALE_REVISION, "formula field revision is stale", {"revision_hash": fresh_before[2]})
             argv = [
                 "mbs", "formula", "set", "--target", _mbs_target(uri),
                 "--field-id", request.target.field.field_id or "",

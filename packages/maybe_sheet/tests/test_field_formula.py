@@ -221,6 +221,42 @@ def test_set_field_changes_only_expression_and_performs_fresh_readback() -> None
     )
 
 
+def test_set_field_replays_before_fresh_revision_preflight() -> None:
+    process = RecordingProcess(
+        [
+            envelope("formula.read", metadata_result()),
+            envelope("formula.read", metadata_result()),
+            envelope("formula.set", {"table_id": "tbl-orders", "field_id": "fld-gross-margin", "revision": HASH_B}),
+            envelope("formula.read", metadata_result(expression="ROUND(price - cost, 2)", revision=HASH_B)),
+        ]
+    )
+    extension = MaybeSheetFieldFormulaExtension(process)
+    binding = _bind(extension, process)
+    request = otf.FieldFormulaSetRequest(
+        binding.target,
+        otf.FormulaExpression("ROUND(price - cost, 2)", otf.MAYBE_BASE),
+        expected_revision=HASH_A,
+        idempotency_key="replay-key",
+    )
+
+    first = extension.set_field(request)
+    replay = extension.set_field(request)
+    conflict = extension.set_field(
+        otf.FieldFormulaSetRequest(
+            binding.target,
+            otf.FormulaExpression("price + cost", otf.MAYBE_BASE),
+            expected_revision=HASH_A,
+            idempotency_key="replay-key",
+        )
+    )
+
+    assert first.outcome is otf.FormulaOutcome.SUCCEEDED
+    assert replay == first
+    assert conflict.error is not None
+    assert conflict.error.code is otf.FormulaErrorCode.IDEMPOTENCY_CONFLICT
+    assert len(process.calls) == 4
+
+
 def test_read_field_values_uses_stable_record_ids_and_limits_every_page() -> None:
     process = RecordingProcess(
         [
