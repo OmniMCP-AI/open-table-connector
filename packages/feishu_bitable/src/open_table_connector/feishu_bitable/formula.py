@@ -273,12 +273,15 @@ class FeishuBitableFormulaExtension(otf.FieldFormulaConnectorExtension):
                     fields = item.get("fields")
                     if not isinstance(fields, Mapping):
                         raise _ProtocolFailure
-                    raw_value = fields.get(request.target.field.field_id or "")
-                    if raw_value is None and request.target.field.field_id not in fields:
-                        raw_value = fields.get(before.get("field_name"))
-                    if raw_value is _MISSING:
+                    field_id = request.target.field.field_id or ""
+                    field_name = before.get("field_name")
+                    if field_id in fields:
+                        raw_value = fields[field_id]
+                    elif isinstance(field_name, str) and field_name in fields:
+                        raw_value = fields[field_name]
+                    else:
                         raise _ProtocolFailure
-                    values.append(otf.FormulaRecordValue(record_id, otf.FormulaValue.from_python(raw_value)))
+                    values.append(otf.FormulaRecordValue(record_id, self._formula_value(raw_value)))
                     seen.add(record_id)
                     if len(values) > max_records:
                         raise _LimitFailure("formula field values exceeded the configured record limit", max_records)
@@ -436,13 +439,18 @@ class FeishuBitableFormulaExtension(otf.FieldFormulaConnectorExtension):
 
     @classmethod
     def _isolated(cls, before: Mapping[str, Any], after: Mapping[str, Any]) -> bool:
-        left = copy.deepcopy(dict(before))
-        right = copy.deepcopy(dict(after))
-        for item in (left, right):
-            prop = item.get("property")
-            if isinstance(prop, dict):
-                prop.pop("formula_expression", None)
-        return left == right
+        def normalized(field: Mapping[str, Any]) -> dict[str, Any]:
+            value = copy.deepcopy(dict(field))
+            prop = value.get("property")
+            if isinstance(prop, Mapping):
+                property_value = dict(prop)
+                property_value.pop("formula_expression", None)
+                value["property"] = property_value
+            value.pop("provider_revision", None)
+            value.pop("provider_evidence", None)
+            return value
+
+        return normalized(before) == normalized(after)
 
     def _reconcile(self, app_token: str, table_id: str, field_id: str, before: Mapping[str, Any], expression: str) -> dict[str, Any] | None:
         try:
@@ -455,12 +463,36 @@ class FeishuBitableFormulaExtension(otf.FieldFormulaConnectorExtension):
         payload = self._connector._transport.request(method, self._connector._url(url), headers=self._connector._headers(), body=body, timeout=self._connector._timeout if timeout is None else timeout)
         if not isinstance(payload, Mapping):
             raise _ProtocolFailure
-        code = payload.get("code", 0)
+        code = payload.get("code", _MISSING)
+        if isinstance(code, bool) or not isinstance(code, int):
+            raise _ProtocolFailure
         if code != 0:
             if method == "PUT" and isinstance(code, int) and 400 <= code < 500:
                 raise _ProviderFailure(otf.FormulaErrorCode.INVALID_FORMULA, code)
             raise _ProviderFailure(otf.FormulaErrorCode.EXECUTION_FAILED, code)
         return payload
+
+    @staticmethod
+    def _formula_value(raw: object) -> otf.FormulaValue:
+        if isinstance(raw, Mapping):
+            if "error" in raw:
+                error = raw.get("error")
+                if not isinstance(error, Mapping):
+                    raise _ProtocolFailure
+                return otf.FormulaValue.provider_error(otf.FormulaErrorValue(otf.FormulaErrorCode.INVALID_FORMULA.value))
+            if "type" in raw:
+                if raw.get("type") in {"error", "formula_error"}:
+                    return otf.FormulaValue.provider_error(otf.FormulaErrorValue(otf.FormulaErrorCode.INVALID_FORMULA.value))
+                raise _ProtocolFailure
+            if "kind" in raw:
+                try:
+                    return otf.FormulaValue.from_wire(raw)
+                except (TypeError, ValueError, KeyError):
+                    raise _ProtocolFailure from None
+        try:
+            return otf.FormulaValue.from_python(raw)
+        except (TypeError, ValueError):
+            raise _ProtocolFailure from None
 
     def _finish_ledger(self, request: otf.FieldFormulaSetRequest[Any], context: tuple[str, str, str] | None, *, unknown: bool = False) -> None:
         if request.idempotency_key is None or context is None:

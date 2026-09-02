@@ -97,6 +97,46 @@ class RecordingTransport:
         raise AssertionError(f"unexpected request: {method} {url}")
 
 
+class ResponseCodeTransport(RecordingTransport):
+    def __init__(self, code: object, *, omit_code: bool = False) -> None:
+        super().__init__()
+        self.response_code = code
+        self.omit_code = omit_code
+
+    def request(self, method, url, *, headers, body=None, timeout=None):
+        payload = super().request(method, url, headers=headers, body=body, timeout=timeout)
+        if self.omit_code:
+            payload.pop("code", None)
+        else:
+            payload["code"] = self.response_code
+        return payload
+
+
+class EvidenceReadbackTransport(RecordingTransport):
+    def __init__(self) -> None:
+        super().__init__()
+        self.add_evidence = False
+
+    def request(self, method, url, *, headers, body=None, timeout=None):
+        payload = super().request(method, url, headers=headers, body=body, timeout=timeout)
+        if method == "PUT":
+            self.add_evidence = True
+        if method == "GET" and "/fields" in url and self.add_evidence:
+            for item in payload["data"]["items"]:
+                item["provider_revision"] = HASH_B
+                item["provider_evidence"] = {"status": "verified"}
+        return payload
+
+
+class UnrelatedReadbackTransport(EvidenceReadbackTransport):
+    def request(self, method, url, *, headers, body=None, timeout=None):
+        payload = super().request(method, url, headers=headers, body=body, timeout=timeout)
+        if method == "GET" and "/fields" in url and self.add_evidence:
+            for item in payload["data"]["items"]:
+                item["description"] = "provider changed an unrelated property"
+        return payload
+
+
 def bind(extension: FeishuBitableFieldFormulaExtension):
     result = extension.bind_field(
         otf.FieldFormulaBindRequest(
@@ -149,6 +189,23 @@ def test_bind_rejects_ambiguous_missing_or_non_formula_fields(fields, selector, 
     assert all("formula_expression" not in str(call) for call in transport.calls if call[0] == "PUT")
 
 
+@pytest.mark.parametrize(
+    ("code", "omit_code"),
+    [(None, True), ("0", False), (True, False), (0.0, False)],
+)
+def test_all_feishu_responses_require_an_integer_status_code(code, omit_code) -> None:
+    transport = ResponseCodeTransport(code, omit_code=omit_code)
+    extension = FeishuBitableFieldFormulaExtension(
+        FeishuBitableConnector(transport, tenant_access_token="tenant-secret")
+    )
+
+    result = extension.bind_field(otf.FieldFormulaBindRequest(otf.FieldFormulaTarget(table(), otf.FieldRef(name="gross_margin"))))
+
+    assert result.outcome is otf.FormulaOutcome.FAILED
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.PROTOCOL_FAILURE
+
+
 def test_read_field_uses_fresh_metadata_and_formula_observation() -> None:
     transport = RecordingTransport()
     extension = FeishuBitableFieldFormulaExtension(
@@ -192,6 +249,49 @@ def test_set_sends_only_allowed_metadata_and_verifies_isolated_readback() -> Non
     assert result.value.formula_observation.expression.text == "ROUND(price - cost, 2)"
 
 
+def test_set_allows_provider_safe_readback_evidence_without_leaking_formula_text() -> None:
+    transport = EvidenceReadbackTransport()
+    extension = FeishuBitableFieldFormulaExtension(
+        FeishuBitableConnector(transport, tenant_access_token="tenant-secret")
+    )
+    binding = bind(extension)
+    marker = "https://formula-secret.example/token"
+
+    result = extension.set_field(
+        otf.FieldFormulaSetRequest(
+            binding.target,
+            otf.FormulaExpression(marker, otf.FEISHU_BITABLE),
+            expected_revision=binding.observed_revision,
+        )
+    )
+
+    assert result.outcome is otf.FormulaOutcome.SUCCEEDED
+    assert marker not in repr(result.error)
+    assert marker not in repr(result.receipts)
+
+
+def test_set_rejects_unrelated_readback_changes_without_leaking_formula_text() -> None:
+    transport = UnrelatedReadbackTransport()
+    extension = FeishuBitableFieldFormulaExtension(
+        FeishuBitableConnector(transport, tenant_access_token="tenant-secret")
+    )
+    binding = bind(extension)
+    marker = "https://formula-secret.example/token"
+
+    result = extension.set_field(
+        otf.FieldFormulaSetRequest(
+            binding.target,
+            otf.FormulaExpression(marker, otf.FEISHU_BITABLE),
+            expected_revision=binding.observed_revision,
+        )
+    )
+
+    assert result.outcome is otf.FormulaOutcome.FAILED
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.READBACK_MISMATCH
+    assert marker not in repr(result.error)
+
+
 def test_set_reconciles_lost_ack_without_resending() -> None:
     transport = RecordingTransport()
     extension = FeishuBitableFieldFormulaExtension(
@@ -231,9 +331,74 @@ def test_read_field_values_follows_pages_and_preserves_provider_order() -> None:
     assert result.outcome is otf.FormulaOutcome.SUCCEEDED
     assert result.value is not None
     assert [item.record_id for item in result.value.values] == ["rec-1", "rec-2"]
+    assert [item.value.kind for item in result.value.values] == ["integer", "null"]
     assert result.value.calculation_state is otf.CalculationState.PROVIDER_CURRENT
     assert result.value.calculation_trigger is otf.CalculationTrigger.PROVIDER_READ
     assert result.value.dependency_scope == "provider_dynamic"
+
+
+def test_read_field_values_rejects_missing_bound_field_value() -> None:
+    transport = RecordingTransport()
+    transport.record_pages = [
+        {"code": 0, "data": {"items": [{"record_id": "rec-1", "fields": {}}], "has_more": False}}
+    ]
+    extension = FeishuBitableFieldFormulaExtension(
+        FeishuBitableConnector(transport, tenant_access_token="tenant-secret")
+    )
+    binding = bind(extension)
+
+    result = extension.read_field_values(otf.FieldFormulaValueReadRequest(binding.target))
+
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.PROTOCOL_FAILURE
+
+
+def test_read_field_values_maps_formula_error_object_to_safe_contract_value() -> None:
+    transport = RecordingTransport()
+    transport.record_pages = [
+        {
+            "code": 0,
+            "data": {
+                "items": [{"record_id": "rec-1", "fields": {"fld-margin": {"type": "error", "value": "FORMULA_SECRET"}}}],
+                "has_more": False,
+            },
+        }
+    ]
+    extension = FeishuBitableFieldFormulaExtension(
+        FeishuBitableConnector(transport, tenant_access_token="tenant-secret")
+    )
+    binding = bind(extension)
+
+    result = extension.read_field_values(otf.FieldFormulaValueReadRequest(binding.target))
+
+    assert result.outcome is otf.FormulaOutcome.SUCCEEDED
+    assert result.value is not None
+    assert result.value.values[0].value.kind == "provider_error"
+    assert result.value.values[0].value.value.code == otf.FormulaErrorCode.INVALID_FORMULA.value
+    assert "FORMULA_SECRET" not in repr(result.value)
+
+
+def test_read_field_values_rejects_unknown_provider_object() -> None:
+    transport = RecordingTransport()
+    transport.record_pages = [
+        {
+            "code": 0,
+            "data": {
+                "items": [{"record_id": "rec-1", "fields": {"fld-margin": {"type": "mystery", "value": "FORMULA_SECRET"}}}],
+                "has_more": False,
+            },
+        }
+    ]
+    extension = FeishuBitableFieldFormulaExtension(
+        FeishuBitableConnector(transport, tenant_access_token="tenant-secret")
+    )
+    binding = bind(extension)
+
+    result = extension.read_field_values(otf.FieldFormulaValueReadRequest(binding.target))
+
+    assert result.error is not None
+    assert result.error.code is otf.FormulaErrorCode.PROTOCOL_FAILURE
+    assert "FORMULA_SECRET" not in repr(result.error)
 
 
 def test_read_field_values_rejects_duplicate_ids_and_unproven_current_state() -> None:
