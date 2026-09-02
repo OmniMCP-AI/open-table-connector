@@ -109,7 +109,7 @@ Table writes remain value-only.
 
 The Formula contract is provider-neutral, but provider identities are enabled
 only after the corresponding focused conformance gate passes. The certified
-grid identities are listed below; unsupported operations still return an
+identities are listed below; unsupported operations still return an
 unsupported-capability result rather than falling back to a Table write.
 
 #### Grid provider matrix
@@ -143,6 +143,53 @@ Ordinary `Table` writes remain value-only and never activate formulas. Google
 ordinary writes continue to use `valueInputOption=RAW`, and the ordinary Excel
 writer preserves formula-prefixed strings as text. Use an explicit Formula view
 and `FormulaExpression` when formula activation is intended.
+
+#### Field provider matrix
+
+Maybe base-mode and Feishu Bitable formulas are customized computed columns,
+not sheet cell formulas. They use each provider's native formula language and
+are addressed by an existing field's stable identity:
+
+| Provider | Field capabilities | Dialect | Calculated-value reads | Explicit recalculation |
+| --- | --- | --- | --- | --- |
+| Maybe Sheet base-mode | `formula.field.read/1.0`, `formula.field.set/1.0`, `formula.field.values.read/1.0`, `formula.field.recalculate/1.0` | `maybe-base` | Yes; provider-dynamic dependencies | Yes: `field`, `table` |
+| Feishu Bitable | `formula.field.read/1.0`, `formula.field.set/1.0`, `formula.field.values.read/1.0` | `feishu-bitable` | Yes; provider-dynamic dependencies | No |
+
+The v1 Formula Extension binds only a field that already exists and is already
+a provider formula field. Create or convert that field with provider-native
+administration outside this API before binding it; v1 exposes no field-create
+or field-convert capability. `set()` changes only the formula expression and
+verifies a fresh metadata readback. It does not write calculated record values.
+
+```python
+from open_table_connector.formulas import FieldFormulaTarget, FieldRef, FormulaExpression
+
+table = client.open("maybe://document/R_orders").require_value()
+margin = client.formulas(
+    FieldFormulaTarget(table, FieldRef(name="gross_margin"))
+).require_value()
+margin.set(FormulaExpression("revenue - cost", "maybe-base"))
+```
+
+The equivalent Feishu Bitable binding uses a base-mode table and its native
+dialect:
+
+```python
+table = client.open("feishu://APP_TOKEN/TABLE_ID").require_value()
+margin = client.formulas(
+    FieldFormulaTarget(table, FieldRef(name="gross_margin"))
+).require_value()
+margin.set(FormulaExpression("revenue - cost", "feishu-bitable"))
+```
+
+`read_values()` returns provider-calculated observations keyed by stable
+provider record IDs, including across paginated reads; callers should not use
+row position as record identity. These are fresh provider reads with
+`dependency_scope=provider_dynamic`: upstream fields or linked data can change
+outside OTC, and OTC does not evaluate or translate the expression. Only Maybe
+advertises explicit field recalculation, for example
+`margin.recalculate(scope=FieldRecalculationScope.FIELD)`; Feishu callers must
+use Feishu's own recalculation behavior when available.
 
 ### SQL support
 
@@ -192,10 +239,10 @@ range scans, latest/as-of lookup, bucket aggregation, and gap fill.
 The provider inventory is explicit: CSV, JSON, JSONL, SQLite, PostgreSQL, and
 Excel expose only their certified portable capabilities. Formula extensions
 are a separate provider-native surface: Google Sheets, direct Excel, and
-MaybeSheet expose only their proven grid identities, while field identities
-remain capability-selected by the field-provider plan. JSON and JSONL always
-use `json://` and `jsonl://`; managed snapshot selection is request metadata,
-never a `managed+` URI.
+MaybeSheet expose their proven grid identities, while MaybeSheet and Feishu
+Bitable also expose their focused field identities. JSON and JSONL always use
+`json://` and `jsonl://`; managed snapshot selection is request metadata, never
+a `managed+` URI.
 
 See the [OTC architecture specification](docs/superpowers/specs/2026-08-29-portable-time-series-storage-design.md),
 the [implementation plan](docs/superpowers/plans/2026-08-29-portable-time-series-storage.md),
