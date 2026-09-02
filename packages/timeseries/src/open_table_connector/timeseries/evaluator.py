@@ -369,7 +369,9 @@ def _aggregate_expression(measure: AggregateMeasure) -> pl.Expr:
     elif measure.function is AggregateFunction.SUM:
         expression = pl.when(column.count() > 0).then(column.sum()).otherwise(None)
     elif measure.function is AggregateFunction.AVG:
-        expression = column.mean()
+        # Polars' mean expression promotes Decimal columns to Float64. Keep
+        # Decimal inputs exact by dividing the Decimal sum by its row count.
+        expression = pl.when(column.count() > 0).then(column.sum() / column.count()).otherwise(None)
     elif measure.function is AggregateFunction.FIRST:
         expression = column.first()
     elif measure.function is AggregateFunction.LAST:

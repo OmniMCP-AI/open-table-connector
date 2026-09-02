@@ -43,6 +43,7 @@ from open_table_connector.timeseries import (
     TemporalExtensionError,
     TemporalReceipt,
     TemporalTableDescriptor,
+    TimestampPrecision,
     portable_plan_hash,
     temporal_descriptor_hash,
 )
@@ -94,6 +95,12 @@ _FIXED_INTERVAL_NS = {
     "minutes": 60_000_000_000,
     "hour": 3_600_000_000_000,
     "hours": 3_600_000_000_000,
+}
+_PRECISION_DIGITS = {
+    TimestampPrecision.SECOND: 0,
+    TimestampPrecision.MILLISECOND: 3,
+    TimestampPrecision.MICROSECOND: 6,
+    TimestampPrecision.NANOSECOND: 9,
 }
 _INTERVAL = re.compile(r"^([1-9][0-9]*)\s+([A-Za-z]+)$")
 
@@ -605,9 +612,11 @@ def _fixed_bucket(
         raise ValueError("temporal SQL v1 supports fixed sub-day bucket intervals")
     count = int(match.group(1))
     width_ns = count * _FIXED_INTERVAL_NS[match.group(2).casefold()]
+    digits = _PRECISION_DIGITS[descriptor.precision]
+    origin = "1970-01-01T00:00:00Z" if digits == 0 else f"1970-01-01T00:00:00.{0:0{digits}d}Z"
     return function, FixedBucket(
         width_ns=width_ns,
-        origin="1970-01-01T00:00:00.000000000Z",
+        origin=origin,
     )
 
 
