@@ -13,6 +13,7 @@ from urllib.parse import quote
 
 import open_table_connector.formulas as otf
 from open_table_connector.contract import (
+    PROVIDER_FEISHU_BITABLE,
     ConnectorError,
     ConnectorErrorCode,
     ResolveContext,
@@ -175,7 +176,7 @@ class FeishuBitableFormulaExtension(otf.FieldFormulaConnectorExtension):
             payload_hash = _hash_payload({"table_id": table_id, "field_id": request.target.field.field_id, "expression_sha256": request.expression.sha256, "dialect": request.expression.dialect, "expected_revision": expected_revision})
             context = (target_hash, selector_hash, payload_hash)
             if request.idempotency_key is not None:
-                decision = self._ledger.begin(connector_id="feishu_bitable", capability=otf.FIELD_SET.to_reference(), target_hash=target_hash, selector_hash=selector_hash, idempotency_key=request.idempotency_key, payload_hash=payload_hash)
+                decision = self._ledger.begin(connector_id=PROVIDER_FEISHU_BITABLE, capability=otf.FIELD_SET.to_reference(), target_hash=target_hash, selector_hash=selector_hash, idempotency_key=request.idempotency_key, payload_hash=payload_hash)
                 if decision.disposition is otf.FormulaIdempotencyDisposition.CONFLICT:
                     return _rejected(otf.FormulaErrorCode.IDEMPOTENCY_CONFLICT, "formula field idempotency key conflicts with a prior request")
                 if decision.disposition is otf.FormulaIdempotencyDisposition.IN_FLIGHT:
@@ -497,7 +498,7 @@ class FeishuBitableFormulaExtension(otf.FieldFormulaConnectorExtension):
     def _finish_ledger(self, request: otf.FieldFormulaSetRequest[Any], context: tuple[str, str, str] | None, *, unknown: bool = False) -> None:
         if request.idempotency_key is None or context is None:
             return
-        kwargs = {"connector_id": "feishu_bitable", "target_hash": context[0], "selector_hash": context[1], "idempotency_key": request.idempotency_key, "payload_hash": context[2]}
+        kwargs = {"connector_id": PROVIDER_FEISHU_BITABLE, "target_hash": context[0], "selector_hash": context[1], "idempotency_key": request.idempotency_key, "payload_hash": context[2]}
         if unknown:
             self._ledger.mark_unknown(**kwargs)
         else:
@@ -511,7 +512,7 @@ class FeishuBitableFormulaExtension(otf.FieldFormulaConnectorExtension):
         self._completed.move_to_end(operation_hash)
         while len(self._completed) > _LEDGER_LIMIT:
             self._completed.popitem(last=False)
-        self._ledger.succeed(connector_id="feishu_bitable", target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2], operation_hash=operation_hash)
+        self._ledger.succeed(connector_id=PROVIDER_FEISHU_BITABLE, target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2], operation_hash=operation_hash)
 
     def _observation(self, uri: TableURI, field: Mapping[str, Any]) -> otf.FieldFormulaObservation:
         prop = field["property"]

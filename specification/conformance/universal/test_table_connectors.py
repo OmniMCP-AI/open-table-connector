@@ -7,7 +7,6 @@ from pathlib import Path
 
 import polars as pl
 import pytest
-
 from open_table_connector.contract import (
     ArrowReadResult,
     BaseConvention,
@@ -622,33 +621,10 @@ def test_provider_failures_map_to_safe_redacted_errors(
     )
 
 
-@pytest.mark.parametrize(
-    ("operation", "expected_capability"),
-    (
-        pytest.param(
-            "calculate_formulas",
-            "formula.calculate",
-            id="formula-calculate-unsupported",
-        ),
-        pytest.param(
-            "read_formula_values",
-            "formula.readback",
-            id="formula-readback-unsupported",
-        ),
-    ),
-)
-def test_maybe_sheet_formula_operations_fail_closed(
-    operation: str,
-    expected_capability: str,
-) -> None:
+def test_maybe_sheet_does_not_expose_legacy_formula_aliases() -> None:
     connector = case("maybe_sheet").connector
-
-    with pytest.raises(ConnectorError) as raised:
-        getattr(connector, operation)(object())
-
-    assert raised.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
-    assert raised.value.safe_details == {"capability": expected_capability}
-    assert_error_is_safe(raised.value)
+    assert not hasattr(connector, "calculate_formulas")
+    assert not hasattr(connector, "read_formula_values")
 
 
 def test_maybe_sheet_process_timeouts_map_to_safe_stable_errors(

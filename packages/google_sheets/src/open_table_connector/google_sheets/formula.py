@@ -18,7 +18,10 @@ from urllib.parse import quote, unquote, urlsplit
 
 import open_table_connector.formulas as otf
 from open_table_connector.contract import (
+    HOST_GOOGLE_DOCS,
+    PROVIDER_GOOGLE_SHEETS,
     SCHEME_GSHEETS,
+    SCHEME_HTTPS,
     ConnectorError,
     ConnectorErrorCode,
     TableURI,
@@ -343,7 +346,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
             if request.idempotency_key is not None:
                 with self._lock:
                     decision = self._ledger.begin(
-                        connector_id="google_sheets",
+                        connector_id=PROVIDER_GOOGLE_SHEETS,
                         capability=otf.GRID_SET.to_reference(),
                         target_hash=target_hash,
                         selector_hash=selector_hash,
@@ -496,7 +499,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
                     # cached result, but can never fall through to another POST.
                     self._completed[operation_hash] = result
                     self._ledger.succeed(
-                        connector_id="google_sheets", target_hash=target_hash, selector_hash=selector_hash,
+                        connector_id=PROVIDER_GOOGLE_SHEETS, target_hash=target_hash, selector_hash=selector_hash,
                         idempotency_key=request.idempotency_key, payload_hash=payload_hash, operation_hash=operation_hash,
                     )
             return result
@@ -723,7 +726,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
         parsed = urlsplit(value)
         if parsed.scheme == SCHEME_GSHEETS:
             return parsed.netloc
-        if parsed.scheme == "https" and parsed.hostname == "docs.google.com":
+        if parsed.scheme == SCHEME_HTTPS and parsed.hostname == HOST_GOOGLE_DOCS:
             parts = parsed.path.split("/")
             try:
                 return parts[parts.index("d") + 1]
@@ -821,7 +824,7 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
             result = otf.FormulaExtensionResult(mutation, otf.FormulaOutcome.SUCCEEDED, otf.FormulaCommitState.COMMITTED, otf.FormulaVerificationState.PASSED, (receipt,))
             if request.idempotency_key is not None:
                 with self._lock:
-                    self._ledger.succeed(connector_id="google_sheets", target_hash=target_hash, selector_hash=selector_hash, idempotency_key=request.idempotency_key, payload_hash=payload_hash, operation_hash=operation_hash)
+                    self._ledger.succeed(connector_id=PROVIDER_GOOGLE_SHEETS, target_hash=target_hash, selector_hash=selector_hash, idempotency_key=request.idempotency_key, payload_hash=payload_hash, operation_hash=operation_hash)
                     self._completed[operation_hash] = result
             return result
         self._mark_unknown_ledger(request, target_hash, selector_hash, payload_hash)
@@ -893,12 +896,12 @@ class GoogleSheetsFormulaExtension(otf.GridFormulaConnectorExtension):
     def _fail_ledger(self, request: otf.GridFormulaSetRequest, target_hash: str, selector_hash: str, payload_hash: str) -> None:
         if request.idempotency_key is not None:
             with self._lock:
-                self._ledger.fail_known(connector_id="google_sheets", target_hash=target_hash, selector_hash=selector_hash, idempotency_key=request.idempotency_key, payload_hash=payload_hash)
+                self._ledger.fail_known(connector_id=PROVIDER_GOOGLE_SHEETS, target_hash=target_hash, selector_hash=selector_hash, idempotency_key=request.idempotency_key, payload_hash=payload_hash)
 
     def _mark_unknown_ledger(self, request: otf.GridFormulaSetRequest, target_hash: str, selector_hash: str, payload_hash: str) -> None:
         if request.idempotency_key is not None:
             with self._lock:
-                self._ledger.mark_unknown(connector_id="google_sheets", target_hash=target_hash, selector_hash=selector_hash, idempotency_key=request.idempotency_key, payload_hash=payload_hash)
+                self._ledger.mark_unknown(connector_id=PROVIDER_GOOGLE_SHEETS, target_hash=target_hash, selector_hash=selector_hash, idempotency_key=request.idempotency_key, payload_hash=payload_hash)
 
     def _finish_ledger_failure(
         self,

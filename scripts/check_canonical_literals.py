@@ -26,8 +26,8 @@ def check_canonical_literals(root: Path) -> list[str]:
     values = set(canonical.values())
     names_path = root / "packages/contract/src/open_table_connector/contract/names.py"
     errors: list[str] = []
-    for path in sorted((root / "packages").glob("**/*.py")):
-        if path.resolve() == names_path.resolve() or "/tests/" in str(path):
+    for path in sorted((root / "packages").glob("*/src/**/*.py")):
+        if path.resolve() == names_path.resolve():
             continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

@@ -1,6 +1,7 @@
 """Capability declaration for the local-files Connector."""
 
 from open_table_connector.contract import (
+    PROVIDER_EXCEL,
     PROVIDER_JSON,
     PROVIDER_JSONL,
     SCHEME_FILE,
@@ -45,7 +46,7 @@ CAPABILITY_MANIFEST = capability_manifest(
 )
 
 EXCEL_CAPABILITY_MANIFEST = capability_manifest(
-    connector=connector_identity("excel"),
-    uri_schemes=("excel",),
+    connector=connector_identity(PROVIDER_EXCEL),
+    uri_schemes=(PROVIDER_EXCEL,),
     extra_capabilities=(GRID_READ, GRID_SET),
 )

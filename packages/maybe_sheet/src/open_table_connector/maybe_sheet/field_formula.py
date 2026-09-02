@@ -11,7 +11,13 @@ from time import monotonic
 from typing import Any
 
 import open_table_connector.formulas as otf
-from open_table_connector.contract import ConnectorError, ConnectorErrorCode, TableMode
+from open_table_connector.contract import (
+    PROVIDER_JSON,
+    PROVIDER_MAYBE_SHEET,
+    ConnectorError,
+    ConnectorErrorCode,
+    TableMode,
+)
 
 from .connector import MaybeSheetConnector, ProcessClient, _mbs_target
 
@@ -243,7 +249,7 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
             if request.idempotency_key is not None:
                 with self._lock:
                     decision = self._ledger.begin(
-                        connector_id="maybe_sheet",
+                        connector_id=PROVIDER_MAYBE_SHEET,
                         capability=otf.FIELD_SET.to_reference(),
                         target_hash=target_hash,
                         selector_hash=selector_hash,
@@ -274,7 +280,7 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
                 argv.extend(("--idempotency-key", request.idempotency_key))
             argv.append("--verify")
             argv.extend(("--expected-revision", expected_revision))
-            argv.extend(("--output", "json"))
+            argv.extend(("--output", PROVIDER_JSON))
             dispatched = True
             self._call(tuple(argv), operation="formula.set")
             fresh_after = self._read_metadata(uri, request.target.field, table_id)
@@ -309,7 +315,7 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
                     self._completed.move_to_end(operation_hash)
                     while len(self._completed) > _LEDGER_LIMIT:
                         self._completed.popitem(last=False)
-                    self._ledger.succeed(connector_id="maybe_sheet", target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2], operation_hash=operation_hash)
+                    self._ledger.succeed(connector_id=PROVIDER_MAYBE_SHEET, target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2], operation_hash=operation_hash)
             return result
         except _LimitFailure as exc:
             self._finish_ledger(request, context, dispatched)
@@ -354,7 +360,7 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
                     (
                         "mbs", "base-table", "read", "--uri", _mbs_target(uri),
                         "--table-id", table_id, "--limit", str(min(500, max_records)),
-                        "--offset", str(offset), "--output", "json",
+                        "--offset", str(offset), "--output", PROVIDER_JSON,
                     ),
                     operation="base-table.read",
                     limits=request.limits,
@@ -466,7 +472,7 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
             if request.idempotency_key is not None:
                 with self._lock:
                     decision = self._ledger.begin(
-                        connector_id="maybe_sheet",
+                        connector_id=PROVIDER_MAYBE_SHEET,
                         capability=otf.FIELD_RECALCULATE.to_reference(),
                         target_hash=target_hash,
                         selector_hash=selector_hash,
@@ -488,7 +494,7 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
                 argv.extend(("--field-id", request.target.field.field_id or ""))
             argv.append("--verify")
             argv.extend(("--expected-revision", expected_revision))
-            argv.extend(("--output", "json"))
+            argv.extend(("--output", PROVIDER_JSON))
             dispatched = True
             payload = self._call(tuple(argv), operation="formula.recalculate")
             result = self._result(payload)
@@ -523,7 +529,7 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
                     self._completed.move_to_end(operation_hash)
                     while len(self._completed) > _LEDGER_LIMIT:
                         self._completed.popitem(last=False)
-                    self._ledger.succeed(connector_id="maybe_sheet", target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2], operation_hash=operation_hash)
+                    self._ledger.succeed(connector_id=PROVIDER_MAYBE_SHEET, target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2], operation_hash=operation_hash)
             return final
         except _ProviderFailure as exc:
             self._finish_recalc_ledger(request, context, False)
@@ -562,7 +568,7 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
 
     def _formula_read_argv(self, uri, selector: otf.FieldRef) -> tuple[str, ...]:
         option, value = ("--field-id", selector.field_id) if selector.field_id is not None else ("--field", selector.name)
-        return ("mbs", "formula", "read", "--target", _mbs_target(uri), option, value or "", "--output", "json")
+        return ("mbs", "formula", "read", "--target", _mbs_target(uri), option, value or "", "--output", PROVIDER_JSON)
 
     def _call(self, argv: tuple[str, ...], *, operation: str, limits: otf.FormulaResourceLimits | None = None) -> Mapping[str, Any]:
         timeout = self._timeout if limits is None or limits.timeout_seconds is None else limits.timeout_seconds
@@ -836,9 +842,9 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
             return
         with self._lock:
             if dispatched:
-                self._ledger.mark_unknown(connector_id="maybe_sheet", target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2])
+                self._ledger.mark_unknown(connector_id=PROVIDER_MAYBE_SHEET, target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2])
             else:
-                self._ledger.fail_known(connector_id="maybe_sheet", target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2])
+                self._ledger.fail_known(connector_id=PROVIDER_MAYBE_SHEET, target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2])
 
     def _finish_recalc_ledger(
         self,
@@ -851,7 +857,7 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
         with self._lock:
             if dispatched:
                 self._ledger.mark_unknown(
-                    connector_id="maybe_sheet",
+                        connector_id=PROVIDER_MAYBE_SHEET,
                     target_hash=context[0],
                     selector_hash=context[1],
                     idempotency_key=request.idempotency_key,
@@ -859,7 +865,7 @@ class MaybeSheetFieldFormulaExtension(otf.FieldFormulaConnectorExtension):
                 )
             else:
                 self._ledger.fail_known(
-                    connector_id="maybe_sheet",
+                    connector_id=PROVIDER_MAYBE_SHEET,
                     target_hash=context[0],
                     selector_hash=context[1],
                     idempotency_key=request.idempotency_key,

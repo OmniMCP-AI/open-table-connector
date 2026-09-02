@@ -15,7 +15,13 @@ from collections.abc import Mapping
 from typing import Any
 
 import open_table_connector.formulas as otf
-from open_table_connector.contract import ConnectorError, ConnectorErrorCode
+from open_table_connector.contract import (
+    PROVIDER_EXCEL,
+    PROVIDER_JSON,
+    PROVIDER_MAYBE_SHEET,
+    ConnectorError,
+    ConnectorErrorCode,
+)
 
 from .connector import MaybeSheetConnector, ProcessClient, _mbs_target
 
@@ -147,7 +153,7 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
     def bind_grid(self, request: otf.GridFormulaBindRequest) -> otf.FormulaExtensionResult[otf.GridFormulaBinding]:
         try:
             payload = self._call(
-                ("mbs", "worksheet", "list", "--uri", _mbs_target(request.target.grid), "--output", "json"),
+                ("mbs", "worksheet", "list", "--uri", _mbs_target(request.target.grid), "--output", PROVIDER_JSON),
                 operation="worksheet.list",
             )
             result = payload["result"]
@@ -202,7 +208,7 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
         try:
             details = self._binding_details(request.target)
             rectangle = self._validated_range(request.cell_range, request.limits, details.max_cells_per_operation)
-            payload = self._call(self._formula_argv("read", request.target, rectangle) + ("--output", "json"), operation="formula.read", timeout=self._request_timeout(request.limits), limits=request.limits)
+            payload = self._call(self._formula_argv("read", request.target, rectangle) + ("--output", PROVIDER_JSON), operation="formula.read", timeout=self._request_timeout(request.limits), limits=request.limits)
             observation = self._parse_formula_observation(payload["result"], request.target, rectangle, request.limits)
             receipt = otf.FormulaReceiptDetails.for_grid_read(
                 target=request.target.grid.value,
@@ -287,7 +293,7 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
             if request.idempotency_key is not None:
                 with self._lock:
                     decision = self._ledger.begin(
-                        connector_id="maybe_sheet",
+                        connector_id=PROVIDER_MAYBE_SHEET,
                         capability=otf.GRID_SET.to_reference(),
                         target_hash=target_hash,
                         selector_hash=selector_hash,
@@ -306,13 +312,13 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
                     return cached if cached is not None else _unknown("formula mutation replay result is unavailable")
 
             argv = list(self._formula_argv("set", request.target, rectangle))
-            argv.extend(("--expression", request.expression.text, "--language", "excel"))
+            argv.extend(("--expression", request.expression.text, "--language", PROVIDER_EXCEL))
             if request.idempotency_key is not None:
                 argv.extend(("--idempotency-key", request.idempotency_key))
             argv.append("--verify")
             if request.expected_revision is not None:
                 argv.extend(("--expected-revision", request.expected_revision))
-            argv.extend(("--output", "json"))
+            argv.extend(("--output", PROVIDER_JSON))
             dispatched = True
             self._call(tuple(argv), operation="formula.set", timeout=self._request_timeout(request.limits), limits=request.limits)
             readback = self.read_grid(otf.GridFormulaReadRequest(request.target, request.cell_range, request.limits))
@@ -356,7 +362,7 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
                 with self._lock:
                     self._completed[operation_hash] = result
                     self._ledger.succeed(
-                        connector_id="maybe_sheet",
+                        connector_id=PROVIDER_MAYBE_SHEET,
                         target_hash=context[0],
                         selector_hash=context[1],
                         idempotency_key=request.idempotency_key,
@@ -426,7 +432,7 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
             if request.idempotency_key is not None:
                 with self._lock:
                     decision = self._ledger.begin(
-                        connector_id="maybe_sheet",
+                        connector_id=PROVIDER_MAYBE_SHEET,
                         capability=otf.GRID_RECALCULATE.to_reference(),
                         target_hash=target_hash,
                         selector_hash=selector_hash,
@@ -448,7 +454,7 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
             argv.append("--verify")
             if request.expected_revision is not None:
                 argv.extend(("--expected-revision", request.expected_revision))
-            argv.extend(("--output", "json"))
+            argv.extend(("--output", PROVIDER_JSON))
             dispatched = True
             payload = self._call(
                 tuple(argv),
@@ -508,7 +514,7 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
                 with self._lock:
                     self._completed[operation_hash] = result
                     self._ledger.succeed(
-                        connector_id="maybe_sheet",
+                        connector_id=PROVIDER_MAYBE_SHEET,
                         target_hash=context[0],
                         selector_hash=context[1],
                         idempotency_key=request.idempotency_key,
@@ -607,7 +613,7 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
         return (
             "mbs", "excel-worksheet", "read", "--uri", _mbs_target(target.grid), "--gid", target.worksheet.worksheet_id or "",
             "--range", rectangle.start_address if rectangle.start_address == rectangle.end_address else f"{rectangle.start_address}:{rectangle.end_address}",
-            "--value-render-option", "UNFORMATTED_VALUE", "--output", "json",
+            "--value-render-option", "UNFORMATTED_VALUE", "--output", PROVIDER_JSON,
         )
 
     def _parse_formula_observation(self, result: Mapping[str, Any], target: otf.BoundGridFormulaTarget, rectangle: otf.A1Rectangle, limits: otf.FormulaResourceLimits | None) -> otf.GridFormulaObservation:
@@ -944,16 +950,16 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
     def _mark_unknown(self, request: otf.GridFormulaSetRequest, context: tuple[str, str, str] | None) -> None:
         if request.idempotency_key is not None and context is not None:
             with self._lock:
-                self._ledger.mark_unknown(connector_id="maybe_sheet", target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2])
+                self._ledger.mark_unknown(connector_id=PROVIDER_MAYBE_SHEET, target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2])
 
     def _finish_ledger(self, request: otf.GridFormulaSetRequest, context: tuple[str, str, str] | None, *, dispatched: bool) -> None:
         if request.idempotency_key is None or context is None:
             return
         with self._lock:
             if dispatched:
-                self._ledger.mark_unknown(connector_id="maybe_sheet", target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2])
+                self._ledger.mark_unknown(connector_id=PROVIDER_MAYBE_SHEET, target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2])
             else:
-                self._ledger.fail_known(connector_id="maybe_sheet", target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2])
+                self._ledger.fail_known(connector_id=PROVIDER_MAYBE_SHEET, target_hash=context[0], selector_hash=context[1], idempotency_key=request.idempotency_key, payload_hash=context[2])
 
     def _finish_recalculation_ledger(
         self,
@@ -967,7 +973,7 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
         with self._lock:
             if dispatched:
                 self._ledger.mark_unknown(
-                    connector_id="maybe_sheet",
+                    connector_id=PROVIDER_MAYBE_SHEET,
                     target_hash=context[0],
                     selector_hash=context[1],
                     idempotency_key=request.idempotency_key,
@@ -975,7 +981,7 @@ class MaybeSheetGridFormulaExtension(otf.GridFormulaConnectorExtension):
                 )
             else:
                 self._ledger.fail_known(
-                    connector_id="maybe_sheet",
+                    connector_id=PROVIDER_MAYBE_SHEET,
                     target_hash=context[0],
                     selector_hash=context[1],
                     idempotency_key=request.idempotency_key,

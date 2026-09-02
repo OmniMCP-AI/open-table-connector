@@ -713,14 +713,12 @@ class FakeFormulaExtension:
                         },
                     ),
                 )
-        if self._uses_grid_fixture and request.expression == self.grid_data.set_expression:
+        if self.broken.broadcast_copy_fill:
+            self.store.grid_formulas = _broadcast_formulas(request.expression)
+        elif self._uses_grid_fixture and request.expression == self.grid_data.set_expression:
             self.store.grid_formulas = self.grid_data.expected_after_set.formulas
         else:
-            self.store.grid_formulas = (
-                _broadcast_formulas(request.expression)
-                if self.broken.broadcast_copy_fill
-                else _copy_fill_formulas(request.expression)
-            )
+            self.store.grid_formulas = _copy_fill_formulas(request.expression)
         self.store.grid_revision = HASH_B if self.store.grid_revision == HASH_A else HASH_C
         observation = otf.GridFormulaObservation(
             worksheet_id="ws-model",

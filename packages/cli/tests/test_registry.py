@@ -2,7 +2,6 @@ import io
 import sys
 
 import pytest
-
 from open_table_connector.cli.model import CliOptions, parse_endpoint
 from open_table_connector.cli.registry import build_default_registry
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode, TableMode
@@ -140,7 +139,7 @@ def test_feishu_adapter_inspect_uses_options_and_injected_transport() -> None:
 def test_default_registry_exposes_base_mode_for_maybe_sheet() -> None:
     adapters = {adapter.identity.connector_id: adapter for adapter in build_default_registry(env={}).list()}
 
-    assert adapters["maybe_sheet"].modes == (TableMode.BASE,)
+    assert adapters["maybe_sheet"].modes == (TableMode.BASE, TableMode.SHEET)
 
 
 def test_default_registry_local_files_metadata_matches_public_facade_manifest() -> None:

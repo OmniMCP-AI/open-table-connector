@@ -17,7 +17,7 @@ from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
 import open_table_connector.formulas as otf
-from open_table_connector.contract import ConnectorError, ResolveContext
+from open_table_connector.contract import PROVIDER_EXCEL, ConnectorError, ResolveContext
 
 from .excel_connector import ExcelConnector
 
@@ -238,7 +238,7 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
                 if request.idempotency_key is not None:
                     with self._lock:
                         decision = self._ledger.begin(
-                            connector_id="excel",
+                            connector_id=PROVIDER_EXCEL,
                             capability=otf.GRID_SET.to_reference(),
                             target_hash=target_hash,
                             selector_hash=selector_hash,
@@ -352,7 +352,7 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
                         while len(self._completed) > self._completed_limit:
                             self._completed.popitem(last=False)
                         self._ledger.succeed(
-                            connector_id="excel",
+                            connector_id=PROVIDER_EXCEL,
                             target_hash=context[0],
                             selector_hash=context[1],
                             idempotency_key=request.idempotency_key,
@@ -408,7 +408,7 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
         )
 
     def _resolve_path(self, uri) -> tuple[Path, str | None]:
-        if uri.scheme != "excel":
+        if uri.scheme != PROVIDER_EXCEL:
             raise _TargetFailure(
                 otf.FormulaErrorCode.INVALID_TARGET, "Excel Formula requires an excel:// target"
             )
@@ -754,7 +754,7 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
             with self._lock:
                 if dispatched:
                     self._ledger.mark_unknown(
-                        connector_id="excel",
+                        connector_id=PROVIDER_EXCEL,
                         target_hash=context[0],
                         selector_hash=context[1],
                         idempotency_key=request.idempotency_key,
@@ -762,7 +762,7 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
                     )
                 else:
                     self._ledger.fail_known(
-                        connector_id="excel",
+                        connector_id=PROVIDER_EXCEL,
                         target_hash=context[0],
                         selector_hash=context[1],
                         idempotency_key=request.idempotency_key,
@@ -777,7 +777,7 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
         try:
             with self._lock:
                 self._ledger.mark_unknown(
-                    connector_id="excel",
+                    connector_id=PROVIDER_EXCEL,
                     target_hash=context[0],
                     selector_hash=context[1],
                     idempotency_key=request.idempotency_key,
