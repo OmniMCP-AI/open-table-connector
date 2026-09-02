@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from argparse import Namespace
 import subprocess
+from argparse import Namespace
 
 import pyarrow as pa
 import pytest
-
 from open_table_connector.cli.adapters import GoogleSheetsAdapter
 from open_table_connector.cli.model import CliOptions, FormatName
 from open_table_connector.cli.registry import ConnectorRegistry
@@ -20,13 +19,12 @@ from specification.conformance.universal.assertions import (
 )
 from specification.conformance.universal.fixtures import (
     RawProviderFailure,
-    RecordingCliAdapter,
     RecordedRequest,
+    RecordingCliAdapter,
     RecordingSheetsTransport,
     build_cli_registry_bridge,
     run_cli_command,
 )
-
 
 _FIXTURE_SECRET = "fixture-cli-token"
 _TABLE_ROWS = (
@@ -186,6 +184,9 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
                 {"capability_id": "table.read.arrow", "capability_version": "1.0"},
                 {"capability_id": "table.read.polars", "capability_version": "1.0"},
                 {"capability_id": "table.write", "capability_version": "1.0"},
+                {"capability_id": "formula.field.read", "capability_version": "1.0"},
+                {"capability_id": "formula.field.set", "capability_version": "1.0"},
+                {"capability_id": "formula.field.values.read", "capability_version": "1.0"},
             ],
             "modes": ["base"],
         },
@@ -200,6 +201,10 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
                 {"capability_id": "formula.grid.set", "capability_version": "1.0"},
                 {"capability_id": "formula.grid.values.read", "capability_version": "1.0"},
                 {"capability_id": "formula.grid.recalculate", "capability_version": "1.0"},
+                {"capability_id": "formula.field.read", "capability_version": "1.0"},
+                {"capability_id": "formula.field.set", "capability_version": "1.0"},
+                {"capability_id": "formula.field.values.read", "capability_version": "1.0"},
+                {"capability_id": "formula.field.recalculate", "capability_version": "1.0"},
             ],
             "modes": ["base", "sheet"],
         },
