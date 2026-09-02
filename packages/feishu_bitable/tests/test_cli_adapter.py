@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import open_table_connector.formulas as otf
 import polars as pl
 from open_table_connector.contract import (
     CREDENTIAL_TENANT_ACCESS_TOKEN,
@@ -16,6 +17,7 @@ from open_table_connector.contract import (
 from open_table_connector.feishu_bitable import (
     FEISHU_RECORD_ID_FIELD,
     FeishuBitableCliAdapter,
+    FeishuBitableFieldFormulaExtension,
     feishu_bitable_cli_plugin,
 )
 
@@ -84,3 +86,20 @@ def test_feishu_adapter_write_delegates_to_provider_connector() -> None:
         AdapterOptions(if_exists="append"),
     )
     assert transport.calls[0][0] == "POST"
+
+
+def test_feishu_adapter_forwards_formula_extension_over_configured_connector() -> None:
+    transport = RecordingTransport()
+    adapter = FeishuBitableCliAdapter.from_context(
+        ProviderFactoryContext(
+            ProviderConfig(PROVIDER_FEISHU_BITABLE),
+            credentials={CREDENTIAL_TENANT_ACCESS_TOKEN: "tenant-secret"},
+            transports={PROVIDER_FEISHU_BITABLE: transport},
+        )
+    )
+
+    extension = adapter.formula_extension_for()
+
+    assert isinstance(extension, otf.CompositeFormulaConnectorExtension)
+    assert isinstance(extension.field, FeishuBitableFieldFormulaExtension)
+    assert extension.field._connector is adapter.connector

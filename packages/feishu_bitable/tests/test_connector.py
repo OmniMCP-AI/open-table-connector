@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from urllib.error import URLError
+
 import polars as pl
 import pytest
-from urllib.error import URLError
 from open_table_connector.contract import (
     ConnectorError,
     ConnectorErrorCode,

@@ -52,6 +52,15 @@ class FeishuBitableCliAdapter(ConnectorAdapter, WritePreflightAdapter):
     modes = tuple(CAPABILITY_MANIFEST.modes)
     provider_owned_fields = (FEISHU_RECORD_ID_FIELD,)
 
+    def formula_extension_for(self):
+        from open_table_connector.formulas import CompositeFormulaConnectorExtension
+
+        from .formula import FeishuBitableFieldFormulaExtension
+
+        return CompositeFormulaConnectorExtension(
+            field=FeishuBitableFieldFormulaExtension(self.connector),
+        )
+
     def _connector_for_options(self, options: AdapterOptions) -> FeishuBitableConnector:
         token = getattr(options, "token", None)
         if not token:

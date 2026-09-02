@@ -150,6 +150,15 @@ class FeishuBitableConnector(URIResolver, TableInspector, ArrowTableReader, Pola
     identity = CONNECTOR_IDENTITY
     manifest = CAPABILITY_MANIFEST
 
+    def formula_extension_for(self):
+        from open_table_connector.formulas import CompositeFormulaConnectorExtension
+
+        from .formula import FeishuBitableFieldFormulaExtension
+
+        return CompositeFormulaConnectorExtension(
+            field=FeishuBitableFieldFormulaExtension(self),
+        )
+
     def __init__(
         self,
         transport: FeishuTransport | None = None,
