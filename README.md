@@ -253,18 +253,31 @@ and the [conformance suite](specification/conformance/timeseries/README.md).
 Provider adapters are independently pluggable. Configure installed providers
 with a reference-only TOML file selected by `OTC_CONFIG` (or the XDG config
 location); credentials are resolved from environment variables at operation
-time. For a complete example, see [CLI provider configuration](packages/cli/README.md#provider-configuration).
+time.
 
-- [Getting started](docs/getting-started.md) — install, first reads, and a
-  minimal portable temporal query.
-- [User manual](docs/user-manual.md) — CLI reference, URI rules, connector
-  support matrix, temporal API, managed lifecycle, process adapter, and
+Start with [installation](docs/getting-started/installation.md), then follow
+the [quickstart](docs/getting-started/quickstart.md). The full documentation
+is organized as:
+
+- [Getting started](docs/getting-started/) — installation, first project, and
+  first time-series query.
+- [User guide](docs/user-guide/) — concepts, use cases, configuration, add-ons,
+  ingestion, resolution, temporal SQL, time-series storage, evidence, and CLI.
+- [Reference](docs/reference/) — public Python API, configuration fields,
+  errors, and compatibility boundaries.
+- [Operations](docs/operations/) — deployment, security, releases, and
   troubleshooting.
+
+The original [getting-started guide](docs/getting-started.md) and [user
+manual](docs/user-manual.md) remain as compatibility entry points while their
+content is maintained in the structured guide.
 - [OTC Python SDK design](docs/superpowers/specs/2026-08-31-python-sdk-design.md)
   — normalized SDK surface, SQL lanes, table vocabulary, and mode boundaries.
 - [Rust adapter / OTS bridge design](docs/superpowers/specs/2026-08-31-rust-client-ots-bridge-design.md)
   — deferred bridge seam after the Python SDK stabilizes.
-- [Demos and use cases](docs/demos.md) — CSV/JSONL/Excel workflows, portable
-  temporal queries, SQLite/PostgreSQL, and `otc-process`.
+- [Use cases](docs/user-guide/use-cases.md) — three complete OTC workflows for
+  local exports, shared-sheet imports, and bounded temporal analysis.
+- [Additional demos](docs/demos.md) — more CSV/JSONL/Excel, temporal, SQLite,
+  PostgreSQL, and `otc-process` examples.
 - [Portable time-series design](docs/superpowers/specs/2026-08-29-portable-time-series-storage-design.md)
   — normative OTC contract and cross-link to OTS.
