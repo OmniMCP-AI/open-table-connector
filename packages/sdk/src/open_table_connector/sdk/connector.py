@@ -10,6 +10,7 @@ import polars as pl
 import pyarrow as pa
 from open_table_connector.contract import (
     AdapterOptions,
+    AdapterEndpoint,
     ConnectorAdapter,
     NeutralReceipt,
     TableWriteResult,
@@ -193,22 +194,38 @@ class LegacyConnectorAdapterBridge:
 
     def open_table(self, address: object) -> OperationResult[TableBinding]:
         if isinstance(address, DirectTableAddress):
-            endpoint_value = address.uri.value
+            endpoint = parse_adapter_endpoint(address.uri.value)
         elif isinstance(address, str):
-            endpoint_value = address
+            endpoint = parse_adapter_endpoint(address)
+        elif isinstance(address, BaseModeTableAddress):
+            binder = getattr(self._adapter, "bind_base_table", None)
+            if not callable(binder):
+                return _rejected(
+                    "legacy adapters do not support stable base table identifiers",
+                    ErrorCode.UNSUPPORTED_CAPABILITY,
+                )
+            bound_endpoint = binder(
+                parse_adapter_endpoint(address.container.value), address.table_id
+            )
+            if not isinstance(bound_endpoint, AdapterEndpoint):
+                return _rejected(
+                    "legacy adapter returned invalid endpoint for base table",
+                    ErrorCode.PROTOCOL_FAILURE,
+                )
+            endpoint = bound_endpoint
         else:
             return _rejected(
                 "legacy adapters only support direct or path-backed table addresses",
                 ErrorCode.UNSUPPORTED_CAPABILITY,
             )
         inspection = self._adapter.inspect(
-            parse_adapter_endpoint(endpoint_value), AdapterOptions()
+            endpoint, AdapterOptions()
         )
         if not isinstance(inspection, LegacyInspection):
             return _rejected(
                 "legacy adapter returned an invalid inspection", ErrorCode.PROTOCOL_FAILURE
             )
-        read_result = self._adapter.read(parse_adapter_endpoint(endpoint_value), AdapterOptions())
+        read_result = self._adapter.read(endpoint, AdapterOptions())
         frame = ArrowTableCarrier(read_result.table).to_polars()
         return OperationResult(
             value=TableBinding(

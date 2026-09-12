@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import polars as pl
 import pyarrow as pa
@@ -21,6 +21,7 @@ from open_table_connector.contract import (
     AdapterOptions,
     ArrowReadResult,
     ConnectorAdapter,
+    BaseTableBindingAdapter,
     ConnectorError,
     ConnectorErrorCode,
     PluginDescriptor,
@@ -28,6 +29,7 @@ from open_table_connector.contract import (
     ResourceLimits,
     TableInspection,
     TableMode,
+    TableURI,
     TableWriteRequest,
     TableWriteResult,
     WritePreflightAdapter,
@@ -55,7 +57,9 @@ from .process import SubprocessProcessClient, _absolute_executable
 
 
 @dataclass
-class MaybeSheetCliAdapter(ConnectorAdapter, WritePreflightAdapter):
+class MaybeSheetCliAdapter(
+    ConnectorAdapter, WritePreflightAdapter, BaseTableBindingAdapter
+):
     connector: MaybeSheetConnector
     credentials: dict[str, str]
     timeout_seconds: float = 120.0
@@ -82,7 +86,69 @@ class MaybeSheetCliAdapter(ConnectorAdapter, WritePreflightAdapter):
     def from_context(cls, context: ProviderFactoryContext) -> MaybeSheetCliAdapter:
         return _factory(context)
 
-    def _target(self, endpoint: AdapterEndpoint, options: AdapterOptions) -> str:
+    @staticmethod
+    def _maybe_table_id_from_query(query: str) -> str | None:
+        parts = parse_qsl(query, keep_blank_values=True)
+        if len(parts) != 1:
+            return None
+        name, value = parts[0]
+        if name != "table_id":
+            return None
+        value = value.strip()
+        if not value:
+            return None
+        return value
+
+    def _target_selector(self, endpoint: AdapterEndpoint, options: AdapterOptions) -> tuple[str, bool]:
+        if endpoint.uri is None:
+            raise ConnectorError(
+                ConnectorErrorCode.INVALID_URI,
+                "MaybeSheet requires a URI endpoint",
+                {"endpoint": endpoint.raw},
+            )
+        if options.target:
+            return options.target, False
+        uri = endpoint.uri
+        if uri.scheme == SCHEME_HTTPS:
+            raise ConnectorError(
+                ConnectorErrorCode.INVALID_URI,
+                "MaybeSheet HTTPS document URLs require an explicit target",
+                {"option": "target"},
+            )
+        parsed = urlsplit(uri.value)
+        if uri.scheme == SCHEME_MAYBE and parsed.query:
+            table_id = self._maybe_table_id_from_query(parsed.query)
+            if table_id is None:
+                raise ConnectorError(
+                    ConnectorErrorCode.INVALID_URI,
+                    "MaybeSheet URI must use maybe://DOCUMENT/TABLE_ID",
+                    {"scheme": SCHEME_MAYBE},
+                )
+            if parsed.path.strip("/"):
+                raise ConnectorError(
+                    ConnectorErrorCode.INVALID_URI,
+                    "MaybeSheet URI must use maybe://DOCUMENT/TABLE_ID",
+                    {"scheme": SCHEME_MAYBE},
+                )
+            return table_id, True
+        target = parsed.path.strip("/")
+        if uri.scheme == SCHEME_MAYBE and (
+            not parsed.netloc or not target or "/" in target or parsed.fragment
+        ):
+            raise ConnectorError(
+                ConnectorErrorCode.INVALID_URI,
+                "MaybeSheet URI must use maybe://DOCUMENT/TARGET",
+                {"scheme": SCHEME_MAYBE},
+            )
+        if not target:
+            raise ConnectorError(
+                ConnectorErrorCode.INVALID_URI,
+                "MaybeSheet URI requires an explicit target",
+                {"option": "target"},
+            )
+        return target, False
+
+    def bind_base_table(self, endpoint: AdapterEndpoint, table_id: str) -> AdapterEndpoint:
         if endpoint.uri is None:
             raise ConnectorError(
                 ConnectorErrorCode.INVALID_URI,
@@ -90,46 +156,41 @@ class MaybeSheetCliAdapter(ConnectorAdapter, WritePreflightAdapter):
                 {"endpoint": endpoint.raw},
             )
         uri = endpoint.uri
-        if uri.scheme == SCHEME_HTTPS:
-            if options.target:
-                return options.target
+        if uri.scheme != SCHEME_MAYBE:
             raise ConnectorError(
-                ConnectorErrorCode.INVALID_URI,
-                "MaybeSheet HTTPS document URLs require an explicit target",
-                {"option": "target"},
+                ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+                "MaybeSheet base table binding requires a maybe:// URL",
+                {"scheme": uri.scheme},
             )
         parsed = urlsplit(uri.value)
-        target = parsed.path.strip("/")
-        if uri.scheme == SCHEME_MAYBE and (
-            not parsed.netloc or not target or "/" in target or parsed.query or parsed.fragment
+        if (
+            parsed.path.strip("/") or parsed.query or parsed.fragment
         ):
             raise ConnectorError(
                 ConnectorErrorCode.INVALID_URI,
-                "MaybeSheet URI must use maybe://DOCUMENT/TARGET",
-                {"scheme": SCHEME_MAYBE},
-            )
-        if options.target:
-            return options.target
-        if not target:
-            raise ConnectorError(
-                ConnectorErrorCode.INVALID_URI,
-                "MaybeSheet URI requires an explicit target",
-                {"option": "target"},
-            )
-        return target
-
-    def _request(self, endpoint: AdapterEndpoint, options: AdapterOptions) -> MaybeSheetReadRequest:
-        if endpoint.uri is None:
-            raise ConnectorError(
-                ConnectorErrorCode.INVALID_URI,
-                "MaybeSheet requires a URI endpoint",
+                "MaybeSheet base table URI must be maybe://DOCUMENT",
                 {"endpoint": endpoint.raw},
             )
+        bound_uri = TableURI(
+            urlunsplit(
+                (
+                    parsed.scheme,
+                    parsed.netloc,
+                    parsed.path,
+                    urlencode({"table_id": table_id}),
+                    "",
+                )
+            )
+        )
+        return AdapterEndpoint(raw=bound_uri.value, uri=bound_uri)
+
+    def _request(self, endpoint: AdapterEndpoint, options: AdapterOptions) -> MaybeSheetReadRequest:
+        target, target_is_id = self._target_selector(endpoint, options)
         return MaybeSheetReadRequest(
-            endpoint.uri,
-            TableMode.BASE,
-            self._target(endpoint, options),
-            ResourceLimits(
+            uri=endpoint.uri,
+            mode=TableMode.BASE,
+            target=target,
+            resource_limits=ResourceLimits(
                 max_rows=options.limit,
                 timeout_seconds=(
                     int(self.timeout_seconds)
@@ -137,7 +198,8 @@ class MaybeSheetCliAdapter(ConnectorAdapter, WritePreflightAdapter):
                     else math.ceil(options.timeout)
                 ),
             ),
-            self._credentials_for_options(options),
+            credentials=self._credentials_for_options(options),
+            target_is_id=target_is_id,
         )
 
     def _credentials_for_options(self, options: AdapterOptions) -> dict[str, str]:
@@ -159,7 +221,7 @@ class MaybeSheetCliAdapter(ConnectorAdapter, WritePreflightAdapter):
                 "MaybeSheet table writes support append only",
                 {"if_exists": options.if_exists},
             )
-        self._target(endpoint, options)
+        _ = self._target_selector(endpoint, options)
 
     def write(
         self, endpoint: AdapterEndpoint, table: pa.Table, options: AdapterOptions
@@ -174,7 +236,7 @@ class MaybeSheetCliAdapter(ConnectorAdapter, WritePreflightAdapter):
             endpoint.uri,
             pl.from_arrow(table),
             options.if_exists,
-            self._target(endpoint, options),
+            self._target_selector(endpoint, options)[0],
         )
         return self.connector.write(request, credentials=self._credentials_for_options(options))
 

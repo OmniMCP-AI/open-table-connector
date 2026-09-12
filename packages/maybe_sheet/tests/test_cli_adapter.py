@@ -60,6 +60,28 @@ def test_maybe_plugin_descriptor_declares_document_route() -> None:
     assert descriptor.hosts == (HOST_MAYBE,)
 
 
+def test_maybe_read_uses_table_id_for_stable_table_identifier() -> None:
+    process = RecordingProcess()
+    adapter = MaybeSheetCliAdapter.from_context(
+        ProviderFactoryContext(
+            ProviderConfig(PROVIDER_MAYBE_SHEET),
+            credentials={},
+            transports={PROVIDER_MAYBE_SHEET: process},
+        )
+    )
+    adapter.read(parse_adapter_endpoint("maybe://doc?table_id=tbl_orders"), AdapterOptions())
+    argv = process.calls[0][0]
+    assert argv == (
+        "mbs",
+        "db-table",
+        "read",
+        "--uri",
+        "https://www.maybe.ai/docs/spreadsheets/d/doc",
+        "--table-id",
+        "tbl_orders",
+    )
+
+
 def test_maybe_write_uses_table_insert_and_scoped_credentials() -> None:
     process = RecordingProcess()
     adapter = MaybeSheetCliAdapter.from_context(

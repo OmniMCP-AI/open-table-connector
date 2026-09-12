@@ -64,12 +64,15 @@ class MaybeSheetReadRequest:
     target: str
     resource_limits: ResourceLimits = field(default_factory=ResourceLimits)
     credentials: Mapping[str, str] = field(default_factory=dict)
+    target_is_id: bool = False
 
     def __post_init__(self) -> None:
         if self.mode not in {TableMode.BASE, TableMode.SHEET}:
             raise ValueError("MaybeSheet mode must be base or sheet")
         if not self.target.strip():
             raise ValueError("MaybeSheet target is required")
+        if not isinstance(self.target_is_id, bool):
+            raise TypeError("MaybeSheet target_is_id must be a bool")
         object.__setattr__(self, "credentials", dict(self.credentials))
 
 
@@ -290,7 +293,11 @@ class MaybeSheetConnector:
 
     def _read(self, request: MaybeSheetReadRequest):
         verb = "db-table" if request.mode is TableMode.BASE else "excel-worksheet"
-        target_option = "--name" if request.mode is TableMode.BASE else "--worksheet-name"
+        target_option = (
+            "--table-id" if request.mode is TableMode.BASE and request.target_is_id else "--name"
+            if request.mode is TableMode.BASE
+            else "--worksheet-name"
+        )
         argv: tuple[str, ...] = (
             "mbs",
             verb,

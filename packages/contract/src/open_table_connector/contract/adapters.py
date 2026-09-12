@@ -207,6 +207,13 @@ class ConnectorAdapter(Protocol):
 
 
 @runtime_checkable
+class BaseTableBindingAdapter(Protocol):
+    def bind_base_table(
+        self, endpoint: AdapterEndpoint, table_id: str
+    ) -> AdapterEndpoint: ...
+
+
+@runtime_checkable
 class WritePreflightAdapter(Protocol):
     def preflight_write(self, endpoint: AdapterEndpoint, options: AdapterOptions) -> None: ...
 
@@ -265,6 +272,7 @@ __all__ = [
     "ConfigScalar",
     "ConfigValue",
     "ConnectorAdapter",
+    "BaseTableBindingAdapter",
     "ProviderConfig",
     "ProviderFactoryContext",
     "WritePreflightAdapter",

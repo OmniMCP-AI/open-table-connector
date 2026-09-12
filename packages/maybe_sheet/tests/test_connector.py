@@ -102,6 +102,30 @@ def test_maybe_sheet_has_explicit_base_and_sheet_argv_and_receipts() -> None:
     assert result.receipt.vendor_receipt_ref == "safe-ref"
 
 
+def test_maybe_sheet_read_uses_table_id_for_base_selector() -> None:
+    process = Process()
+    request = MaybeSheetReadRequest(
+        TableURI("maybe://doc?table_id=tbl-orders"),
+        TableMode.BASE,
+        "tbl-orders",
+        target_is_id=True,
+    )
+    connector = MaybeSheetConnector(process)
+
+    result = connector.read_polars(request)
+
+    assert process.calls[0][0] == (
+        "mbs",
+        "db-table",
+        "read",
+        "--uri",
+        "https://www.maybe.ai/docs/spreadsheets/d/doc",
+        "--table-id",
+        "tbl-orders",
+    )
+    assert result.frame.to_dicts() == [{"id": "1", "amount": "2.50"}]
+
+
 def test_maybe_sheet_reads_values_from_mbs_result_envelope() -> None:
     process = ResultEnvelopeProcess(
         {
