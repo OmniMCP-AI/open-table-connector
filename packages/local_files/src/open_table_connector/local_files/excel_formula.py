@@ -110,9 +110,9 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
         self._bindings: dict[tuple[str, str], str] = {}
         self._ledger = otf.FormulaIdempotencyLedger(limit=_DEFAULT_LEDGER_LIMIT)
         self._completed_limit = _COMPLETED_CACHE_LIMIT
-        self._completed: OrderedDict[
-            str, otf.FormulaExtensionResult[otf.FormulaMutation]
-        ] = OrderedDict()
+        self._completed: OrderedDict[str, otf.FormulaExtensionResult[otf.FormulaMutation]] = (
+            OrderedDict()
+        )
         self._lock = threading.RLock()
 
     def bind_grid(
@@ -648,7 +648,29 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
                 worksheet_part = self._worksheet_archive_name(before, worksheet_name)
                 allowed = {"xl/workbook.xml", worksheet_part}
                 for name in before_names - allowed:
-                    if before.read(name) != after.read(name):
+                    old, new = before.read(name), after.read(name)
+                    if name == "docProps/core.xml":
+                        # openpyxl updates only this timestamp on every save. Compare
+                        # all other metadata structurally, including attributes.
+                        def metadata(data):
+                            root = ElementTree.fromstring(data)
+                            modified = root.find("{http://purl.org/dc/terms/}modified")
+                            if modified is not None:
+                                root.remove(modified)
+
+                            def node(element):
+                                return (
+                                    element.tag,
+                                    sorted(element.attrib.items()),
+                                    element.text,
+                                    tuple(node(child) for child in element),
+                                )
+
+                            return node(root)
+
+                        if metadata(old) != metadata(new):
+                            raise _ProtocolFailure
+                    elif old != new:
                         raise _ProtocolFailure
         except (BadZipFile, KeyError, OSError) as exc:
             raise _ProtocolFailure from exc

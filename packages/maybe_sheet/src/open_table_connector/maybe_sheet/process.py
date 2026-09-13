@@ -65,7 +65,9 @@ class SubprocessProcessClient:
     ) -> Mapping[str, Any]:
         effective_timeout = self.timeout_seconds if timeout is None else timeout
         command = tuple(argv)
-        if not command or command[0] != self.binary:
+        if command and command[0] == "mbs":
+            command = (self.binary, *command[1:])
+        elif not command or command[0] != self.binary:
             command = (self.binary, *command)
         env = {str(key): str(value) for key, value in self.environment.items()}
         env.update(_credential_environment(credentials or {}))

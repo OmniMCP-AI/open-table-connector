@@ -245,16 +245,11 @@ class LocalFilesConnector(
             ),
         )
 
-    def workbook_create(self, uri: str, *, profile: str = "literal-artifact/1.0", limits=None):
-        """Create a workbook session through the unified spreadsheet surface."""
-        from .spreadsheet_workbook import WorkbookSession
+    def spreadsheet_provider(self):
+        """Return the neutral workbook provider; SDK owns resource views."""
+        from .spreadsheet_workbook import LocalSpreadsheetProvider
 
-        return WorkbookSession.create(uri, profile=profile, limits=limits)
-
-    def workbook_open(self, uri: str, *, limits=None):
-        from .spreadsheet_workbook import WorkbookSession
-
-        return WorkbookSession.open(uri, limits=limits)
+        return LocalSpreadsheetProvider()
 
 
 __all__ = ["LocalFilesConnector", "LocalReadOptions", "LocalTableReadRequest"]

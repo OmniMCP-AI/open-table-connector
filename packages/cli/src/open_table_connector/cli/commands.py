@@ -106,12 +106,17 @@ def _wire_item(value: Any) -> Any:
 
 def _emit_json(payload: Any, out: TextIO) -> None:
     import json
+
     out.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
 
 
 def run_command(args: Namespace, registry: ConnectorRegistry, out: TextIO, err: TextIO) -> int:
     try:
         command = getattr(args, "command", None)
+        if command == "spreadsheet":
+            from .spreadsheet_commands import run_spreadsheet
+
+            return run_spreadsheet(args, registry, out, err)
         if command == "list":
             _emit_list(registry, out, _format(args, "output_format", FormatName.JSONL))
             return 0

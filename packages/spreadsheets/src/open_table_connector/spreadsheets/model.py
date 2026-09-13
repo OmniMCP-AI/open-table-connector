@@ -97,7 +97,7 @@ class RangeRef:
         end = match.group(2) or start
         start_row, start_column = _coordinate(start)
         end_row, end_column = _coordinate(end)
-        if (end_row, end_column) < (start_row, start_column):
+        if end_row < start_row or end_column < start_column:
             raise ValueError("range end must not precede its start")
         object.__setattr__(self, "address", value)
 
@@ -163,12 +163,18 @@ class ImageSpec:
         anchor = _text(self.anchor, "anchor").upper()
         if _A1.fullmatch(anchor) is None:
             raise ValueError("image anchor must be one A1 cell")
+        _coordinate(anchor)
         object.__setattr__(self, "mime_type", mime)
         object.__setattr__(self, "anchor", anchor)
         object.__setattr__(self, "sha256", hashlib.sha256(self.content).hexdigest())
 
     def to_wire(self) -> dict[str, Any]:
-        return {"mime_type": self.mime_type, "sha256": self.sha256, "anchor": self.anchor, "byte_count": len(self.content)}
+        return {
+            "mime_type": self.mime_type,
+            "sha256": self.sha256,
+            "anchor": self.anchor,
+            "byte_count": len(self.content),
+        }
 
 
 __all__ = ["CellFormat", "CellStyle", "ImageSpec", "RangeRef", "SpreadsheetTarget", "WorksheetRef"]

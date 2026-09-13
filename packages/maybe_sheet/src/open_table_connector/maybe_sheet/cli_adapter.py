@@ -256,6 +256,11 @@ class MaybeSheetCliAdapter(
         )
         return self.connector.write(request, credentials=self._credentials_for_options(options))
 
+    def spreadsheet_provider(self):
+        from .spreadsheet import MaybeSpreadsheetProvider
+
+        return MaybeSpreadsheetProvider(self.connector, self.credentials, self.timeout_seconds)
+
     def formula_extension_for(self) -> CompositeFormulaConnectorExtension:
         return CompositeFormulaConnectorExtension(
             grid=MaybeSheetGridFormulaExtension(

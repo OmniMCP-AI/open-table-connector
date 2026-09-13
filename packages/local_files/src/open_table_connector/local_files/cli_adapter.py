@@ -290,10 +290,7 @@ def _read_markdown_table(text: str, source: Endpoint) -> pa.Table:
 
 def _rows_to_table(rows: list[dict[str, object | None]], columns: Iterable[str]) -> pa.Table:
     ordered_columns = list(columns)
-    data = {
-        name: [row.get(name) for row in rows]
-        for name in ordered_columns
-    }
+    data = {name: [row.get(name) for row in rows] for name in ordered_columns}
     return pa.table(data)
 
 
@@ -551,12 +548,11 @@ class LocalFilesCliAdapter(_LocalCliAdapter):
     schemes = (SCHEME_FILE, PROVIDER_JSON, PROVIDER_JSONL)
     hosts: tuple[str, ...] = ()
     modes = (TableMode.SHEET,)
-    capabilities = (
-        CapabilityIdentity("uri.resolve", "1.0"),
-        CapabilityIdentity("table.inspect", "1.0"),
-        _LOCAL_READ_CAPABILITY,
-        CapabilityIdentity("table.read.polars", "1.0"),
-    )
+
+    def spreadsheet_provider(self):
+        return self.connector.spreadsheet_provider()
+
+    capabilities = tuple(LocalFilesConnector.manifest.capabilities)
 
     def _format(
         self, endpoint: Endpoint, options: AdapterOptions, *, output: bool = False
@@ -581,9 +577,7 @@ class LocalFilesCliAdapter(_LocalCliAdapter):
         table = _limited_table(read_local(endpoint, self._format(endpoint, options)), options)
         return ArrowReadResult(
             table,
-            _local_receipt(
-                endpoint, table, _LOCAL_READ_CAPABILITY, connector=self.identity
-            ),
+            _local_receipt(endpoint, table, _LOCAL_READ_CAPABILITY, connector=self.identity),
         )
 
     def inspect(self, endpoint: Endpoint, options: AdapterOptions) -> TableInspection:

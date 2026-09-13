@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Any, Generic, TypeVar
 
 from open_table_connector.contract import TableURI
@@ -49,6 +50,14 @@ def _safe_json(value: Any, *, key: str | None = None) -> Any:
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return [_safe_json(item) for item in value]
     raise ValueError("safe details must contain JSON-compatible values")
+
+
+def _freeze_details(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze_details(item) for key, item in value.items()})
+    if isinstance(value, (tuple, list)):
+        return tuple(_freeze_details(item) for item in value)
+    return value
 
 
 class _RedactedType:
@@ -168,14 +177,14 @@ class OperationWarning:
         object.__setattr__(
             self,
             "safe_details",
-            _safe_json(dict(self.safe_details or {})),
+            _freeze_details(_safe_json(dict(self.safe_details or {}))),
         )
 
     def to_wire(self) -> dict[str, Any]:
         return {
             "code": self.code,
             "message": self.message,
-            "safe_details": dict(self.safe_details),
+            "safe_details": _safe_json(self.safe_details),
         }
 
     @classmethod
@@ -218,7 +227,7 @@ class Receipt:
             object.__setattr__(self, "safe_target", TableURI(self.safe_target))
         if self.mode is not None:
             object.__setattr__(self, "mode", TableMode.from_wire(str(self.mode)))
-        object.__setattr__(self, "details", _safe_json(dict(self.details or {})))
+        object.__setattr__(self, "details", _freeze_details(_safe_json(dict(self.details or {}))))
 
     def to_wire(self) -> dict[str, Any]:
         return {
@@ -228,7 +237,7 @@ class Receipt:
             "capability": self.capability,
             "safe_target": None if self.safe_target is None else self.safe_target.to_wire(),
             "mode": None if self.mode is None else self.mode.to_wire(),
-            "details": dict(self.details),
+            "details": _safe_json(self.details),
         }
 
     @classmethod
@@ -269,7 +278,7 @@ class ErrorInfo:
         object.__setattr__(
             self,
             "safe_details",
-            _safe_json(dict(self.safe_details or {})),
+            _freeze_details(_safe_json(dict(self.safe_details or {}))),
         )
         if self.reconciliation is not None and not isinstance(
             self.reconciliation, ReconciliationReference
@@ -280,7 +289,7 @@ class ErrorInfo:
         return {
             "code": self.code.value,
             "message": self.message,
-            "safe_details": dict(self.safe_details),
+            "safe_details": _safe_json(self.safe_details),
             "reconciliation": None
             if self.reconciliation is None
             else self.reconciliation.to_wire(),

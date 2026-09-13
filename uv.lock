@@ -411,7 +411,6 @@ source = { editable = "packages/maybe_sheet" }
 dependencies = [
     { name = "open-table-connector-contract" },
     { name = "open-table-connector-formulas" },
-    { name = "open-table-connector-sdk" },
     { name = "open-table-connector-spreadsheets" },
     { name = "open-table-connector-timeseries" },
     { name = "polars" },
@@ -422,7 +421,6 @@ dependencies = [
 requires-dist = [
     { name = "open-table-connector-contract", editable = "packages/contract" },
     { name = "open-table-connector-formulas", editable = "packages/formulas" },
-    { name = "open-table-connector-sdk", editable = "packages/sdk" },
     { name = "open-table-connector-spreadsheets", editable = "packages/spreadsheets" },
     { name = "open-table-connector-timeseries", editable = "packages/timeseries" },
     { name = "polars", specifier = ">=1,<2" },

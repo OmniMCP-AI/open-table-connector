@@ -71,7 +71,11 @@ def _workbook(path: Path) -> Path:
 
 
 def _bound(
-    extension: ExcelFormulaExtension, path: Path, sheet: str = "Model", *, include_fragment: bool = True
+    extension: ExcelFormulaExtension,
+    path: Path,
+    sheet: str = "Model",
+    *,
+    include_fragment: bool = True,
 ) -> otf.BoundGridFormulaTarget:
     result = extension.bind_grid(
         otf.GridFormulaBindRequest(_target(path, sheet, include_fragment=include_fragment))
@@ -210,8 +214,7 @@ def test_set_normalizes_absolute_selector_origin_without_changing_formula_absolu
     assert result.outcome is otf.FormulaOutcome.SUCCEEDED
     assert result.value is not None
     assert [
-        (cell.address, cell.expression.text)
-        for cell in result.value.formula_observation.formulas
+        (cell.address, cell.expression.text) for cell in result.value.formula_observation.formulas
     ] == [
         ("B2", "=A2+$D$1"),
         ("C2", "=B2+$D$1"),
@@ -446,3 +449,29 @@ def test_completed_result_cache_is_bounded(tmp_path: Path, monkeypatch: pytest.M
         assert result.outcome is otf.FormulaOutcome.SUCCEEDED
 
     assert len(extension._completed) == 2
+
+
+def test_formula_preservation_allows_only_modified_timestamp_change(tmp_path):
+    from io import BytesIO
+    from xml.etree import ElementTree
+    from zipfile import ZIP_DEFLATED
+
+    path = _workbook(tmp_path / "metadata.xlsx")
+    original = path.read_bytes()
+    buffer = BytesIO()
+    with ZipFile(BytesIO(original)) as before, ZipFile(buffer, "w", ZIP_DEFLATED) as after:
+        for name in before.namelist():
+            content = before.read(name)
+            if name == "docProps/core.xml":
+                root = ElementTree.fromstring(content)
+                root.find("{http://purl.org/dc/terms/}modified").text = "2001-01-01T00:00:00Z"
+                content = ElementTree.tostring(root)
+            after.writestr(name, content)
+    path.write_bytes(buffer.getvalue())
+    extension = ExcelFormulaExtension(ExcelConnector())
+    result = extension.set_grid(
+        otf.GridFormulaSetRequest(
+            _bound(extension, path), "B2", otf.FormulaExpression("=1", otf.EXCEL_A1)
+        )
+    )
+    assert result.outcome is otf.FormulaOutcome.SUCCEEDED

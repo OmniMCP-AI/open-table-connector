@@ -132,17 +132,10 @@ def _mbs_target(uri: TableURI) -> str:
 class MaybeSheetConnector:
     identity = CONNECTOR_IDENTITY
 
-    def workbook_create(self, uri: str, *, profile: str = "general/1.0", limits=None):
-        from open_table_connector.sdk.workbook import RemoteWorkbookSession
+    def spreadsheet_provider(self):
+        from .spreadsheet import MaybeSpreadsheetProvider
 
-        if profile != "general/1.0":
-            raise ConnectorError(ConnectorErrorCode.UNSUPPORTED_CAPABILITY, "MaybeSheet does not provide literal-artifact creation", {})
-        return RemoteWorkbookSession(self, TableURI(uri), profile)
-
-    def workbook_open(self, uri: str, *, limits=None):
-        from open_table_connector.sdk.workbook import RemoteWorkbookSession
-
-        return RemoteWorkbookSession(self, TableURI(uri))
+        return MaybeSpreadsheetProvider(self)
 
     def formula_extension_for(self):
         from open_table_connector.formulas import CompositeFormulaConnectorExtension

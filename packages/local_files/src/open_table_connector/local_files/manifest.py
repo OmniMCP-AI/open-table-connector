@@ -5,6 +5,7 @@ from open_table_connector.contract import (
     PROVIDER_JSON,
     PROVIDER_JSONL,
     SCHEME_FILE,
+    CapabilityIdentity,
     CapabilityManifest,
     TableMode,
 )
@@ -40,9 +41,33 @@ def capability_manifest(
     )
 
 
+SPREADSHEET_CAPABILITIES = tuple(
+    CapabilityIdentity("spreadsheet." + operation, "1.0")
+    for operation in (
+        "workbook.inspect",
+        "workbook.write",
+        "workbook.verify",
+        "worksheet.list",
+        "worksheet.create",
+        "worksheet.rename",
+        "worksheet.delete",
+        "worksheet.move",
+        "range.read",
+        "range.write",
+        "range.clear",
+        "range.sort",
+        "range.style",
+        "range.format",
+        "range.merge",
+        "range.unmerge",
+        "formula.set",
+    )
+)
+
 CAPABILITY_MANIFEST = capability_manifest(
     connector=CONNECTOR_IDENTITY,
     uri_schemes=(SCHEME_FILE, PROVIDER_JSON, PROVIDER_JSONL),
+    extra_capabilities=SPREADSHEET_CAPABILITIES,
 )
 
 EXCEL_CAPABILITY_MANIFEST = capability_manifest(

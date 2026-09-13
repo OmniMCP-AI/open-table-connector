@@ -10,6 +10,8 @@ class ArtifactLimits:
     sheets: int = 128
     cells: int = 250_000
     text_bytes: int = 64 * 1024 * 1024
+    member_bytes: int = 128 * 1024 * 1024
+    image_pixels: int = 40_000_000
     images: int = 128
     image_bytes: int = 16 * 1024 * 1024
     total_image_bytes: int = 128 * 1024 * 1024

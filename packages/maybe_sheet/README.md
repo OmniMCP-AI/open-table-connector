@@ -89,3 +89,42 @@ remain value-only and do not activate formulas.
 The bound Formula view can infer Maybe's dialect for string expressions:
 `grid.set("D2", "=B2+$C$1")`. Use an explicit `FormulaExpression` when sharing
 plans or when a target supports more than one dialect.
+
+## Buffered workbook editing
+
+The provider's neutral `spreadsheet_provider()` binding uses the existing process
+transport, explicitly requests mbs JSON contract 1.0, and accepts the bounded
+compatibility envelopes still emitted by installed mbs 0.28.4. Workbook creation
+and edits wait for `write()`. Opening and preflight may discover sheet identities.
+A new remote workbook uses the requested document component as its title and
+returns its actual document identity at commit; the backend creates an initial
+`Sheet1`. Multi-command changes require `allow_partial=True`. Timeout and malformed
+post-dispatch evidence retain known receipts and created IDs and require rebind.
+There is no advertised CAS, retry, idempotency, or cross-command transaction.
+
+Supported recorded surfaces are sheet list/create/rename/delete/move, bounded
+range read/write/clear, patch style/format, merges, formulas, row heights in points,
+column widths in pixels, and PNG/JPEG insertion/list/read/delete. The shared
+`worksheet.config(row_heights={1: 24}, column_widths_pixels={"A": 150})` compiles
+into separate native commands. Column widths in Excel character units and style
+reset are rejected. Remote verification is an observation, not XLSX verification.
+
+Current mbs RAW writes cannot preserve typed numbers, booleans, or literal empty
+strings: live reads showed numeric input stored as text and empty input as blank.
+The provider therefore rejects those inputs before mutation. Nonempty literal
+strings (including `=text`) and blank `None` cells are accepted. Dates are rejected.
+These required baseline gaps block full Maybe spreadsheet acceptance.
+
+Sorting requires partial opt-in: it reads a bounded text rectangle, preserves equal
+key order, optionally excludes a header, and places blanks last before one RAW
+write. Typed cells and formulas are rejected because the provider cannot preserve
+them through that path. Concurrent remote edits are not excluded. Merging rejects
+observed nonempty interior values; external edits can still race that observation.
+
+Recorded tests: `tests/test_spreadsheet.py`, including captured worksheet envelopes
+in `tests/fixtures/spreadsheet-mbs-0.28.4.json`. The separate opt-in disposable live
+gate is `OTC_TEST_MBS_ENABLED=1 uv run --all-packages python -m pytest
+packages/maybe_sheet/tests/test_spreadsheet.py::test_live_disposable_sheet_contract
+-q --tb=no`. It requires `MAYBEAI_API_TOKEN` and soft-deletes its owned workbook.
+The readiness matrix records the actual live result; recorded success alone does
+not establish backend acceptance.

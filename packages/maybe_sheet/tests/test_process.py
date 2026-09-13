@@ -14,9 +14,9 @@ def test_process_environment_is_explicit_and_scoped(monkeypatch) -> None:
 
     monkeypatch.setenv("UNRELATED_HOST_SENTINEL", "must-not-leak")
     monkeypatch.setattr("open_table_connector.maybe_sheet.process.subprocess.run", fake_run)
-    result = SubprocessProcessClient(
-        binary="mbs", environment={"MAYBE_SHEET_REGION": "test"}
-    ).run(("mbs", "read"), credentials={"access_token": "secret"})
+    result = SubprocessProcessClient(binary="mbs", environment={"MAYBE_SHEET_REGION": "test"}).run(
+        ("mbs", "read"), credentials={"access_token": "secret"}
+    )
 
     assert result == {"ok": True}
     child_environment = captured["env"]
@@ -24,3 +24,15 @@ def test_process_environment_is_explicit_and_scoped(monkeypatch) -> None:
         "MAYBE_SHEET_REGION": "test",
         "MAYBEAI_API_TOKEN": "secret",
     }
+
+
+def test_absolute_binary_replaces_canonical_argv_program(monkeypatch):
+    captured = []
+
+    def fake_run(argv, **kwargs):
+        captured.append(argv)
+        return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+
+    monkeypatch.setattr("open_table_connector.maybe_sheet.process.subprocess.run", fake_run)
+    SubprocessProcessClient(binary="/opt/bin/mbs").run(("mbs", "worksheet", "list"))
+    assert captured == [["/opt/bin/mbs", "worksheet", "list"]]

@@ -81,13 +81,13 @@ class ConnectorError(RuntimeError):
     def authentication(
         cls, message: str, *, safe_details: Mapping[str, Any] | None = None
     ) -> ConnectorError:
-        return cls(ConnectorErrorCode.AUTHENTICATION, message, safe_details)
+        return cls(ConnectorErrorCode.AUTHENTICATION, message, safe_details or {})
 
     @classmethod
     def configuration(
         cls, message: str, *, safe_details: Mapping[str, Any] | None = None
     ) -> ConnectorError:
-        return cls(ConnectorErrorCode.CONFIGURATION, message, safe_details)
+        return cls(ConnectorErrorCode.CONFIGURATION, message, safe_details or {})
 
     def to_wire(self) -> dict[str, Any]:
         return {

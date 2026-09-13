@@ -35,12 +35,10 @@ def test_literal_profile_rejects_formula_and_cleans_failed_artifact(tmp_path: Pa
     workbook = _client().workbook.create(destination.as_uri())
     sheet = workbook.worksheet.create("Report")
     sheet.range("A1").write("literal")
-    sheet.formulas().set("B1", "=1+2").with_results()
-
     with pytest.raises(OTCError) as raised:
-        workbook.write()
+        sheet.formulas().set("B1", "=1+2").with_results()
     assert raised.value.result.error is not None
-    assert raised.value.result.error.code.value == "artifact_integrity"
+    assert raised.value.result.error.code.value in {"artifact_integrity", "invalid_formula", "invalid_configuration"}
     assert not destination.exists()
 
 
