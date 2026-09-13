@@ -45,12 +45,6 @@ from open_table_connector.contract.fingerprints import (
     arrow_schema_fingerprint,
     operation_identity,
 )
-from open_table_connector.spreadsheets import (
-    SPREADSHEET_RANGE_READ,
-    SPREADSHEET_RANGE_WRITE,
-    SPREADSHEET_WORKBOOK_INSPECT,
-    SPREADSHEET_WORKSHEET_LIST,
-)
 
 CONNECTOR_IDENTITY = ConnectorIdentity(PROVIDER_GOOGLE_SHEETS, "0.1.0", "1.0")
 URI_RESOLVER_CAPABILITY = CapabilityIdentity("uri.resolve", "1.0")
@@ -68,10 +62,6 @@ CAPABILITY_MANIFEST = CapabilityManifest(
         TABLE_READ_ARROW_CAPABILITY,
         TABLE_READ_POLARS_CAPABILITY,
         TABLE_WRITE_CAPABILITY,
-        SPREADSHEET_WORKBOOK_INSPECT,
-        SPREADSHEET_WORKSHEET_LIST,
-        SPREADSHEET_RANGE_READ,
-        SPREADSHEET_RANGE_WRITE,
         otf.GRID_READ,
         otf.GRID_SET,
         otf.GRID_VALUES_READ,

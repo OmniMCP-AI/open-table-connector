@@ -17,6 +17,7 @@ from open_table_connector.contract import (
     ArrowReadResult,
     ArrowTableReader,
     BaseConvention,
+    CapabilityIdentity,
     InspectRequest,
     PolarsReadResult,
     PolarsTableReader,
@@ -30,6 +31,7 @@ from open_table_connector.contract import (
     URIResolver,
 )
 from open_table_connector.contract.errors import ConnectorError, ConnectorErrorCode
+from open_table_connector.timeseries.capabilities import ALL_CAPABILITIES
 
 from .csv_connector import CsvConnector, CsvReadOptions, CsvTableReadRequest
 from .excel_connector import ExcelConnector, ExcelReadOptions, ExcelTableReadRequest
@@ -95,6 +97,7 @@ class LocalFilesConnector(
     hosts: tuple[str, ...] = ()
     capabilities = (
         *CAPABILITY_MANIFEST.capabilities,
+        *(CapabilityIdentity.parse(item) for item in ALL_CAPABILITIES),
     )
     modes = CAPABILITY_MANIFEST.modes
     local = True
