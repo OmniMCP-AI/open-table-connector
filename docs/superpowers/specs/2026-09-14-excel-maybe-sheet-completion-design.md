@@ -1,51 +1,41 @@
 # OTC Excel and Maybe Sheet completion
 
-Date: 2026-09-14
-Status: proposed; acceptance remains open.
-Baseline: OTC main `538338ee9289bbe24a1bef41bd996208b2896f52`.
+Date: 2026-09-14. Status: proposed; implementation acceptance remains open.
+Implementation baseline: `538338ee9289bbe24a1bef41bd996208b2896f52`.
 
-## 1. Scope and precedence
+## 1. Scope and authority
 
-Complete the remaining OTC components for local Excel and Maybe Sheet sheet-mode.
-Google Sheets implementation, new capabilities and live acceptance are deferred.
-Preserve existing Google behavior through regression tests; Google is not a
-release dependency for this delivery.
+Complete OTC local Excel and Maybe Sheet **sheet-mode** by consolidating existing
+code. Google implementation/live acceptance is deferred; preserve existing Google
+behavior. Financial semantics, application publication and authenticated replay
+belong to the separate FinClaw integration spec, not OTC.
 
-This spec replaces the remaining OTC scope of the
-[previous mixed plan](../plans/2026-09-14-spreadsheet-sessions-and-finclaw-readiness.md).
-The [unified design](2026-09-13-unified-spreadsheet-operations-design.md) retains
-the API vocabulary. The [artifact design](2026-09-14-finclaw-excel-artifact-readiness-design.md)
-sections 6–9 and 13.3 retain normative physical-profile details; this spec controls
-provider scope and completion gates. Their FinClaw integration requirements move
-to `finclaw-ng/docs/superpowers/specs/2026-09-14-otc-excel-integration-design.md`.
+This replaces the remaining OTC scope/file decomposition of the
+[old mixed plan](../plans/2026-09-14-spreadsheet-sessions-and-finclaw-readiness.md).
+The [unified design](2026-09-13-unified-spreadsheet-operations-design.md) supplies
+operation vocabulary. The [physical artifact design](2026-09-14-finclaw-excel-artifact-readiness-design.md)
+sections 6–9 and 13.3 remain normative for exact layout, limits, hashing,
+publication and ZIP/XML rules. This spec controls scope and consolidation; it does
+not drop those guarantees. Follow the [four-task plan](../plans/2026-09-14-excel-maybe-sheet-completion.md).
 
-Only OTC code, CLI, packaging, tests and documentation belong here. Application
-report translation, financial semantics, publication and authenticated replay
-belong to FinClaw. OTC completion alone does not authorize application cutover.
+## 2. Reuse and consolidate
 
-## 2. Baseline and architecture
+| Existing code | Intended change |
+| --- | --- |
+| `sdk/workbook.py`, `sdk/result.py` | One Excel/Maybe resource facade and existing result adaptation; remove replaced duplicate wrappers |
+| `spreadsheets/_operations.py`, `_protocols.py`, `_limits.py` | Harden existing contracts; one private `_session.py` for shared buffering/intent |
+| `local_files/spreadsheet_workbook.py` | Keep loading/editing/staging/preservation together; extract only independent verification to `spreadsheet_verify.py` |
+| Maybe connector/CLI/Formula/process helpers | Reuse targets, validation and transport; at most one `spreadsheet.py` for batch compilation |
+| Existing CLI/conformance modules | Extend dispatch and tests; one command module if needed |
 
-The baseline provides workbook entry points, a local workbook module, neutral
-helpers and partial provider integration. Existing methods and passing legacy
-tests do not establish completion of the previous plan.
+No per-resource module tree, generic grid/style engine, result-wrapper hierarchy,
+plugin framework or second command schema. Keep expectation helpers in the session;
+version persisted manifests/command files rather than every in-process record.
+The two justified seams are session/provider storage and writer/independent verifier.
+Providers use neutral values/errors; SDK adapts once. Preserve deferred Google
+compatibly without treating it as proof of the new buffered contract.
 
-Complete these components, refactoring existing code rather than adding a second API:
-
-- `spreadsheets`: validated arguments, bounded session state, ordered changes,
-  immutable physical expectations and neutral provider protocols.
-- `sdk`: resource views, Formula normalization and existing result/error adaptation.
-- `local_files`: coordination, XLSX editing/preservation, artifact writing and
-  independent archive/XML/decoded verification.
-- `maybe_sheet`: sheet-mode binding, canonical command compilation and observation
-  through the existing credential-safe process transport.
-- `cli`: resource commands over the same SDK.
-
-Providers must not import SDK. Remove upward dependencies introduced by the
-foundation. Optional packages load lazily; validate core-only and isolated provider
-wheel installations. Internal bind/preflight/commit/observe records are closed,
-versioned and serializable. Freeze caller inputs before queueing.
-
-## 3. Slim public interface
+## 3. Public behavior
 
 ```python
 book = client.workbook.create("file:///absolute/path/report.xlsx",
@@ -58,187 +48,110 @@ verification = book.verify().with_results()
 
 book = client.workbook("file:///absolute/path/model.xlsx")
 sheet = book.worksheet("Model")
-sheet.range("A2:B2").write([[10, 20]])
 result = sheet.formulas().set("C2", "=A2+B2").with_results()
 book.write()
 ```
 
-Default-client `otc.workbook` mirrors this API. Use `create(uri)`, not a mode
-flag. Retain canonical `file://` routing and alias identity. No public WorkbookPlan,
-SheetPlan, WorkbookExpectation or new receipt family. Ordinary arguments and
-existing OperationResult, Receipt and OTCError conventions are sufficient.
+Default-client `otc.workbook` mirrors this. Keep canonical `file://` aliases and
+creation defaults; choose `general/1.0` explicitly for a new editable workbook.
+No public plan/expectation classes, receipt family or unwrap calls.
+`.with_results()` returns that operation's immutable result without I/O; a planned
+edit never becomes a later commit receipt. Use `write().with_results()` for commit evidence.
 
-Direct calls require no unwrap. `.with_results()` performs no I/O and observes
-that operation's immutable captured result. A queued edit reports planned state;
-its result does not turn into a later write receipt. Obtain commit evidence from
-`book.write().with_results()`.
+Create/edits buffer until write. Close/context exit never saves. Dry-run retains
+pending edits. Track new/clean/dirty, writing, sealed/closed and unresolved effects
+privately; derive state where possible and reuse existing commit-result statuses.
+Reads label committed versus supported pending state; unsupported overlay reads
+fail explicitly. Freeze caller inputs and results. Reject concurrent writes,
+closed/sealed edits and stale bindings. Partial/unknown effects block further
+mutation; reconciliation observes only and must establish known state or require rebind.
 
-`create` binds a logical new workbook without a remote mutation. `write` commits;
-`close` and context-manager exit discard pending edits without implicit save.
-`verify(expected=None)` may use trusted intent retained by this session's write.
-A reopened strict artifact needs an explicit versioned expected mapping, never
-an expectation derived from its own decoded contents. Remote verification reports
-supported observations and never claims XLSX physical verification.
+Default writes require a tested atomic boundary, otherwise reject before dispatch
+unless `allow_partial=True`. Retain every known effect/created ID and uncertainty;
+no automatic fallback/retry or invented idempotency/CAS guarantees. Coordinate local
+sessions with existing immediate Formula writes; external applications do not share OTC locks.
 
-## 4. Session and Formula semantics
+Value strings remain literal. Formula shorthand infers bound dialect and reuses
+Formula validation/translation. Queue unsaved formulas and values in the same
+commit. No evaluation engine; literal profile rejects formulas. Recalculation needs
+a clean session and supported capability. Preserve legacy Table/Formula contracts.
 
-Implement states `new`, `clean`, `dirty`, `writing`, `unknown`, `partial`, `sealed`
-and `closed`, with tested transitions. Track stable worksheet keys, base revision,
-ordered pending changes and immutable snapshots separately. Reads identify a
-committed observation or supported pending overlay; unsupported overlay reads fail
-explicitly rather than silently returning stale data.
+Strict `verify(expected=None)` uses independently captured session intent. Reopened
+strict verification requires a supplied versioned expectation, never one derived
+from the file itself. Remote verification describes observations, not XLSX guarantees.
 
-Validate the whole batch before dispatch. Dry-run preserves pending changes.
-Successful general writes become clean; literal-artifact writes seal the session.
-Reject concurrent writes and edits after close/seal or uncertain effects.
-`reconcile()` observes only, never retries; resume only after establishing a known
-state, otherwise require a fresh binding.
+## 4. Editing and Maybe support
 
-Atomicity is the default. Reject batches without a tested atomic boundary before
-mutation unless `allow_partial=True`. Partial/unknown results retain known effects,
-created IDs and failure phase. Idempotency keys do not imply deduplication without
-provider support. Observation hashes are not compare-and-set tokens. Coordinate
-local sessions with legacy immediate Formula writes and reject stale bindings;
-document the limit that external applications do not share OTC's lock.
+Both providers require binding/creation, ordered sheet discovery/create/rename/delete,
+bounded range read/literal write/clear, dimensions, styles/formats, merges/unmerge,
+stable sorting, formula storage, supported image placement/readback, save and close.
+Validate A1 bounds/direction, names, matrix types/shape, blank versus empty string,
+finite numeric precision, date epochs and serial-60, patch/reset rules, sort
+keys/header/blank/tie behavior and native units. Update supported references or
+reject structural edits before mutation.
 
-Value writes keep formula-looking strings literal. Explicit Formula shorthand
-infers the bound dialect and reuses existing validation/translation. Queue unsaved
-formulas and values in the same commit. No OTC evaluation engine is introduced.
-Literal-artifact sessions reject formulas. Recalculation requires a clean session
-and an independently supported capability. Preserve legacy Table/Formula behavior.
+Publish operation rows for tables, names, links, notes, validation, conditional
+formats, filters, charts, pivots, images, protection and visibility, separating
+read/create/update/delete where needed. Each row states support, restrictions and
+named tests. Unsupported native pivot creation may remain a gap. Missing required
+baseline rows block that provider; never claim full catalog coverage from identities.
 
-## 5. General editing and preservation
+Existing XLSX edits must preserve unrelated formulas, tables/names, charts/pivots,
+images and hidden/protected sheets. Test supported-part preservation and reject
+unsafe unsupported parts before save. Atomic replacement alone proves neither
+preservation nor external-writer concurrency protection.
 
-Required baseline for both providers: workbook binding/creation, sheet discovery
-and ordered creation/rename/delete, bounded range reads/literal writes/clear,
-row/column dimensions, styles/number formats, merge/unmerge, deterministic sort,
-explicit formula storage, supported image placement/readback, save and close.
+Pin/negotiate actual `mbs` commands, flags and JSON envelopes using existing process
+helpers. Validate URI/override and sheet-mode gid before dispatch; preserve Base
+worksheets in mixed documents and stable identities across rename. Translate units,
+references and single-cell note restrictions explicitly; never invent CLI commands.
+Without a tested atomic batch, reject by default and require partial opt-in. Test
+creation-plus-population, each dispatch timeout, stale bindings and retained created
+IDs. Recorded tests cover every advertisement; disposable authorized live cases
+have a separate gate. Missing credentials do not block local artifact completion.
 
-Validate A1 bounds/direction, worksheet naming/collisions, matrix shape/types,
-blank versus empty string, dates/epochs and finite numeric precision. Date objects
-cannot silently represent Excel serial 60; explicit numeric serials remain numeric.
-Define style patch/reset rules, sort keys/header exclusion/blank placement/stable
-ties and tagged native units. Structural edits update supported references or fail
-before mutation.
+## 5. Local physical acceptance
 
-Publish per-provider operation rows for native tables, names, hyperlinks, notes,
-validations, conditional formats, filters, charts, pivots, images, protection and
-visibility, separating read/create/update/delete where support differs. Each row
-states implemented/unsupported/deferred, restrictions and named tests. Unsupported
-native pivot creation may remain a documented gap. Missing required baseline rows
-block that provider's release; catalog identities alone are not implementation.
-Do not claim full Excel manipulation while intended features remain gaps.
-
-Existing XLSX editing requires a supported-part preservation matrix and independent
-edit/save/reopen fixtures with unrelated formulas, tables, names, charts/pivots,
-images and hidden/protected sheets. Reject unsupported objects before save when
-preservation cannot be demonstrated. Atomic replacement does not prove either
-preservation or concurrency safety.
-
-## 6. Generic local literal-artifact profile
-
-Complete `literal-artifact/1.0` against independent caller intent:
-
-| ID | Acceptance |
+| ID | Required evidence |
 | --- | --- |
-| R1 | Exact ordered sheets and resolved names |
-| R2 | Exact string/type/coordinate coverage, explicit `@`, text bounds and empty strings |
-| R3 | Declared styles, dimensions, view and print properties verified |
-| R4 | Exact merges; hidden merged-interior values rejected |
-| R5 | Embedded PNG/JPEG bytes, hashes, anchors and dimensions verified |
-| R6 | Trusted finite limits enforced before and during parsing/decode |
-| R7 | Owned staging and atomic create-exclusive publication |
-| R8 | No formula, calcPr, calculation chain or external-link parts |
-| R9 | Deterministic expectation and separate byte/physical semantic hashes |
-| R10 | Ownership-safe cleanup and honest post-commit state |
-| R11 | Independent decoded comparison to expected intent |
-| R12 | Bounded ZIP/XML/content-type/relationship checks |
-| R13 | Missing, extra, malformed or unsupported coverage fails closed |
-| R14 | Stable versioned reasons in existing result/error conventions |
-| R15 | Write/verify discovery agrees with dispatch |
-| R16 | Legacy compatibility and optional installation isolation |
+| R1–R3 | Exact ordered sheets, names, literal `@` cells including empty strings, declared styles/native layout/print/view settings |
+| R4–R5 | Exact merges with no hidden interior values; unchanged PNG/JPEG bytes, hashes, one-cell anchors and EMU dimensions |
+| R6 | Trusted finite bounds enforced before/during parsing, decompression and image decode |
+| R7–R10 | Owned staging, exclusive atomic publication, no formulas/calcPr/chains/links, deterministic intent/byte hashes, safe cleanup |
+| R11–R13 | Independent raw and decoded checks against caller intent; missing/extra/malformed/unsupported coverage fails closed |
+| R14–R16 | Stable reasons in existing results/errors, truthful capability discovery, compatibility and isolated installs |
 
-Support fonts/fills/alignment/wrapping, the defined border subset, native column
-widths/row heights, gridlines, freeze panes, print area, paper/orientation/fit,
-centering and all six margins. Apply the exact unit normalization and border
-rules in the prior artifact spec section 13.3, with no hidden numerical tolerance.
-Capture image bytes at queueing, validate MIME/hash/decode limits, embed unchanged
-bytes and compare stored bytes plus one-cell anchors and integer EMU dimensions.
+Keep all individual R1–R16 rows in release evidence. Use one bounded immutable byte
+snapshot for raw checks, decoded checks and content hash. Actual expansion counters,
+DTD/entity rejection and exact allowed parts/content-types/relationships are mandatory.
+Reject duplicate members/IDs/cells, escaping/missing targets, orphan media and extra
+values. Never repair verifier input. Original image bytes are captured at queueing;
+compare stored bytes and all declared properties using only documented normalization.
+The referenced artifact spec defines precise limits, supported styles and units.
 
-Use one bounded immutable byte snapshot for raw validation, decoded verification
-and content hashing. Enforce actual decompression counters, not metadata alone.
-Disable DTD/entities and enforce the exact allowed part/content-type/relationship
-graph from section 13.3. Reject duplicates, escaping/missing targets, orphan media,
-external links, hidden merged values and unexpected populated cells. Verify every
-declared property; never repair/resave verification input.
+Canonical physical expectations include intended cells/layout/merges/images, exclude
+paths/timestamps/ZIP ordering, and live in existing Receipt.details. Keep physical
+semantic and exact byte hashes separate; receipts round-trip without cycles.
+Validate -> owned sibling staging -> close -> independent verification -> no-clobber
+publication. Preserve existing files/directories/symlinks and race winners. After
+commit, retain the destination on subsequent failure and report honest state.
 
-Retain section 7's trusted defaults: 128 sheets, 250,000 semantic cells, 64 MiB
-text, 128 images, 16 MiB per image/128 MiB total, 40 million pixels per image,
-256 MiB compressed file, 10,000 ZIP members, 128 MiB per expanded member/512 MiB
-total. Bounded caller overrides are allowed; untrusted receipts never raise limits.
+Optional `failure_directory` retains bounded failed owned bytes under exclusive
+names before cleanup, with hash/size/phase/completeness. Record retention failure
+separately from the primary error; diagnostic bytes are not verified artifacts.
+Application attempt bookkeeping stays outside OTC.
 
-Use canonical versioned JSON with sorted mapping keys and preserved semantic
-array order. Physical semantic hashes include intent, layout and image identities,
-but exclude paths/timestamps/ZIP order. Hash exact saved bytes separately. Existing
-Receipt.details holds expectation schema, hashes, limits and resolved identities;
-receipts must serialize and round-trip without cycles.
+## 6. Delivery and deletion gates
 
-Validate first, write an owned sibling temporary file, close and independently
-verify it, then publish with a tested no-clobber primitive. Never exists-then-replace.
-Preserve pre-existing paths and competing outputs. After commit, retain the
-destination on cleanup/acknowledgement failure and report committed/unknown state.
+CLI calls the SDK, commits standalone mutations once and supports versioned batch
+commands with dry-run/partial opt-in using existing envelopes/Change arguments.
+Advertise only positively tested dispatch. Verify core-only and separate provider
+wheel installs, image round-trips, secret redaction, URI routing and dependency direction.
 
-Optional `failure_directory` is generic caller-owned diagnostic quarantine:
-retain bounded failed owned bytes under exclusive unique names before cleanup;
-report path/hash/size/phase/completeness. Report retention failure alongside the
-primary error. Diagnostic bytes do not receive successful verification. Application
-attempt bookkeeping remains outside OTC.
-
-## 7. Maybe Sheet sheet-mode
-
-Pin/negotiate the tested canonical `mbs` CLI contract before enabling operations.
-Map actual commands, target flags and validated JSON envelopes; do not invent
-commands. Normalize range formats through supported local style operations.
-Validate URI and sheet-mode gid before dispatch, including target overrides.
-Use stable worksheet identities and preserve Base worksheets in mixed documents;
-Base targets must reject sheet-mode operations before mutation.
-
-Queue until write. Compile an atomic batch only if the tested CLI provides that
-boundary; otherwise reject by default and require explicit partial opt-in. Cover
-creation-plus-population, per-command timeout, stale bindings, idempotency conflicts
-and created-ID retention. Unknown mutations never trigger fallback/retry. Translate
-native units, references and single-cell notes restrictions explicitly.
-
-Each advertised operation needs recorded-process positive/negative tests. Live
-acceptance uses disposable authorized sheet-mode documents and mixed-document
-preservation. Missing credentials leave the live gate pending, independently of
-local artifact release. Remote write success never establishes XLSX guarantees.
-
-## 8. CLI, discovery, packaging and release gates
-
-Expose `otc spreadsheet` resource commands through SDK. Standalone mutations
-explicitly commit once. A versioned command-file workflow supports batches,
-dry-run and partial opt-in with existing JSON envelopes, without public plan
-classes. Errors redact secrets and reject invalid inputs before dispatch.
-
-Enable capabilities only after dispatch/preflight tests. Update documentation and
-operation matrix together. Test core-only imports, each optional provider alone,
-SDK/CLI URI equivalence, clean wheel artifact/image round-trips and dependency
-boundaries. Keep Google regressions without new Google implementation requirements.
-
-Required gates:
-
-1. Shared recording-provider tests: every transition, immutable results, overlays,
-   dry-run, concurrency, reconciliation and dependency isolation.
-2. Local R1–R16: golden/corruption fixtures plus duplicate members/IDs/cells, forged
-   sizes, DTD, external relationships, calcPr, changed layout/images, orphan media,
-   race/symlink/collision and save/verify/publish/cleanup/retention fault injection.
-3. General Excel: required baseline and preservation corpus, with explicit gaps.
-4. Maybe: advertised matrix, process failure corpus and separate live acceptance.
-5. Distribution: complete supported-Python suite, lint/type/package checks, CLI
-   and wheel tests on the exact candidate. Compare failures to an actual baseline
-   before labeling them pre-existing; a merged PR is not release evidence.
-
-Update readiness docs and a future implementation plan with per-gate status,
-revision, commands, environment and exact counts. This spec does not perform
-implementation or application cutover.
+Extend existing suites with independent corruption, collision/symlink/race,
+cleanup/retention fault injection, preservation and recorded/live Maybe cases.
+Delete replaced wrappers/helpers after those tests pass. Avoid tests per helper or
+a separate evidence-document tree: one readiness matrix links exact tests/commands,
+revision, environment and counts for local artifact, general Excel, Maybe and packaging.
+Run supported-Python tests and repository lint/type/package jobs; compare failures
+against an actual baseline. No merged PR alone establishes acceptance or FinClaw cutover.
