@@ -322,6 +322,33 @@ class _FormulaViewBase:
                 connector_id=self._connector_id,
                 dialect=expression.dialect,
             )
+
+    def _coerce_expression(
+        self,
+        expression: FormulaExpression | str,
+        dialect: str | None = None,
+    ) -> FormulaExpression:
+        if isinstance(expression, FormulaExpression):
+            if dialect is not None:
+                raise _error(
+                    "dialect must be omitted when expression is already typed",
+                    ErrorCode.INVALID_FORMULA,
+                    connector_id=self._connector_id,
+                )
+            return expression
+        if not isinstance(expression, str):
+            raise TypeError("expression must be a FormulaExpression or string")
+        supported = tuple(self.capabilities.details.dialects)
+        selected = dialect
+        if selected is None:
+            if len(supported) != 1:
+                raise _error(
+                    "formula dialect is ambiguous for this target",
+                    ErrorCode.INVALID_FORMULA,
+                    connector_id=self._connector_id,
+                )
+            selected = supported[0]
+        return FormulaExpression(expression, selected)
         if expression.byte_count > self.capabilities.details.max_expression_bytes:
             raise _error(
                 "formula expression exceeds the target byte limit",
@@ -427,14 +454,16 @@ class GridFormulaView(_FormulaViewBase):
     def set(
         self,
         cell_range: str,
-        expression: FormulaExpression,
+        expression: FormulaExpression | str,
         *,
+        dialect: str | None = None,
         expected_revision: str | None = None,
         idempotency_key: str | None = None,
         limits: FormulaResourceLimits | None = None,
     ) -> OperationResult[FormulaMutation]:
         self._assert_ready()
         self._require_capability(GRID_SET)
+        expression = self._coerce_expression(expression, dialect)
         self._validate_expression(expression)
         validated_limits = self._validate_limits(limits)
         request = GridFormulaSetRequest(

@@ -381,6 +381,11 @@ class OperationResult(Generic[T]):
             )
         return self.value
 
+    def with_results(self) -> OperationResult[T]:
+        """Return this completed result without performing I/O or retrying."""
+
+        return self
+
     def to_wire(self, value_encoder: Callable[[T], Any] | None = None) -> dict[str, Any]:
         if self.value is None:
             encoded_value = None
