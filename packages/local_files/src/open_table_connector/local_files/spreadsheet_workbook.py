@@ -24,7 +24,7 @@ from urllib.parse import unquote, urlsplit
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
-from open_table_connector.contract import CapabilityIdentity, SCHEME_FILE, TableURI
+from open_table_connector.contract import SCHEME_FILE, CapabilityIdentity, TableURI
 from open_table_connector.sdk.model import TableMode
 from open_table_connector.sdk.result import (
     CommitState,

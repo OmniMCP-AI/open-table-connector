@@ -35,9 +35,13 @@ pytest packages/google_sheets/tests packages/maybe_sheet/tests \
 288 passed, 1 skipped
 ```
 
-The focused workbook/model/Formula run passed 48 tests. Changed-file Ruff
-checks pass. The repository-wide Ruff invocation still reports pre-existing
+Focused workbook/model/Formula tests pass. Changed-file Ruff checks pass. The
+repository-wide Ruff invocation still reports pre-existing
 import-order findings in untouched legacy modules.
+
+The complete local suite reached `1393 passed, 3 skipped, 4 failed`; the four
+failures are CLI end-to-end cases that invoke an `otc` executable absent from
+this checkout's environment. They are unrelated to workbook behavior.
 
 ## FinClaw gate
 
