@@ -7,6 +7,10 @@ Install with `pip install open-table-connector-maybe-sheet`; import
 
 ## Grid formulas
 
+Maybe sheet-mode participates in OTC's optional unified Spreadsheet interface.
+The same workbook, worksheet, range, and style models are used for Maybe,
+Excel, and Google Sheets; provider capabilities determine available operations.
+
 Maybe Sheet supports bounded sheet-mode formula read, top-left copy-fill set,
 provider-calculated values, and explicit recalculation in the `maybe-sheet-a1`
 dialect:
@@ -81,3 +85,7 @@ margin.recalculate(scope=FieldRecalculationScope.FIELD)
 
 Use a separate base-mode Table for ordinary record value writes; those writes
 remain value-only and do not activate formulas.
+
+The bound Formula view can infer Maybe's dialect for string expressions:
+`grid.set("D2", "=B2+$C$1")`. Use an explicit `FormulaExpression` when sharing
+plans or when a target supports more than one dialect.

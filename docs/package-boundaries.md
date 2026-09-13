@@ -33,6 +33,12 @@ contract + timeseries
 - The CLI is a thin parser/renderer over the SDK. It must not become a second
   routing or domain layer.
 
+The optional `open-table-connector-spreadsheets` package defines shared
+workbook, worksheet, range, format, style, and image contracts. It imports
+only the contract package; local-files, maybe-sheet, and google-sheets remain
+the physical adapters. Installing it is not required for ordinary Table or
+Formula use.
+
 ## Public vocabulary
 
 The normalized public data model is deliberately narrow:

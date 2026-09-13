@@ -7,6 +7,14 @@ Supported URIs are `gsheets://SPREADSHEET_ID/SHEET_NAME` and Google Sheets
 URLs. Reads use the first row as column headers by default; writes use
 `append` for append semantics and `replace`/`error` for range updates.
 
+## Unified Spreadsheet operations
+
+Google Sheets participates in OTC's optional unified Spreadsheet interface for
+the capabilities advertised by its manifest. Workbook, worksheet, range, and
+format/style support are discovered per target; unsupported operations fail
+before dispatch. Image support remains absent until a validated upload and
+readback transport exists.
+
 ## Grid formulas
 
 Google Sheets supports bounded sheet-mode formula read, top-left copy-fill set,
@@ -40,3 +48,7 @@ Formula activation is explicit. Ordinary Table writes continue to use
 `valueInputOption=RAW`, so a string beginning with `=` remains an ordinary
 value and does not activate a formula. Supply a `FormulaExpression` through
 the Formula view when activation is intended.
+
+The bound Formula view can infer Google's dialect for string expressions:
+`grid.set("D2", "=B2+$C$1")`. Use an explicit `FormulaExpression` for portable
+plans that have not yet been bound to a provider target.

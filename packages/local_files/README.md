@@ -7,6 +7,11 @@ Install with `pip install open-table-connector-local-files`; import
 
 ## Direct Excel grid formulas
 
+Excel workbooks use standard local file targets such as
+`file:///absolute/path/model.xlsx`. The unified Spreadsheet interface and the
+existing Formula view resolve that target to the same local adapter. Legacy
+`excel://`/`xlsx://` aliases remain compatibility inputs where registered.
+
 The direct `excel` provider supports bounded sheet-mode formula read and
 top-left copy-fill set for existing `.xlsx` workbooks in the `excel-a1`
 dialect:
@@ -16,7 +21,7 @@ import open_table_connector.otc as otc
 
 grid = client.formulas(
     otc.GridFormulaTarget(
-        "excel:///absolute/path/model.xlsx#sheet=Model",
+        "file:///absolute/path/model.xlsx#sheet=Model",
         otc.WorksheetRef(name="Model"),
     )
 ).require_value()
@@ -38,3 +43,9 @@ engine. Managed temporal Excel remains formula-rejecting.
 Ordinary Table writes remain value-only. The ordinary Excel writer forces
 formula-prefixed strings to text; use an explicit Formula view and
 `FormulaExpression` when formula activation is intended.
+
+The Formula view also accepts a string and infers the bound Excel dialect:
+`grid.set("D2", "=B2+$C$1")`. This is formula intent; a Table write containing
+the same string remains literal. Table writes create or replace a whole
+workbook, so use Spreadsheet range operations for in-place edits that preserve
+existing formulas and layout.
