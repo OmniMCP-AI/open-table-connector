@@ -86,8 +86,8 @@ service tests account for the four skips. Maybe live acceptance was run separate
 
 The authorized live probe wrote `[['=literal', ''], ['b', 2]]`. Readback reported
 value types `[['string', 'blank'], ['string', 'string']]` and values
-`[['=literal', ''], ['b', '2']]`: numeric `2` became text, and the empty literal
-became a blank. Installed `mbs 0.28.4 range write --help` exposes no typed-cell or
+`[['=literal', ''], ['b', '2']]`: numeric `2` became text, and readback classified the empty literal
+as blank. Installed `mbs 0.28.4 range write --help` exposes no typed-cell or
 `USER_ENTERED`/`value_input_option` option to preserve those distinctions.
 
 The adapter therefore rejects numeric, Boolean, date/time and empty-string
@@ -135,3 +135,34 @@ distribution gates passed; restrictions remain explicit in the user guide.
 | Complete optional catalog CRUD | Unsupported/deferred rows remain in user guide; no completeness claim |
 | Distribution and supported-Python matrix | Passed: all four Python versions and rebuilt-wheel/clean-install gates |
 | FinClaw integration/cutover | Outside this implementation; not claimed |
+
+## Typed RAW follow-up (2026-09-14)
+
+The CLI already sends native JSON values. Two upstream defects explain the observed
+loss: Playground stringifies the value matrix (including null → empty string),
+and SheetTable accepts only string values and classifies empty stored strings as
+blank during readback. The earlier statement that every empty literal was physically
+converted to a blank was stronger than the live evidence justified.
+
+Source fixes are under review in [SheetTable #110](https://github.com/OmniMCP-AI/SheetTable/pull/110)
+and [Playground #382](https://github.com/fastestai/fastestai-playground/pull/382).
+SheetTable's real HTTP/save/reopen regression preserves numbers, booleans, literal
+strings, empty strings and nulls; full Go API/test packages, targeted legacy
+conversion/read tests and Go vet pass. The proxy's two isolated payload tests pass;
+its complete dispatcher suite is blocked by the checkout's missing `audit` package.
+The isolated tests replace only the unrelated audit-header dependency and do not
+establish complete service integration.
+
+Deploy storage first, then the proxy. The current deployed service still fails the
+new opt-in gate, so OTC's rejection guard stays enabled. Run with `mbs 0.29.0` or a
+compatible CLI supporting recoverable `workbook delete --mode mark`:
+
+```sh
+OTC_TEST_MBS_TYPED_RAW_ENABLED=1 uv run --all-packages --frozen python -m pytest \
+  packages/maybe_sheet/tests/test_spreadsheet.py::test_live_typed_raw_range_contract -q
+```
+
+This gate owns a disposable Sheet workbook, writes through the CLI independently
+of OTC's guard, checks value types/formulas, and marks the workbook deleted in
+cleanup. Enable OTC typed writes only after deployed readback passes. Native
+Python date/time serialization remains a separate unsupported input.

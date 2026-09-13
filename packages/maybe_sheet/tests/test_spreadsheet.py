@@ -505,3 +505,84 @@ def test_merge_rejects_formula_with_empty_display_before_write():
     )
     assert r["commit"] == "not_committed"
     assert process.mutations == []
+
+
+def test_live_typed_raw_range_contract(tmp_path):
+    """Deployment gate for the upstream fix, independent of OTC's rejection guard."""
+    import os
+    import shutil
+    import uuid
+
+    from open_table_connector.maybe_sheet.process import SubprocessProcessClient
+    from open_table_connector.maybe_sheet.spreadsheet import MaybeSpreadsheetProvider
+
+    if os.environ.get("OTC_TEST_MBS_TYPED_RAW_ENABLED") != "1" or not os.environ.get(
+        "MAYBEAI_API_TOKEN"
+    ):
+        pytest.skip("typed RAW deployment gate is opt-in")
+    process = SubprocessProcessClient(binary=shutil.which("mbs"))
+    provider = MaybeSpreadsheetProvider(
+        MaybeSheetConnector(process), {"access_token": os.environ["MAYBEAI_API_TOKEN"]}
+    )
+    bound = provider.bind(SpreadsheetTarget("maybe://otc-typed-" + uuid.uuid4().hex))
+    bound["new"] = True
+    created = provider.commit(
+        bound, [], allow_partial=False, expected_revision=None, idempotency_key=None
+    )
+    uri = "https://www.maybe.ai/docs/spreadsheets/d/" + created["value"]["created_ids"]["workbook"]
+    (tmp_path / "owned-workbook.json").write_text(json.dumps({"uri": uri}))
+    try:
+        provider.commit(
+            bound,
+            [change("worksheet.create", "Report")],
+            allow_partial=True,
+            expected_revision=None,
+            idempotency_key=None,
+        )
+        values = tmp_path / "values.json"
+        values.write_text(json.dumps([[2, 2.5, True, False, "", None, "001", "=1+2"]]))
+        provider._call(
+            (
+                "mbs",
+                "range",
+                "write",
+                "--uri",
+                uri,
+                "--worksheet-name",
+                "Report",
+                "--range",
+                "A1:H1",
+                "--values",
+                str(values),
+            ),
+            "range.write",
+        )
+        observed = provider.observe(
+            bound, {"operation": "range.read", "target_key": "Report", "address": "A1:H1"}
+        )["value"]
+        assert observed["value_types"] == [
+            ["number", "number", "boolean", "boolean", "string", "blank", "string", "string"]
+        ]
+        assert observed["values"][0][4:] == ["", "", "001", "=1+2"]
+        assert observed["formulas"] == [[""] * 8]
+    except Exception as exc:
+        pytest.fail(f"Typed RAW deployment gate failed: {type(exc).__name__}", pytrace=False)
+    finally:
+        try:
+            process.run(
+                (
+                    "mbs",
+                    "workbook",
+                    "delete",
+                    "--uri",
+                    uri,
+                    "--mode",
+                    "mark",
+                    "--yes",
+                    "--output",
+                    "json",
+                ),
+                credentials={"access_token": os.environ["MAYBEAI_API_TOKEN"]},
+            )
+        except Exception:
+            pytest.fail(f"Typed RAW disposable workbook cleanup failed: {uri}", pytrace=False)
