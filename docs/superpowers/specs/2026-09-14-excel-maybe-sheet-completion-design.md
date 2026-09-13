@@ -1,6 +1,8 @@
 # OTC Excel and Maybe Sheet completion
 
-Date: 2026-09-14. Status: proposed; implementation acceptance remains open.
+Date: 2026-09-14. Status: implemented for the documented supported subset;
+Maybe typed-value and catalog acceptance remain open. See the
+[readiness evidence](../../spreadsheet-readiness.md) for tested gates and restrictions.
 Implementation baseline: `538338ee9289bbe24a1bef41bd996208b2896f52`.
 
 ## 1. Scope and authority
