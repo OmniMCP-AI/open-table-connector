@@ -65,6 +65,17 @@ def test_require_value_raises_typed_otc_error_and_preserves_result() -> None:
     assert "token" not in repr(failed.to_wire())
 
 
+def test_with_results_is_a_post_operation_identity_accessor() -> None:
+    result = otc.OperationResult(
+        value="ok",
+        outcome=otc.Outcome.SUCCEEDED,
+        commit=otc.CommitState.COMMITTED,
+        verification=otc.VerificationState.PASSED,
+    )
+
+    assert result.with_results() is result
+
+
 def test_operation_result_rejects_invalid_state_combinations() -> None:
     with pytest.raises(ValueError, match="requires committed or not_applicable"):
         otc.OperationResult(
