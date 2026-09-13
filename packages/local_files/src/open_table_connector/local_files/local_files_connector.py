@@ -31,6 +31,7 @@ from open_table_connector.contract import (
     URIResolver,
 )
 from open_table_connector.contract.errors import ConnectorError, ConnectorErrorCode
+from open_table_connector.timeseries.capabilities import ALL_CAPABILITIES
 
 from .csv_connector import CsvConnector, CsvReadOptions, CsvTableReadRequest
 from .excel_connector import ExcelConnector, ExcelReadOptions, ExcelTableReadRequest
@@ -46,7 +47,6 @@ from .markdown_connector import MarkdownConnector, MarkdownReadOptions, Markdown
 from .receipts import make_receipt, options_identity, source_revision
 from .resolver import LocalFormat, LocalURIResolver, ResolvedLocalTable
 from .sdk_temporal import LocalFilesSdkConnectorMixin
-from open_table_connector.timeseries.capabilities import ALL_CAPABILITIES
 
 
 @dataclass(frozen=True)
@@ -244,6 +244,17 @@ class LocalFilesConnector(
                 else None
             ),
         )
+
+    def workbook_create(self, uri: str, *, profile: str = "literal-artifact/1.0", limits=None):
+        """Create a workbook session through the unified spreadsheet surface."""
+        from .spreadsheet_workbook import WorkbookSession
+
+        return WorkbookSession.create(uri, profile=profile, limits=limits)
+
+    def workbook_open(self, uri: str, *, limits=None):
+        from .spreadsheet_workbook import WorkbookSession
+
+        return WorkbookSession.open(uri, limits=limits)
 
 
 __all__ = ["LocalFilesConnector", "LocalReadOptions", "LocalTableReadRequest"]

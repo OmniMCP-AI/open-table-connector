@@ -89,6 +89,9 @@ class Client:
         self._client_id = str(uuid.uuid4())
         self._range_owner_token = object()
         self._formula_owner_token = object()
+        from .workbook import WorkbookAccess
+
+        self._workbook_access = WorkbookAccess(self)
 
     @classmethod
     def from_config(
@@ -347,6 +350,13 @@ class Client:
 
         return bind_formulas(self, target)
 
+    @property
+    def workbook(self):
+        """Return the unified workbook operation entry point."""
+
+        self._assert_open()
+        return self._workbook_access
+
     def close(self) -> None:
         if self._closed:
             return
@@ -382,6 +392,13 @@ class Client:
     def _assert_open(self) -> None:
         if self._closed:
             raise _failure("client is closed", ErrorCode.CLIENT_CLOSED)
+
+    def _unsupported_workbook(self, uri: str, code: ErrorCode) -> OTCError:
+        return _failure(
+            "connector does not support unified workbook operations",
+            code,
+            target=uri,
+        )
 
     def _assert_owned(self, table: Table) -> None:
         if getattr(table, "_owner_client_id", None) != self._client_id:

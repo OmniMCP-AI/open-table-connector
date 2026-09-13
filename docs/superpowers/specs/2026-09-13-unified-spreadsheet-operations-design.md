@@ -43,7 +43,7 @@ retained as the `literal-artifact/1.0` profile described below.
 | Previous requirement | Decision in this proposal |
 | --- | --- |
 | Excel-only workbook construction API | Replace with a shared spreadsheet extension and provider adapters |
-| Declarative workbook plan | Retain as a convenience compiler into shared operations |
+| Declarative workbook plan | Replace the public plan API with resource operations and an internal change set |
 | Local-only and create-new-only | Restrict to the literal artifact profile; general operations can edit existing workbooks and remote spreadsheets |
 | Every value must be literal text | Retain for the artifact profile; general range writes also support explicitly typed scalar values |
 | No formulas or calculation | Retain for the artifact profile; general formula operations delegate to the existing Formula extension |
@@ -176,7 +176,7 @@ CLI commands use the same vocabulary. Formula operations retain their current
 | filter | inspect, set, clear | Basic bounded filter, declared column predicates; named filter views are extensions |
 | chart | list, inspect, create, update, delete | Optional native chart object; portable initial spec is line/bar with bounded data ranges |
 | pivot | inspect, upsert, delete | Optional grouped/aggregated grid object with an explicit bounded source |
-| plan | validate, apply | One ordered operation model for batching and artifact construction |
+| workbook | write | Commit buffered resource operations with an explicit execution policy |
 | workbook | verify | Compare an independent expectation against an explicitly scoped observation |
 
 Operations are a versioned catalog, not an assertion that current adapters
@@ -217,7 +217,8 @@ as explicit text; dates use a declared date/time encoding and workbook epoch,
 not an implicit serial conversion. Date/time writes are separately advertised.
 
 General writes to existing formula cells replace their content intentionally.
-Activating or editing a formula requires Formula's explicit `FormulaExpression`.
+Activating or editing a formula requires an explicit Formula operation; string
+shorthand is normalized to FormulaExpression internally.
 Number formatting must never activate formulas or mutate stored values.
 
 `clear` requires explicit content/format/style/note components; content is the
@@ -296,16 +297,17 @@ dashboard construction, VBA, macros, script execution, sharing/ACL management,
 version-history restoration and Base-mode administration are outside this v1.
 They must not enter through arbitrary unvalidated provider payloads.
 
-## 9. Plans, execution, concurrency, and receipts
+## 9. Sessions, execution, concurrency, and receipts
 
-`SpreadsheetPlan` is an ordered list of typed operations with unique operation
-IDs, local resource keys, required capabilities, limits and execution policy.
-`validate` resolves existing targets, checks all known capabilities/properties,
-validates asset hashes and resource bounds, and returns a normalized plan hash
-and projected effects. Validation performs reads only. It is not a promise that
-remote state or permissions will remain unchanged before apply.
+Workbook resource operations build an internal ordered change set. No public
+SpreadsheetPlan, WorkbookPlan or SheetPlan is required. `book.write()` validates
+targets, capabilities, properties, asset hashes and limits, then commits the
+buffered changes. `book.write(dry_run=True)` performs preflight reads and returns
+projected effects without mutations; it does not guarantee that remote state or
+permissions will remain unchanged. Internal normalized change-set hashes support
+receipts and idempotency without exposing a caller-authored plan language.
 
-`apply` revalidates dependencies and targets, then executes in order. Batch
+`write()` revalidates dependencies and targets, then executes in order. Batch
 optimization MUST preserve order and observable effects. Default execution
 policy requires one atomic mutation boundary; providers reject multi-step plans
 that cannot meet it. Callers may explicitly allow partial execution. Preflight
@@ -366,14 +368,13 @@ replace policy; source revision protection must state whether it guards only
 cooperating OTC writers or all writers. Atomic file replacement is not by itself
 atomic compare-and-set. Never claim stronger concurrency than the storage layer.
 
-`WorkbookPlan` is a declarative convenience containing ordered worksheet plans,
-literal/typed cells, styles, merges, configuration and images. It compiles into
-the same operations as interactive editing. A fresh-artifact execution can build
+Workbook session state contains ordered worksheets, literal/typed cells, styles,
+merges, configuration and images built through resource operations. A fresh-artifact execution can build
 an entire local workbook in staging and publish it as one create-exclusive effect.
 Remote create-and-populate usually needs explicit partial execution or a provider
 staging facility; a partial remote artifact is returned as incomplete.
 
-`literal-artifact/1.0` is a strict profile over WorkbookPlan. The Excel adapter
+`literal-artifact/1.0` is a strict profile over workbook session operations. The Excel adapter
 MUST retain requirements R1–R16 from the original requirements, specifically:
 
 - create-exclusive destination, nonempty ordered sheets, deterministic requested
@@ -414,11 +415,12 @@ book = client.workbook("file:///absolute/path/model.xlsx")
 sheet = book.worksheet(name="Report")
 cells = sheet.range("A1:B2")
 cells.write([["Metric", "Value"], ["Revenue", 1200]])
-sheet.range("A1:B1").style(header_style)
-sheet.range("B2").format(currency_format)
-sheet.images.insert(image_spec)  # requires advertised support
+sheet.range("A1:B1").style(bold=True, fill="#183245")
+sheet.range("B2").format(kind="number", precision=2)
+sheet.images.insert("/absolute/path/chart.png", anchor="A6", width=850, height=400)
 grid_formulas = sheet.formulas()
 grid_formulas.set("B3", "=B2*2")
+book.write()
 ```
 
 ### 11.1 Direct returns and explicit formula intent
@@ -490,9 +492,9 @@ The SDK normalizes shorthand to the existing fully specified FormulaExpression
 before validation, hashing, idempotency or provider dispatch. The standalone
 FormulaExpression constructor and existing provider wire schema keep their
 required dialect: an unbound expression has no target from which to infer it.
-Plans may accept shorthand only in a new versioned convenience schema; validation
-resolves it to explicit target/dialect/text in the normalized plan. A change of
-target or dialect invalidates that normalized plan rather than silently retargeting
+Internal change sets retain explicit target/dialect/text after normalizing
+shorthand. A change of
+target or dialect invalidates that normalized change set rather than silently retargeting
 the expression. Legacy Formula wire payloads do not acquire optional fields.
 
 ### 11.2 Shared-file behavior
@@ -513,11 +515,17 @@ either behavior. The strict literal-artifact profile continues to reject formula
 
 ### 11.3 CLI
 
-`client.workbooks(provider=..., container=...)` owns bounded listing and remote
-creation. `client.create_workbook(request)` creates a local or remote workbook.
-`book.plan(...)`, `validate(...)`, `apply(...)`, and `verify(...)` follow the same
-direct-return and post-operation `.with_results()` convention. Mutations execute immediately;
-there is no hidden deferred save on ordinary views.
+`client.workbook.list(provider=..., container=...)` owns bounded listing.
+`client.workbook.create(uri, ...)` starts creation at a local destination;
+remote creation uses `client.workbook.create(provider=..., container=..., title=...)`.
+`client.workbook(uri)` opens an existing workbook. Use resource-local verbs
+consistently with `book.worksheet.create(name)`; do not introduce mode flags or
+alternate `create_workbook`/plural creation APIs. The default-client `otc.workbook`
+accessor exposes the same call, create and list operations.
+`book.write(...)` and `book.verify(...)` follow the direct-return and
+post-operation `.with_results()` convention. The session lifecycle below is
+authoritative: edits are buffered and `write()` is the explicit commit operation.
+No public `book.plan()`, `validate()` or `apply()` API is introduced.
 
 Use an additive `otc spreadsheet` CLI namespace to avoid conflicts with existing
 Table commands. Resource groups mirror Maybe's canonical surface:
@@ -531,13 +539,16 @@ otc spreadsheet range write --target TARGET --worksheet-name Report --range A1:B
 otc spreadsheet range style --target TARGET --worksheet-name Report --range A1:B1 --spec header.json
 otc spreadsheet range format --target TARGET --worksheet-name Report --range B2 --spec currency.json
 otc spreadsheet image insert --target TARGET --worksheet-name Report --spec image.json
-otc spreadsheet plan validate --spec plan.json
-otc spreadsheet plan apply --spec plan.json
+otc spreadsheet workbook write --target TARGET --commands operations.json --dry-run
+otc spreadsheet workbook write --target TARGET --commands operations.json
 ```
 
-CLI input files use the same versioned schemas as SDK requests, with local file
+CLI input files use the same versioned operation schemas as SDK requests, with local file
 references resolved to bounded assets before planning. `--output json` returns
-the same result envelope. `--dry-run` runs validation only. Delete/clear commands
+the same result envelope. A standalone mutating CLI command opens a session,
+queues the requested operation, and calls write once before returning. The
+multi-operation command file is a sequence of the same resource commands, not
+a separate workbook-plan schema. `--dry-run` runs preflight only. Delete/clear commands
 require explicit component/scope flags and noninteractive `--yes`; that flag does
 not bypass capability, revision, preservation or validation checks.
 
@@ -602,7 +613,132 @@ remote feature in a release, run a scoped live test against disposable resources
 for the pinned transport/API and record its revision and date. Unavailable live
 credentials mean missing release evidence, not a fabricated passing result.
 
-## 13. Source baseline
+## 13. Cross-provider lifecycle and completeness gates
+
+This section resolves earlier lifecycle and API ambiguities and takes precedence
+over descriptions of direct provider mutation elsewhere in this document.
+It applies to local Excel, Maybe sheet-mode and Google Sheets. The accepted
+scope is explicitly supported spreadsheet operations, not complete parity with
+every feature of the Excel desktop application.
+
+### 13.1 One public editing lifecycle
+
+`client.workbook(uri)` opens an existing workbook. `client.workbook.create(...)`
+starts a new workbook session; remote creation takes provider/container/title
+until a real document URI is assigned. Both forms buffer edits. Worksheet,
+range, formula, style and image mutations affect the same session; only
+`book.write()` persists them. There is no save on close or garbage collection.
+Queries reflect queued edits where supported; unsupported previews fail explicitly
+rather than presenting stale persisted values as the edited state. Inspection
+labels its observation as session or persisted state. `book.verify()` compares
+persisted state with a captured expectation and rejects dirty sessions.
+
+A successful write clears committed changes, updates binding/revision evidence
+and leaves the general workbook editable for another write. The first local
+create uses no-clobber publication; later writes update the bound artifact with
+revision and preservation checks. The literal-artifact profile alone seals after
+its first successful write to preserve immutable report-output semantics.
+
+Queueing returns planned/not-started results; the write result describes actual
+commit and verification state. Direct-return adaptation must accept a validated
+planned result for a queued edit without misclassifying it as an executed write.
+Existing legacy Table methods and `client.formulas(...)` retain their existing
+immediate behavior. Documentation explicitly distinguishes them from workbook
+session views; all file writes must share target identity and coordination.
+
+For remote providers, the session is a bounded overlay, not an unbounded download
+of the entire workbook. Preflight determines the complete write request sequence.
+Atomic is the default write policy; unsupported multi-request atomicity is rejected
+before dispatch. `book.write(allow_partial=True)` explicitly permits ordered
+remote operations with per-operation effects. Creation is delayed until write;
+a remote create-plus-populate sequence needs this opt-in unless the provider
+supplies one atomic boundary. A partially created document returns its real URI.
+Unknown or partial writes freeze further mutation until explicit reconciliation
+settles their effects. No automatic replay of insert/create/delete is permitted.
+
+Formula set/read in session views must operate against that overlay, including
+unsaved worksheets. Reuse Formula validation/dialect/copy-fill helpers and typed
+requests, but do not invoke its existing immediate file/network writer while
+queueing. On write, translate the normalized formula operations into the same
+storage transaction as value edits. Explicit provider recalculation is a separate
+persisted operation requiring a clean session and an advertised capability.
+No adapter computes formula values locally or presents old caches as recalculated
+results. Maybe supports its tested recalculation scopes; Google and local Excel
+must not advertise explicit recalculation without a validated engine/transport.
+
+### 13.2 Minimum general manipulation contract
+
+The artifact gate and the general-editing gate are independent. General editing
+cannot be declared complete just because artifact generation passes, or because
+unimplemented features return unsupported. Each release publishes an operation
+matrix with implemented, unsupported and deferred entries for all three providers.
+
+| Area | Required general-editing evidence |
+| --- | --- |
+| Existing documents | Open/edit/write/reopen; unrelated cells, sheets, formulas, layout and supported objects preserved; stale revisions rejected according to declared enforcement |
+| Structure | Sheet creation/rename/reorder/copy/delete; row/column insert/delete/move; exact updates or preflight rejection for affected formulas, merges, images and named ranges |
+| Values | Read/write/clear/copy/move, finite ranges, blanks versus empty strings, literal formula-like text, numeric precision and explicitly encoded dates |
+| Appearance | Style/format patches and resets, dimensions, frozen panes, merges, visibility; print properties when the provider exposes them |
+| Ordering and discovery | Bounded search and sort; ascending/descending keys, header exclusion, stable ties, blank placement, and range/object boundaries explicitly defined |
+| Formula | Session binding before first save; typed/string equivalence; copy-fill relative/absolute references; cache state; clean-session provider recalculation when available |
+| Grid objects | Native tables, named ranges, filters, validation, conditional formatting, images, charts and pivots each have an explicit supported subset and preservation policy |
+| Links and protection | Hyperlink inspect/set/clear and sheet/workbook protection inspection; mutation only for the explicitly supported provider subset |
+
+Add `spreadsheet.range.sort/1.0`, resource-local hyperlink read/set/clear,
+protection inspect/set/clear and worksheet visibility to the catalog. Native
+spreadsheet tables are grid objects with names/ranges/header/filter metadata;
+they are distinct from the existing OTC tabular Table view and Maybe Base records.
+Unsupported native table/protection features must be documented as gaps, not
+silently replaced by plain ranges or local flags. Advanced object changes require
+versioned provider-specific schemas where portable semantics cannot be defined.
+
+The common three-provider baseline includes existing-workbook editing, finite
+range values, worksheet lifecycle, row/column sizing and visibility, basic
+style/format/merges, sorting, and formula expression operations. A provider must
+pass that baseline before it is labeled general-editing ready. Native objects,
+links, print and protection features have separate feature gates; missing support
+prevents a claim of full catalog coverage but not a clearly labeled baseline release.
+
+### 13.3 Mandatory semantics and preservation matrix
+
+Sorting uses a bounded rectangular range and declared header rows, ordered keys,
+ascending/descending direction and explicit blank placement. Preserve original
+row order for ties. The affected formula/reference/merge behavior is part of the
+capability; reject sorting an unsupported merged or reference-sensitive structure.
+
+Numeric writes must not silently round integers outside the provider's exact
+representation. Dates declare date/datetime, timezone interpretation and the
+workbook epoch, including Excel's 1900/1904 distinction and serial-60 behavior.
+Cached formula values carry fresh/provider-current/stale/unavailable evidence as
+supported; literal reads do not turn a cache into a calculation guarantee.
+
+Each provider publishes a tested matrix for formulas, tables, names, images,
+charts, pivots, hyperlinks, notes, validations, conditional formatting, protection,
+hidden/very-hidden sheets, external links, macros and unsupported package parts.
+Each entry states: mutable with verified preservation, preserved without mutation,
+or rejected before write. A feature merely absent from the mutation API may not
+be silently discarded during an unrelated write. Maybe Base worksheets in a
+mixed-mode document must remain untouched; grid operations bind only sheet-mode.
+Google native objects and collaboration state cannot be replaced wholesale by
+an XLSX import/export shortcut. Local Excel must preflight its archive before
+using an engine known to drop unrecognized parts.
+
+### 13.4 Three-provider acceptance gate
+
+Run the same logical operation fixtures on Excel, Maybe sheet-mode and Google,
+with adapter-specific transport recordings and expected differences declared.
+Require create/edit/save/reopen, unsaved formula/value composition, preservation,
+stale bindings, unsupported-property rejection, partial/unknown commits and
+same-operation `.with_results()` evidence. Remote live conformance requires an
+explicit test account and disposable documents with recorded transport versions;
+recordings alone cannot establish live parity or atomicity. Missing live evidence
+keeps that provider's release gate pending.
+
+The local FinClaw artifact gate remains R1–R16 plus FinClaw semantic, failure
+retention and replay tests in the readiness spec. Remote image or print gaps do
+not weaken that local gate, and a passing local gate does not imply remote parity.
+
+## 14. Source baseline
 
 Reviewed OTC revision: `bbf7795d0babad8d451acd258f0ff8fd4242ae90`.
 

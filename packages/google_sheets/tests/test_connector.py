@@ -170,6 +170,19 @@ def test_google_sheets_inspection_reports_sheet_convention() -> None:
     assert inspection.coordinate_convention.sheet == "Orders"
 
 
+def test_google_unified_workbook_range_surface_uses_raw_values() -> None:
+    transport = FakeTransport()
+    connector = GoogleSheetsConnector(transport=transport, access_token="token")
+    book = connector.workbook_open("gsheets://sheet-123/Orders")
+    assert book.worksheet.list() == ("Orders",)
+    assert book.worksheet("Orders").range("A1:B2").read().require_value() == [["id", "amount"], ["a", 1], ["b", 2]]
+    book.worksheet("Orders").range("A1:B2").write([["id", "amount"], ["a", 3]])
+    method, url, _, body = transport.calls[-1]
+    assert method == "PUT"
+    assert "Orders%21A1%3AB2" in url
+    assert body["values"] == [["id", "amount"], ["a", 3]]
+
+
 def test_google_sheets_rejects_invalid_uri() -> None:
     connector = GoogleSheetsConnector(transport=FakeTransport(), access_token="token")
     with pytest.raises(ConnectorError):

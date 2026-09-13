@@ -20,8 +20,8 @@ from open_table_connector.contract import (
     AdapterEndpoint,
     AdapterOptions,
     ArrowReadResult,
-    ConnectorAdapter,
     BaseTableBindingAdapter,
+    ConnectorAdapter,
     ConnectorError,
     ConnectorErrorCode,
     PluginDescriptor,
@@ -106,16 +106,32 @@ class MaybeSheetCliAdapter(
                 "MaybeSheet requires a URI endpoint",
                 {"endpoint": endpoint.raw},
             )
+        uri = endpoint.uri
+        parsed = urlsplit(uri.value)
+        if uri.scheme == SCHEME_MAYBE:
+            target = parsed.path.strip("/")
+            if parsed.query:
+                table_id = self._maybe_table_id_from_query(parsed.query)
+                if table_id is None or target:
+                    raise ConnectorError(
+                        ConnectorErrorCode.INVALID_URI,
+                        "MaybeSheet URI must use maybe://DOCUMENT/TABLE_ID",
+                        {"scheme": SCHEME_MAYBE},
+                    )
+            elif not parsed.netloc or not target or "/" in target or parsed.fragment:
+                raise ConnectorError(
+                    ConnectorErrorCode.INVALID_URI,
+                    "MaybeSheet URI must use maybe://DOCUMENT/TARGET",
+                    {"scheme": SCHEME_MAYBE},
+                )
         if options.target:
             return options.target, False
-        uri = endpoint.uri
         if uri.scheme == SCHEME_HTTPS:
             raise ConnectorError(
                 ConnectorErrorCode.INVALID_URI,
                 "MaybeSheet HTTPS document URLs require an explicit target",
                 {"option": "target"},
             )
-        parsed = urlsplit(uri.value)
         if uri.scheme == SCHEME_MAYBE and parsed.query:
             table_id = self._maybe_table_id_from_query(parsed.query)
             if table_id is None:
