@@ -24,7 +24,7 @@ from urllib.parse import unquote, urlsplit
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
-from open_table_connector.contract import CapabilityIdentity, TableURI
+from open_table_connector.contract import CapabilityIdentity, SCHEME_FILE, TableURI
 from open_table_connector.sdk.model import TableMode
 from open_table_connector.sdk.result import (
     CommitState,
@@ -72,7 +72,7 @@ def _failure(message: str, code: ErrorCode, **details: object) -> OTCError:
 def _path_from_uri(value: str | TableURI) -> tuple[TableURI, Path]:
     uri = value if isinstance(value, TableURI) else TableURI(value)
     parsed = urlsplit(uri.value)
-    if parsed.scheme != "file" or parsed.netloc not in {"", "localhost"} or parsed.query or parsed.fragment:
+    if parsed.scheme != SCHEME_FILE or parsed.netloc not in {"", "localhost"} or parsed.query or parsed.fragment:
         raise _failure("workbook target must be an absolute file URI without query or fragment", ErrorCode.INVALID_TARGET)
     path = Path(unquote(parsed.path))
     if not path.is_absolute() or path.suffix.casefold() != ".xlsx":
