@@ -71,6 +71,7 @@ def test_with_results_is_a_post_operation_identity_accessor() -> None:
         outcome=otc.Outcome.SUCCEEDED,
         commit=otc.CommitState.COMMITTED,
         verification=otc.VerificationState.PASSED,
+        receipts=(),
     )
 
     assert result.with_results() is result

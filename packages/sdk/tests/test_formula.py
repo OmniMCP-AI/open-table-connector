@@ -121,6 +121,26 @@ def test_formula_views_normalize_all_eight_extension_operations(
     )
 
 
+def test_grid_set_infers_the_bound_dialect_for_string_expression() -> None:
+    grid_connector = _grid_connector()
+    client = otc.Client(registry=otc.ConnectorRegistry([grid_connector]))
+    grid = client.formulas(_grid_target()).require_value()
+
+    grid.set("A1", "=B1+1").require_value()
+
+    request = grid_connector.formula_extension.calls[-1][1]
+    assert request.expression == otc.FormulaExpression("=B1+1", "google-sheets-a1")
+
+
+def test_grid_set_rejects_dialect_with_typed_expression() -> None:
+    grid_connector = _grid_connector()
+    client = otc.Client(registry=otc.ConnectorRegistry([grid_connector]))
+    grid = client.formulas(_grid_target()).require_value()
+
+    with pytest.raises(otc.OTCError, match="dialect must be omitted"):
+        grid.set("A1", _grid_expression(), dialect="google-sheets-a1")
+
+
 def test_client_rejects_missing_formula_extension_without_table_io() -> None:
     connector = _grid_connector()
     connector.formula_extension_for = None  # type: ignore[method-assign]
