@@ -16,6 +16,7 @@ members = [
     "open-table-connector-postgres",
     "open-table-connector-process",
     "open-table-connector-sdk",
+    "open-table-connector-spreadsheets",
     "open-table-connector-sqlite",
     "open-table-connector-timeseries",
 ]
@@ -492,6 +493,17 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=14,<24" },
     { name = "sqlglot", specifier = ">=30,<31" },
 ]
+
+[[package]]
+name = "open-table-connector-spreadsheets"
+version = "0.1.0"
+source = { editable = "packages/spreadsheets" }
+dependencies = [
+    { name = "open-table-connector-contract" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "open-table-connector-contract", editable = "packages/contract" }]
 
 [[package]]
 name = "open-table-connector-sqlite"
