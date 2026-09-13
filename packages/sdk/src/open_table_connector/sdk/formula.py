@@ -322,6 +322,14 @@ class _FormulaViewBase:
                 connector_id=self._connector_id,
                 dialect=expression.dialect,
             )
+        if expression.byte_count > self.capabilities.details.max_expression_bytes:
+            raise _error(
+                "formula expression exceeds the target byte limit",
+                ErrorCode.INVALID_FORMULA,
+                connector_id=self._connector_id,
+                dialect=expression.dialect,
+                limit=self.capabilities.details.max_expression_bytes,
+            )
 
     def _coerce_expression(
         self,
@@ -349,14 +357,6 @@ class _FormulaViewBase:
                 )
             selected = supported[0]
         return FormulaExpression(expression, selected)
-        if expression.byte_count > self.capabilities.details.max_expression_bytes:
-            raise _error(
-                "formula expression exceeds the target byte limit",
-                ErrorCode.INVALID_FORMULA,
-                connector_id=self._connector_id,
-                dialect=expression.dialect,
-                limit=self.capabilities.details.max_expression_bytes,
-            )
 
     def _remember_observed_revision(self, value: object) -> None:
         revision: str | None

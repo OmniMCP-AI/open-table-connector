@@ -9,6 +9,7 @@ from open_table_connector.contract import (
     TableMode,
 )
 from open_table_connector.formulas import GRID_READ, GRID_SET
+from open_table_connector.spreadsheets import ALL_CAPABILITIES
 
 from .identity import (
     CONNECTOR_IDENTITY,
@@ -43,6 +44,7 @@ def capability_manifest(
 CAPABILITY_MANIFEST = capability_manifest(
     connector=CONNECTOR_IDENTITY,
     uri_schemes=(SCHEME_FILE, PROVIDER_JSON, PROVIDER_JSONL),
+    extra_capabilities=ALL_CAPABILITIES,
 )
 
 EXCEL_CAPABILITY_MANIFEST = capability_manifest(

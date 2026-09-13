@@ -45,6 +45,12 @@ from open_table_connector.contract.fingerprints import (
     arrow_schema_fingerprint,
     operation_identity,
 )
+from open_table_connector.spreadsheets import (
+    SPREADSHEET_RANGE_READ,
+    SPREADSHEET_RANGE_WRITE,
+    SPREADSHEET_WORKBOOK_INSPECT,
+    SPREADSHEET_WORKSHEET_LIST,
+)
 
 CONNECTOR_IDENTITY = ConnectorIdentity(PROVIDER_GOOGLE_SHEETS, "0.1.0", "1.0")
 URI_RESOLVER_CAPABILITY = CapabilityIdentity("uri.resolve", "1.0")
@@ -62,6 +68,10 @@ CAPABILITY_MANIFEST = CapabilityManifest(
         TABLE_READ_ARROW_CAPABILITY,
         TABLE_READ_POLARS_CAPABILITY,
         TABLE_WRITE_CAPABILITY,
+        SPREADSHEET_WORKBOOK_INSPECT,
+        SPREADSHEET_WORKSHEET_LIST,
+        SPREADSHEET_RANGE_READ,
+        SPREADSHEET_RANGE_WRITE,
         otf.GRID_READ,
         otf.GRID_SET,
         otf.GRID_VALUES_READ,
@@ -174,6 +184,53 @@ class GoogleSheetsConnector(URIResolver, TableInspector, ArrowTableReader, Polar
         return CompositeFormulaConnectorExtension(
             grid=GoogleSheetsFormulaExtension(self),
             field=None,
+        )
+
+    def workbook_create(self, uri: str, *, profile: str = "general/1.0", limits=None):
+        from open_table_connector.sdk.workbook import RemoteWorkbookSession
+
+        if profile != "general/1.0":
+            raise ConnectorError(ConnectorErrorCode.UNSUPPORTED_CAPABILITY, "Google Sheets does not provide literal-artifact creation", {})
+        return RemoteWorkbookSession(self, TableURI(uri), profile)
+
+    def workbook_open(self, uri: str, *, limits=None):
+        from open_table_connector.sdk.workbook import RemoteWorkbookSession
+
+        return RemoteWorkbookSession(self, TableURI(uri))
+
+    def workbook_list_worksheets(self, uri: TableURI | str) -> tuple[str, ...]:
+        target = uri if isinstance(uri, TableURI) else TableURI(uri)
+        resource = self.resolve(target, ResolveContext()).resource
+        payload = self._transport.request(
+            "GET",
+            self._url(f"/v4/spreadsheets/{quote(resource.spreadsheet_id, safe='')}?fields=sheets(properties(title))"),
+            headers=self._headers(),
+            timeout=self._timeout,
+        )
+        return tuple(str(item.get("properties", {}).get("title")) for item in payload.get("sheets", []) if item.get("properties", {}).get("title"))
+
+    def workbook_read_range(self, uri: TableURI | str, worksheet: str, address: str) -> list[list[Any]]:
+        target = uri if isinstance(uri, TableURI) else TableURI(uri)
+        resource = self.resolve(target, ResolveContext()).resource
+        value_range = f"{worksheet}!{address}"
+        payload = self._transport.request(
+            "GET",
+            self._url(f"/v4/spreadsheets/{quote(resource.spreadsheet_id, safe='')}/values/{quote(value_range, safe='')}?majorDimension=ROWS"),
+            headers=self._headers(),
+            timeout=self._timeout,
+        )
+        return [list(row) for row in payload.get("values", [])]
+
+    def workbook_write_range(self, uri: TableURI | str, worksheet: str, address: str, values: list[list[Any]]) -> None:
+        target = uri if isinstance(uri, TableURI) else TableURI(uri)
+        resource = self.resolve(target, ResolveContext()).resource
+        value_range = f"{worksheet}!{address}"
+        self._transport.request(
+            "PUT",
+            self._url(f"/v4/spreadsheets/{quote(resource.spreadsheet_id, safe='')}/values/{quote(value_range, safe='')}?valueInputOption=RAW"),
+            headers=self._headers(),
+            body={"range": value_range, "majorDimension": "ROWS", "values": values},
+            timeout=self._timeout,
         )
 
     def __init__(

@@ -483,6 +483,16 @@ in its repository without claiming unrun checks.
 | FinClaw authenticated semantic replay and old artifacts | 10–11 |
 | Per-provider matrix and independent release gates | 9, 11 |
 
-Execution has not begun. No checkbox or gate is complete merely because this
-plan exists. If provider limitations prevent an intended operation, retain it
-as an explicit blocked feature instead of silently narrowing the accepted scope.
+Execution record (2026-09-14): the first implementation pass includes the
+provider-neutral contract models and capability identities, a callable
+`client.workbook` SDK entry point, and the local Excel session used by
+`literal-artifact/1.0`. Local sessions support exclusive staged creation,
+open/edit persistence, literal ranges, explicit formula cells, styles, formats,
+merges, images, sorting, limits, and decoded plus raw ZIP/XML verification with
+the existing `OperationResult` and `Receipt` values. Google Sheets exposes the
+same workbook handle for worksheet discovery and raw range reads/writes; its
+Formula view remains the authority for formula mutation and calculated values.
+Maybe Sheet exposes the same entry point and fails unsupported operations before
+dispatch. Tasks 9–11 remain the FinClaw adapter-specific artifact receipt,
+verification, conformance, corruption corpus and release-gate work; cutover is
+not claimed until those gates pass.

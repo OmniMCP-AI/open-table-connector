@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -29,6 +30,17 @@ def _column_number(value: str) -> int:
     for char in value:
         result = result * 26 + ord(char) - ord("A") + 1
     return result
+
+
+def _coordinate(value: str) -> tuple[int, int]:
+    match = _A1.fullmatch(value)
+    if match is None:
+        raise ValueError("coordinate must be an uppercase A1 cell")
+    column = _column_number(match.group(1))
+    row = int(match.group(2))
+    if column > 16_384 or row > 1_048_576:
+        raise ValueError("coordinate is outside the Excel worksheet bounds")
+    return row, column
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,9 +95,9 @@ class RangeRef:
             raise ValueError("range must be a finite A1 rectangle")
         start = match.group(1)
         end = match.group(2) or start
-        start_col, start_row = re.match(r"^([A-Z]{1,3})([1-9][0-9]*)$", start).groups()
-        end_col, end_row = re.match(r"^([A-Z]{1,3})([1-9][0-9]*)$", end).groups()
-        if (int(end_row), _column_number(end_col)) < (int(start_row), _column_number(start_col)):
+        start_row, start_column = _coordinate(start)
+        end_row, end_column = _coordinate(end)
+        if (end_row, end_column) < (start_row, start_column):
             raise ValueError("range end must not precede its start")
         object.__setattr__(self, "address", value)
 
@@ -118,8 +130,17 @@ class CellStyle:
     fill: str | None = None
 
     def __post_init__(self) -> None:
-        if self.font_size is not None and (isinstance(self.font_size, bool) or self.font_size <= 0):
+        if self.font_size is not None and (
+            isinstance(self.font_size, bool)
+            or not isinstance(self.font_size, (int, float))
+            or not math.isfinite(self.font_size)
+            or self.font_size <= 0
+        ):
             raise ValueError("font_size must be positive")
+        for field_name in ("bold", "italic"):
+            value = getattr(self, field_name)
+            if value is not None and not isinstance(value, bool):
+                raise ValueError(f"{field_name} must be a boolean")
         for field_name in ("foreground", "fill"):
             value = getattr(self, field_name)
             if value is not None and not _HEX.fullmatch(value):

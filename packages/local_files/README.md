@@ -49,3 +49,14 @@ The Formula view also accepts a string and infers the bound Excel dialect:
 the same string remains literal. Table writes create or replace a whole
 workbook, so use Spreadsheet range operations for in-place edits that preserve
 existing formulas and layout.
+
+## Unified workbook sessions
+
+`client.workbook.create("file:///absolute/path/report.xlsx")` creates an
+exclusive `literal-artifact/1.0` session. Select sheets with
+`book.worksheet.create("Report")`, write literal ranges with
+`sheet.range("A1:B2").write(...)`, and finish with `book.write()` or
+`book.verify()`. `client.workbook(uri)` opens an existing workbook for edits;
+its `write()` uses a verified temporary replacement. Formula cells are only
+created through `sheet.formulas().set(...)` and are rejected by the literal
+artifact verifier, while formula evaluation remains provider-owned.
