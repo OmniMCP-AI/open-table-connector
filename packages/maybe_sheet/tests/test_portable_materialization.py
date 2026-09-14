@@ -13,6 +13,7 @@ import open_table_connector.sdk as otc
 import polars as pl
 import pytest
 from open_table_connector.contract import (
+    OPTION_LIVE_MATERIALIZATION_EVIDENCE,
     PROVIDER_MAYBE_SHEET,
     ProviderConfig,
     ProviderFactoryContext,
@@ -89,6 +90,10 @@ class RecordedNativeProcess:
             return result
         if argv[:3] == ("mbs", "db-table", "read"):
             assert argv[argv.index("--table-id") + 1] == "tbl-orders"
+            if self.mode == "read-failure":
+                from open_table_connector.contract import ConnectorError, ConnectorErrorCode
+
+                raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "read failed", {})
             result = self._read()
             if self.mode == "mismatch":
                 result["result"]["rows"] = [[2]]
@@ -110,7 +115,14 @@ def _client(process: RecordedNativeProcess) -> otc.Client:
     return otc.Client(
         registry=otc.ConnectorRegistry.from_descriptors(
             [maybe_sheet_cli_plugin()],
-            otc.ClientConfig(providers={PROVIDER_MAYBE_SHEET: ProviderConfig(PROVIDER_MAYBE_SHEET)}),
+            otc.ClientConfig(
+                providers={
+                    PROVIDER_MAYBE_SHEET: ProviderConfig(
+                        PROVIDER_MAYBE_SHEET,
+                        options={OPTION_LIVE_MATERIALIZATION_EVIDENCE: True},
+                    )
+                }
+            ),
             transports={PROVIDER_MAYBE_SHEET: process},
         )
     )
@@ -163,6 +175,28 @@ def test_native_capability_is_not_advertised_without_all_provider_proofs() -> No
         _materialize(process)
     assert raised.value.result.error.code is otc.ErrorCode.UNSUPPORTED_CAPABILITY
     assert not any(call[:3] == ("mbs", "db-table", "create") for call in process.calls)
+
+
+def test_recorded_probe_does_not_advertise_without_explicit_live_evidence() -> None:
+    process = RecordedNativeProcess()
+    adapter = MaybeSheetCliAdapter.from_context(
+        ProviderFactoryContext(
+            ProviderConfig(PROVIDER_MAYBE_SHEET),
+            transports={PROVIDER_MAYBE_SHEET: process},
+        )
+    )
+    connector = adapter.sdk_connector()
+    assert otc.MATERIALIZE_CREATE_CAPABILITY not in connector.capabilities
+
+    request = otc.MaterializationRequest(
+        pl.DataFrame({"id": [1]}),
+        otc.BaseModeDestination(_URI, "Orders"),
+        otc.PORTABLE_TABLE_PROFILE_V1,
+        "recorded-direct-create",
+    )
+    assert connector.create_table(request).require_value().address == otc.BaseModeTableAddress(
+        _URI, "tbl-orders"
+    )
 
 
 @pytest.mark.parametrize(
@@ -260,6 +294,80 @@ def test_reconciliation_rejects_contradictory_provider_evidence() -> None:
         client.reconcile_materialization(reference, destination=otc.BaseModeDestination(_URI, "Orders"))
     assert mismatch.value.result.error.code is otc.ErrorCode.READBACK_MISMATCH
     assert mismatch.value.result.commit is otc.CommitState.COMMITTED
+    assert [receipt.operation for receipt in mismatch.value.result.receipts] == [
+        "table.materialize.reconcile",
+        "table.read",
+    ]
+
+
+def test_reconciliation_rejects_a_different_stable_id_payload() -> None:
+    process = RecordedNativeProcess(mode="timeout")
+    client = _client(process)
+    with pytest.raises(otc.OTCError) as raised:
+        _materialize(process)
+    reference = raised.value.result.error.reconciliation
+    process.mode = "mismatch"
+
+    with pytest.raises(otc.OTCError) as mismatch:
+        client.reconcile_materialization(
+            reference, destination=otc.BaseModeDestination(_URI, "Orders")
+        )
+
+    result = mismatch.value.result
+    assert result.error.code is otc.ErrorCode.READBACK_MISMATCH
+    assert (result.outcome, result.commit, result.verification) == (
+        otc.Outcome.FAILED,
+        otc.CommitState.COMMITTED,
+        otc.VerificationState.FAILED,
+    )
+    assert [receipt.operation for receipt in result.receipts] == [
+        "table.materialize.reconcile",
+        "table.read",
+    ]
+
+
+def test_reconciliation_read_failure_preserves_known_commit_and_receipt() -> None:
+    process = RecordedNativeProcess(mode="timeout")
+    client = _client(process)
+    with pytest.raises(otc.OTCError) as raised:
+        _materialize(process)
+    reference = raised.value.result.error.reconciliation
+    process.mode = "read-failure"
+
+    with pytest.raises(otc.OTCError) as read_failure:
+        client.reconcile_materialization(
+            reference, destination=otc.BaseModeDestination(_URI, "Orders")
+        )
+
+    result = read_failure.value.result
+    assert (result.outcome, result.commit, result.verification) == (
+        otc.Outcome.FAILED,
+        otc.CommitState.COMMITTED,
+        otc.VerificationState.FAILED,
+    )
+    assert result.error.code is otc.ErrorCode.READBACK_MISMATCH
+    assert result.receipts[0].operation == "table.materialize.reconcile"
+
+
+def test_reconciliation_rejects_invalid_reference_before_provider_dispatch() -> None:
+    process = RecordedNativeProcess()
+    client = _client(process)
+    reference = otc.ReconciliationReference(
+        "not-a-maybe-operation", "wrong-connector", "maybe-create-1"
+    )
+
+    with pytest.raises(otc.OTCError) as raised:
+        client.reconcile_materialization(
+            reference, destination=otc.BaseModeDestination(_URI, "Orders")
+        )
+
+    result = raised.value.result
+    assert (result.outcome, result.commit, result.verification) == (
+        otc.Outcome.REJECTED,
+        otc.CommitState.NOT_STARTED,
+        otc.VerificationState.SKIPPED,
+    )
+    assert not any(call[:3] == ("mbs", "db-table", "reconcile") for call in process.calls)
 
 
 @pytest.mark.parametrize("mode", ["transport-error", "invalid-response"])

@@ -41,3 +41,22 @@ def test_materialization_capability_allows_additional_profiles() -> None:
         modes=(TableMode.SHEET,),
     )
     assert capability.profiles[-1] == "provider.experimental/v1"
+
+
+def test_materialization_capability_requires_the_portable_profile() -> None:
+    with pytest.raises(ValueError, match="portable"):
+        MaterializationCapability(
+            capability=CapabilityIdentity(CAPABILITY_TABLE_MATERIALIZE_CREATE, "1.0"),
+            profiles=("provider.experimental/v1",),
+            modes=(TableMode.SHEET,),
+        )
+
+
+def test_manifest_rejects_create_without_portable_materialization_metadata() -> None:
+    with pytest.raises(ValueError, match="materialization"):
+        CapabilityManifest(
+            connector=ConnectorIdentity("example", "1.0.0", "1.0"),
+            capabilities=(CapabilityIdentity(CAPABILITY_TABLE_MATERIALIZE_CREATE, "1.0"),),
+            modes=(TableMode.BASE,),
+            uri_schemes=("example",),
+        )

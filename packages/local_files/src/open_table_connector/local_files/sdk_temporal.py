@@ -482,7 +482,6 @@ class LocalFilesSdkConnectorMixin:
                 destination_path,
                 encode,
                 load_replay,
-                load_replay_index,
                 publish,
                 replay_transaction,
                 store_replay,
@@ -504,9 +503,6 @@ class LocalFilesSdkConnectorMixin:
                     "bytes": len(data),
                 }
                 with replay_transaction(path):
-                    indexed = load_replay_index(path, self.identity.connector_id, source.idempotency_key)
-                    if indexed is not None and indexed.get("destination") != record["destination"]:
-                        raise IdempotencyConflict("portable JSON idempotency key conflicts with another destination")
                     previous = load_replay(path)
                     if previous is not None:
                         if previous.get("idempotency_key") != source.idempotency_key:
@@ -517,7 +513,11 @@ class LocalFilesSdkConnectorMixin:
                         receipts = (Receipt("physical", "table.materialize.create", self.identity.connector_id, "table.materialize.create/1.0", source.destination.uri, TableMode.BASE_MODE, {"revision": revision, "bytes": previous["bytes"], "replay": True}),)
                     else:
                         receipts = (Receipt("physical", "table.materialize.create", self.identity.connector_id, "table.materialize.create/1.0", source.destination.uri, TableMode.BASE_MODE, {"revision": revision, "bytes": len(data)}),)
-                        revision = publish(path, data)
+                        if path.exists():
+                            if path.read_bytes() != data:
+                                raise FileExistsError(path)
+                        else:
+                            revision = publish(path, data)
                         record["revision"] = revision
                         store_replay(path, record)
                         store_replay_index(path, self.identity.connector_id, record)

@@ -327,7 +327,6 @@ def _create_portable_excel_table_locked(connector, request, path, worksheet, uri
     from .portable_json import (
         IdempotencyConflict,
         load_replay,
-        load_replay_index,
         store_replay,
         store_replay_index,
     )
@@ -349,9 +348,6 @@ def _create_portable_excel_table_locked(connector, request, path, worksheet, uri
             "bytes": 0,
         }
         replay_identity = f"{uri}#sheet={canonical_worksheet}"
-        indexed = load_replay_index(path, connector.identity.connector_id, request.idempotency_key)
-        if indexed is not None and indexed.get("destination") != replay["destination"]:
-            raise IdempotencyConflict("portable Excel idempotency key conflicts with another destination")
         previous = load_replay(path, replay_identity)
         if previous is not None:
             if previous.get("idempotency_key") == request.idempotency_key and any(
@@ -364,6 +360,36 @@ def _create_portable_excel_table_locked(connector, request, path, worksheet, uri
                 read = Receipt("physical", "table.read", connector.identity.connector_id, "table.read/1.0", uri, "sheet-mode", {"revision": binding.observed_revision})
                 return OperationResult(binding, Outcome.SUCCEEDED, CommitState.COMMITTED, VerificationState.PASSED, (mutation, read))
             raise FileExistsError(path)
+        if path.exists():
+            try:
+                binding, observed = open_portable_excel(f"{uri}#sheet={worksheet}")
+            except Exception:
+                pass
+            else:
+                if observed.equals(request.source):
+                    replay["revision"] = binding.observed_revision or ""
+                    replay["bytes"] = path.stat().st_size
+                    store_replay(path, replay, replay_identity)
+                    store_replay_index(path, connector.identity.connector_id, replay, replay_identity)
+                    mutation = Receipt(
+                        "physical",
+                        "table.materialize.create",
+                        connector.identity.connector_id,
+                        "table.materialize.create/1.0",
+                        uri,
+                        "sheet-mode",
+                        {"revision": replay["revision"], "bytes": replay["bytes"], "replay": True},
+                    )
+                    read = Receipt(
+                        "physical",
+                        "table.read",
+                        connector.identity.connector_id,
+                        "table.read/1.0",
+                        uri,
+                        "sheet-mode",
+                        {"revision": binding.observed_revision},
+                    )
+                    return OperationResult(binding, Outcome.SUCCEEDED, CommitState.COMMITTED, VerificationState.PASSED, (mutation, read))
         table_id = str(uuid.uuid4())
         provider = LocalSpreadsheetProvider()
         session = SpreadsheetSession(
@@ -457,7 +483,7 @@ def _create_portable_excel_table_locked(connector, request, path, worksheet, uri
         replay["revision"] = binding.observed_revision or ""
         replay["bytes"] = path.stat().st_size
         store_replay(path, replay, replay_identity)
-        store_replay_index(path, connector.identity.connector_id, replay)
+        store_replay_index(path, connector.identity.connector_id, replay, replay_identity)
         return OperationResult(
             binding,
             Outcome.SUCCEEDED,

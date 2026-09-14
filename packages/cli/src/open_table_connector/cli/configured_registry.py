@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from importlib.metadata import EntryPoint
 from typing import Any
 from urllib.parse import urlsplit
@@ -20,6 +20,7 @@ from open_table_connector.contract import (
     ProviderConfig,
     ProviderFactoryContext,
     TableURI,
+    parse_adapter_endpoint,
 )
 
 from .configuration import CliConfig
@@ -196,6 +197,37 @@ class ConfiguredConnectorRegistry:
         )
         return tuple(descriptors)
 
+    def list_with_runtime_metadata(self) -> tuple[PluginDescriptor, ...]:
+        """Return static descriptors plus explicitly opted-in runtime metadata."""
+
+        if self._plugins and not isinstance(self._plugins[0], ConfiguredPlugin):
+            return self.list()
+        descriptors: list[PluginDescriptor] = []
+        for plugin in self._plugins:
+            descriptor = plugin.descriptor
+            if descriptor.runtime_metadata:
+                scheme = descriptor.schemes[0]
+                host = descriptor.hosts[0] if descriptor.hosts else None
+                raw = f"{scheme}://{host or 'runtime-discovery'}"
+                try:
+                    with self.open_adapter(parse_adapter_endpoint(raw)) as adapter:
+                        sdk_factory = getattr(adapter, "sdk_connector", None)
+                        if callable(sdk_factory):
+                            runtime = sdk_factory()
+                            descriptor = replace(
+                                descriptor,
+                                capabilities=tuple(getattr(runtime, "capabilities", descriptor.capabilities)),
+                                modes=tuple(getattr(runtime, "modes", descriptor.modes)),
+                                materialization=tuple(getattr(runtime, "materialization", descriptor.materialization)),
+                            )
+                except Exception:
+                    pass
+            descriptors.append(descriptor)
+        descriptors.extend(
+            self._descriptor_for_adapter(adapter) for adapter in self._manual_adapters
+        )
+        return tuple(descriptors)
+
     def register(self, adapter_or_descriptor: ConnectorAdapter | PluginDescriptor) -> None:
         """Register an additional adapter descriptor at runtime.
 
@@ -277,6 +309,7 @@ class ConfiguredConnectorRegistry:
                 materialization=descriptor.materialization,
                 local=descriptor.local,
                 handles_paths=descriptor.handles_paths,
+                runtime_metadata=descriptor.runtime_metadata,
             ),
             ProviderConfig(provider_id),
         )
@@ -295,17 +328,35 @@ class ConfiguredConnectorRegistry:
     @staticmethod
     def _descriptor_for_adapter(adapter: ConnectorAdapter) -> PluginDescriptor:
         try:
+            runtime = None
+            sdk_factory = getattr(adapter, "sdk_connector", None)
+            if callable(sdk_factory):
+                runtime = sdk_factory()
+            runtime_materialization = tuple(getattr(runtime, "materialization", ()))
+            manifest = getattr(getattr(adapter, "connector", None), "manifest", None)
+            static_materialization = tuple(
+                getattr(
+                    adapter,
+                    "materialization",
+                    getattr(manifest, "materialization", ()),
+                )
+            )
+            use_runtime = bool(runtime_materialization and not static_materialization)
+            runtime_capabilities = tuple(getattr(runtime, "capabilities", ()))
+            adapter_capabilities = tuple(getattr(adapter, "capabilities", ()))
+            capabilities = tuple(dict.fromkeys((*adapter_capabilities, *runtime_capabilities))) if use_runtime else adapter_capabilities
             return PluginDescriptor(
                 name=adapter.identity.connector_id,
                 identity=adapter.identity,
                 schemes=tuple(adapter.schemes),
                 factory=lambda _context, instance=adapter: instance,
                 hosts=tuple(getattr(adapter, "hosts", ())),
-                capabilities=tuple(getattr(adapter, "capabilities", ())),
+                capabilities=capabilities,
                 modes=tuple(getattr(adapter, "modes", ())),
-                materialization=tuple(getattr(adapter, "materialization", getattr(getattr(adapter, "connector", None), "manifest", None).materialization if getattr(getattr(adapter, "connector", None), "manifest", None) is not None else ())),
+                materialization=runtime_materialization if use_runtime else static_materialization,
                 local=bool(getattr(adapter, "local", False)),
                 handles_paths=bool(getattr(adapter, "handles_paths", False)),
+                runtime_metadata=bool(getattr(adapter, "runtime_metadata", False)),
             )
         except (AttributeError, TypeError, ValueError) as exc:
             raise ConnectorError.configuration("invalid connector adapter registration") from exc

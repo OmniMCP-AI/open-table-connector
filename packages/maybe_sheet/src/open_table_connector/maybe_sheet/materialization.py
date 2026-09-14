@@ -152,9 +152,11 @@ def _native_payload(request: MaterializationRequest) -> tuple[dict[str, Any], di
     return schema, rows
 
 
-def _operation_id(uri: TableURI, table_name: str, content_fingerprint: str) -> str:
+def _operation_id(
+    uri: TableURI, table_name: str, schema_fingerprint: str, content_fingerprint: str
+) -> str:
     target_hash = hashlib.sha256(f"{uri.value}\0{table_name}".encode()).hexdigest()
-    return f"maybe-create:{target_hash}:{content_fingerprint}"
+    return f"maybe-create:{target_hash}:{schema_fingerprint}|{content_fingerprint}"
 
 
 def _result(payload: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -290,6 +292,7 @@ class MaybeSheetSdkConnector:
     """SDK connector that adds native create/reconcile to the legacy read facade."""
 
     adapter: Any
+    live_evidence: bool = False
 
     def __post_init__(self) -> None:
         self._legacy = LegacyConnectorAdapterBridge(self.adapter)
@@ -309,7 +312,9 @@ class MaybeSheetSdkConnector:
     @property
     def capabilities(self):
         return tuple(self._legacy.capabilities) + (
-            (MATERIALIZE_CREATE_CAPABILITY,) if self._native_supported() else ()
+            (MATERIALIZE_CREATE_CAPABILITY,)
+            if self.live_evidence and self._native_supported()
+            else ()
         )
 
     @property
@@ -322,7 +327,7 @@ class MaybeSheetSdkConnector:
                     (ContractTableMode.BASE,),
                 ),
             )
-            if self._native_supported()
+            if self.live_evidence and self._native_supported()
             else ()
         )
 
@@ -417,7 +422,12 @@ class MaybeSheetSdkConnector:
             return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.RESOURCE_LIMIT, str(exc)))
         except Exception as exc:
             return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.INVALID_SCHEMA if "represent" in str(exc) else ErrorCode.INVALID_TARGET, str(exc)))
-        operation_id = _operation_id(uri, source.destination.table_name, source.content_fingerprint)
+        operation_id = _operation_id(
+            uri,
+            source.destination.table_name,
+            source.schema_fingerprint,
+            source.content_fingerprint,
+        )
         reconciliation = ReconciliationReference(operation_id, self.identity.connector_id, source.idempotency_key)
         try:
             with tempfile.TemporaryDirectory(prefix="otc-mbs-create-") as directory:
@@ -493,31 +503,99 @@ class MaybeSheetSdkConnector:
         if not self._native_supported():
             return self._unsupported()
         try:
-            if reference.connector_id not in {None, self.identity.connector_id} or not reference.idempotency_key:
+            if reference.connector_id != self.identity.connector_id or not reference.idempotency_key:
                 raise ValueError("reconciliation reference does not belong to MaybeSheet")
             uri, document_id = _canonical_destination(destination)
             target_hash = hashlib.sha256(f"{uri.value}\0{destination.table_name}".encode()).hexdigest()
             parts = reference.operation_id.split(":", 2)
             if len(parts) != 3 or parts[0] != "maybe-create" or parts[1] != target_hash:
                 raise ValueError("reconciliation reference operation is not a Maybe create")
+            schema_fingerprint, separator, content_fingerprint = parts[2].partition("|")
+            if (
+                separator != "|"
+                or not schema_fingerprint.startswith("sha256:")
+                or not content_fingerprint.startswith("sha256:")
+            ):
+                raise ValueError("reconciliation reference does not carry portable fingerprints")
+        except ValueError as exc:
+            return OperationResult(
+                None,
+                Outcome.REJECTED,
+                CommitState.NOT_STARTED,
+                VerificationState.SKIPPED,
+                (),
+                error=ErrorInfo(ErrorCode.PROTOCOL_FAILURE, "invalid Maybe reconciliation reference", {"reason": type(exc).__name__}),
+            )
+        try:
             payload = self.adapter.connector._run_process(("mbs", "db-table", "reconcile", "--uri", uri.value, "--idempotency-key", reference.idempotency_key), credentials=self.adapter.credentials, timeout=self.adapter.timeout_seconds)
             created = _reconcile_result(payload, document_id=document_id, key=reference.idempotency_key)
-            reconciliation = _receipt("table.materialize.reconcile", uri, details={
-                "table_id": created["table_id"],
-                "provider_revision": created["provider_revision"],
-                "affected_rows": created["affected_rows"],
-                "vendor_receipt_id": created["receipt_id"],
-            })
-            binding, frame, read = self._read_by_id(BaseModeTableAddress(uri, created["table_id"]))
-            if created["provider_revision"] != binding.observed_revision or created["affected_rows"] != frame.height:
-                return OperationResult(None, Outcome.FAILED, CommitState.COMMITTED, VerificationState.FAILED, (reconciliation, read), error=ErrorInfo(ErrorCode.READBACK_MISMATCH, "Maybe reconciliation evidence differs from stable-ID readback", {"provider_revision": created["provider_revision"], "read_revision": binding.observed_revision, "provider_rows": created["affected_rows"], "read_rows": frame.height}))
-            request = MaterializationRequest(frame, destination, PORTABLE_TABLE_PROFILE_V1, reference.idempotency_key)
-            binding = TableBinding(uri, TableMode.BASE_MODE, frame.schema, binding.observed_revision, self.identity.connector_id, PORTABLE_TABLE_PROFILE_V1, frame.height, request.schema_fingerprint, request.content_fingerprint, binding.address)
-            return OperationResult(binding, Outcome.SUCCEEDED, CommitState.COMMITTED, VerificationState.PASSED, (reconciliation, read))
         except Exception as exc:
-            if isinstance(exc, ValueError) and "stable-ID" not in str(exc) and "reconcile response" not in str(exc):
-                return OperationResult(None, Outcome.FAILED, CommitState.COMMITTED, VerificationState.FAILED, (), error=ErrorInfo(ErrorCode.READBACK_MISMATCH, "Maybe reconciliation evidence is inconsistent", {"reason": type(exc).__name__}))
-            return OperationResult(None, Outcome.UNKNOWN, CommitState.UNKNOWN, VerificationState.UNAVAILABLE, (), error=ErrorInfo(ErrorCode.RECONCILIATION_UNAVAILABLE, "Maybe reconciliation is unavailable", {"reason": type(exc).__name__}))
+            return OperationResult(
+                None,
+                Outcome.UNKNOWN,
+                CommitState.UNKNOWN,
+                VerificationState.UNAVAILABLE,
+                (),
+                error=ErrorInfo(ErrorCode.RECONCILIATION_UNAVAILABLE, "Maybe reconciliation is unavailable", {"reason": type(exc).__name__}),
+            )
+        reconciliation = _receipt("table.materialize.reconcile", uri, details={
+            "table_id": created["table_id"],
+            "provider_revision": created["provider_revision"],
+            "affected_rows": created["affected_rows"],
+            "vendor_receipt_id": created["receipt_id"],
+        })
+        address = BaseModeTableAddress(uri, created["table_id"])
+        try:
+            binding, frame, read = self._read_by_id(address)
+        except Exception as exc:
+            read = _receipt("table.read", uri, details={"table_id": address.table_id, "readback": "unavailable"})
+            return OperationResult(
+                None,
+                Outcome.FAILED,
+                CommitState.COMMITTED,
+                VerificationState.FAILED,
+                (reconciliation, read),
+                error=ErrorInfo(ErrorCode.READBACK_MISMATCH, "Maybe reconciliation readback failed", {"reason": type(exc).__name__}),
+            )
+        try:
+            request = MaterializationRequest(frame, destination, PORTABLE_TABLE_PROFILE_V1, reference.idempotency_key)
+        except Exception as exc:
+            return OperationResult(
+                None,
+                Outcome.FAILED,
+                CommitState.COMMITTED,
+                VerificationState.FAILED,
+                (reconciliation, read),
+                error=ErrorInfo(ErrorCode.READBACK_MISMATCH, "Maybe reconciliation readback is not portable", {"reason": type(exc).__name__}),
+            )
+        mismatch = (
+            created["provider_revision"] != binding.observed_revision
+            or created["affected_rows"] != frame.height
+            or request.schema_fingerprint != schema_fingerprint
+            or request.content_fingerprint != content_fingerprint
+        )
+        if mismatch:
+            return OperationResult(
+                None,
+                Outcome.FAILED,
+                CommitState.COMMITTED,
+                VerificationState.FAILED,
+                (reconciliation, read),
+                error=ErrorInfo(ErrorCode.READBACK_MISMATCH, "Maybe reconciliation evidence differs from the original request"),
+            )
+        binding = TableBinding(
+            uri,
+            TableMode.BASE_MODE,
+            frame.schema,
+            binding.observed_revision,
+            self.identity.connector_id,
+            PORTABLE_TABLE_PROFILE_V1,
+            frame.height,
+            schema_fingerprint,
+            content_fingerprint,
+            binding.address,
+        )
+        return OperationResult(binding, Outcome.SUCCEEDED, CommitState.COMMITTED, VerificationState.PASSED, (reconciliation, read))
 
 
 __all__ = ["MaybeSheetSdkConnector", "probe_native_materialization"]

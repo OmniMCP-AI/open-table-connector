@@ -36,6 +36,7 @@ class PluginDescriptor:
     materialization: tuple[MaterializationCapability, ...] = ()
     local: bool = False
     handles_paths: bool = False
+    runtime_metadata: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -56,7 +57,7 @@ class PluginDescriptor:
         if any(not isinstance(item, MaterializationCapability) for item in self.materialization):
             raise TypeError("plugin materialization must contain MaterializationCapability values")
         object.__setattr__(self, "materialization", tuple(self.materialization))
-        if not isinstance(self.local, bool) or not isinstance(self.handles_paths, bool):
+        if not isinstance(self.local, bool) or not isinstance(self.handles_paths, bool) or not isinstance(self.runtime_metadata, bool):
             raise TypeError("plugin local metadata must be bool values")
         if self.handles_paths and not self.local:
             raise ValueError("plugin handles_paths requires local=True")

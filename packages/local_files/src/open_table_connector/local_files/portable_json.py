@@ -148,14 +148,25 @@ def decode(payload: object, *, mode: str) -> pl.DataFrame | None:
     if not isinstance(metadata, dict) or set(metadata) != required or metadata.get("schemaVersion") != expected_version or metadata.get("profile") != PORTABLE_TABLE_PROFILE_V1 or not isinstance(schema_payload, dict) or set(schema_payload) != {"fields"} or not isinstance(schema_payload["fields"], list) or not isinstance(rows, list):
         raise ValueError("portable JSON envelope is invalid")
     fields = schema_payload["fields"]
-    schema = {
-        field["name"]: _dtype(field["type"])
-        for field in fields
-        if isinstance(field, dict) and set(field) == {"name", "type", "nullable"} and isinstance(field["name"], str) and isinstance(field["type"], str) and isinstance(field["nullable"], bool)
-    }
+    schema: dict[str, pl.DataType] = {}
+    nullable: dict[str, bool] = {}
+    for field in fields:
+        if (
+            not isinstance(field, dict)
+            or set(field) != {"name", "type", "nullable"}
+            or not isinstance(field["name"], str)
+            or not isinstance(field["type"], str)
+            or not isinstance(field["nullable"], bool)
+        ):
+            raise ValueError("portable JSON schema fields are invalid")
+        schema[field["name"]] = _dtype(field["type"])
+        nullable[field["name"]] = field["nullable"]
     if len(schema) != len(fields) or any(not isinstance(row, dict) or set(row) != set(schema) for row in rows):
         raise ValueError("portable JSON rows do not match schema")
     names = list(schema)
+    for row in rows:
+        if any(row[name] is None and not nullable[name] for name in names):
+            raise ValueError("portable JSON row contains null in a non-nullable field")
     return pl.DataFrame([{name: _parsed(row[name], schema[name]) for name in names} for row in rows], schema=schema)
 
 
@@ -189,11 +200,21 @@ def replay_transaction(path: Path):
         yield
 
 
-def _replay_index_key(connector_id: str, idempotency_key: str) -> str:
-    return hashlib.sha256(f"{connector_id}\0{idempotency_key}".encode()).hexdigest()
+def _replay_index_key(
+    path: Path, connector_id: str, idempotency_key: str, scope: str | None = None
+) -> str:
+    canonical_scope = scope or str(path.resolve())
+    return hashlib.sha256(
+        f"{connector_id}\0{canonical_scope}\0{idempotency_key}".encode()
+    ).hexdigest()
 
 
-def load_replay_index(path: Path, connector_id: str, idempotency_key: str) -> dict[str, object] | None:
+def load_replay_index(
+    path: Path,
+    connector_id: str,
+    idempotency_key: str,
+    scope: str | None = None,
+) -> dict[str, object] | None:
     try:
         payload = json.loads(replay_index_path(path).read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -202,7 +223,7 @@ def load_replay_index(path: Path, connector_id: str, idempotency_key: str) -> di
         raise ValueError("portable replay index is invalid") from exc
     if not isinstance(payload, dict):
         raise ValueError("portable replay index is invalid")
-    record = payload.get(_replay_index_key(connector_id, idempotency_key))
+    record = payload.get(_replay_index_key(path, connector_id, idempotency_key, scope))
     if record is None:
         return None
     if not isinstance(record, dict):
@@ -210,7 +231,9 @@ def load_replay_index(path: Path, connector_id: str, idempotency_key: str) -> di
     return record
 
 
-def store_replay_index(path: Path, connector_id: str, record: dict[str, object]) -> None:
+def store_replay_index(
+    path: Path, connector_id: str, record: dict[str, object], scope: str | None = None
+) -> None:
     index = replay_index_path(path)
     try:
         payload = json.loads(index.read_text(encoding="utf-8"))
@@ -223,7 +246,7 @@ def store_replay_index(path: Path, connector_id: str, record: dict[str, object])
     key = record.get("idempotency_key")
     if not isinstance(key, str):
         raise ValueError("portable replay record is invalid")
-    payload[_replay_index_key(connector_id, key)] = record
+    payload[_replay_index_key(path, connector_id, key, scope)] = record
     temporary = index.with_name(f".{index.name}.{secrets.token_hex(8)}")
     data = (json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     try:

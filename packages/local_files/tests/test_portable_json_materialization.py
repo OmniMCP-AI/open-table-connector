@@ -84,6 +84,31 @@ def test_portable_materialization_keeps_legacy_json_and_jsonl_untyped(tmp_path: 
     assert _client().open(_uri("jsonl", jsonl_path)).require_value().read().require_value().to_dicts() == [{"id": 1, "name": "legacy"}]
 
 
+@pytest.mark.parametrize("mode", [portable_json.PROVIDER_JSON, portable_json.PROVIDER_JSONL])
+def test_portable_json_rejects_null_in_a_non_nullable_declared_field(mode: str) -> None:
+    if mode == portable_json.PROVIDER_JSON:
+        payload = {
+            "schemaVersion": portable_json.SCHEMA_VERSION,
+            "profile": otc.PORTABLE_TABLE_PROFILE_V1,
+            "schema": {"fields": [{"name": "id", "type": "Int64", "nullable": False}]},
+            "rows": [{"id": None}],
+        }
+    else:
+        payload = [
+            {
+                "$otc": {
+                    "schemaVersion": portable_json.JSONL_SCHEMA_VERSION,
+                    "profile": otc.PORTABLE_TABLE_PROFILE_V1,
+                    "schema": {"fields": [{"name": "id", "type": "Int64", "nullable": False}]},
+                }
+            },
+            {"id": None},
+        ]
+
+    with pytest.raises(ValueError, match="nullable"):
+        portable_json.decode(payload, mode=mode)
+
+
 def test_portable_materialization_is_create_only_and_rejects_invalid_destination(tmp_path: Path) -> None:
     """Catches overwrites and routes unsafe/suffix-mismatched destinations before publication."""
     path = tmp_path / "exists.json"
@@ -150,12 +175,32 @@ def test_local_json_replays_by_key_and_rejects_changed_payload(tmp_path: Path) -
     assert raised.value.result.error.code is otc.ErrorCode.IDEMPOTENCY_CONFLICT
 
 
-def test_local_json_rejects_reused_key_for_another_destination(tmp_path: Path) -> None:
+def test_local_json_scopes_reused_key_to_the_canonical_destination(tmp_path: Path) -> None:
     source = pl.DataFrame({"id": [1]}, schema={"id": pl.Int64})
     _client().materialize(source, to=_uri("json", tmp_path / "first.json"), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="destination-key")
-    with pytest.raises(otc.OTCError) as raised:
-        _client().materialize(source, to=_uri("json", tmp_path / "second.json"), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="destination-key")
-    assert raised.value.result.error.code is otc.ErrorCode.IDEMPOTENCY_CONFLICT
+    second = _client().materialize(source, to=_uri("json", tmp_path / "second.json"), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="destination-key")
+    assert second.require_value().address.uri.value.endswith("second.json")
+
+
+def test_local_json_recovers_a_commit_before_replay_metadata_was_written(tmp_path: Path) -> None:
+    path = tmp_path / "metadata-window.json"
+    source = pl.DataFrame({"id": [1]}, schema={"id": pl.Int64})
+    first = _client().materialize(
+        source,
+        to=_uri("json", path),
+        profile=otc.PORTABLE_TABLE_PROFILE_V1,
+        idempotency_key="metadata-window",
+    )
+    portable_json.replay_path(path).unlink()
+    portable_json.replay_index_path(path).unlink()
+
+    replay = _client().materialize(
+        source,
+        to=_uri("json", path),
+        profile=otc.PORTABLE_TABLE_PROFILE_V1,
+        idempotency_key="metadata-window",
+    )
+    assert replay.require_value().address == first.require_value().address
 
 
 def test_portable_profile_rejects_nanosecond_datetime_before_publication(tmp_path: Path) -> None:

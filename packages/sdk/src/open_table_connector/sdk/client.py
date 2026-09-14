@@ -76,6 +76,28 @@ def _failure(message: str, code: ErrorCode, **details: object) -> OTCError:
     return OTCError(message, result)
 
 
+def _preserved_materialization_failure(
+    delivered: OperationResult[Any],
+    *,
+    receipts: tuple,
+    code: ErrorCode,
+    message: str,
+) -> OTCError:
+    """Convert invalid success evidence without erasing a known commit."""
+
+    reconciliation = None if delivered.error is None else delivered.error.reconciliation
+    result = OperationResult[None](
+        value=None,
+        outcome=Outcome.FAILED,
+        commit=delivered.commit,
+        verification=VerificationState.FAILED,
+        receipts=receipts,
+        warnings=delivered.warnings,
+        error=ErrorInfo(code=code, message=message, reconciliation=reconciliation),
+    )
+    return OTCError(message, result)
+
+
 def _materialization_mode(destination: TableDestination, connector: object) -> str | None:
     if isinstance(destination, BaseModeDestination):
         return "base"
@@ -237,7 +259,14 @@ class Client:
         receipts = delivered.receipts
         if source_result is not None:
             receipts = (*source_result.receipts, *receipts)
-        binding = delivered.require_value()
+        if (
+            request is not None
+            and delivered.outcome is Outcome.SUCCEEDED
+            and delivered.commit is CommitState.COMMITTED
+        ):
+            binding = delivered.value
+        else:
+            binding = delivered.require_value()
         if request is not None:
             expected_address = (
                 SheetModeTableAddress
@@ -253,6 +282,7 @@ class Client:
                 or delivered.outcome is not Outcome.SUCCEEDED
                 or delivered.commit is not CommitState.COMMITTED
                 or delivered.verification is not VerificationState.PASSED
+                or not isinstance(binding, TableBinding)
                 or binding.profile != request.profile
                 or binding.row_count != request.row_count
                 or binding.schema != request.source.schema
@@ -264,9 +294,11 @@ class Client:
                 or len(delivered.receipts) < 2
                 or not delivered.receipts[-1].operation.startswith("table.read")
             ):
-                raise _failure(
-                    "connector returned incomplete portable materialization evidence",
-                    ErrorCode.PROTOCOL_FAILURE,
+                raise _preserved_materialization_failure(
+                    delivered,
+                    receipts=receipts,
+                    code=ErrorCode.PROTOCOL_FAILURE,
+                    message="connector returned incomplete portable materialization evidence",
                 )
         return replace(
             delivered,

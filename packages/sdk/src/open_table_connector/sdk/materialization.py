@@ -11,14 +11,14 @@ from datetime import date, datetime
 from decimal import Decimal
 
 import polars as pl
+from open_table_connector.contract import CAPABILITY_TABLE_MATERIALIZE_CREATE, CapabilityIdentity
 from open_table_connector.contract import (
-    CAPABILITY_TABLE_MATERIALIZE_CREATE,
-    CapabilityIdentity,
+    PORTABLE_TABLE_PROFILE_V1 as CONTRACT_PORTABLE_TABLE_PROFILE_V1,
 )
 
 from .model import TableDestination
 
-PORTABLE_TABLE_PROFILE_V1 = "otc.portable-table/v1"
+PORTABLE_TABLE_PROFILE_V1 = CONTRACT_PORTABLE_TABLE_PROFILE_V1
 MATERIALIZE_CREATE_CAPABILITY = CapabilityIdentity(CAPABILITY_TABLE_MATERIALIZE_CREATE, "1.0")
 _DECIMAL = re.compile(r"^Decimal\(precision=(\d+), scale=(\d+)\)$")
 

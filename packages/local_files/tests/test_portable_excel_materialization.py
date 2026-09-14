@@ -1,9 +1,9 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+import open_table_connector.sdk as otc
 import polars as pl
 import pytest
-import open_table_connector.sdk as otc
 from open_table_connector.local_files import LocalFilesConnector
 from open_table_connector.sdk import (
     PORTABLE_TABLE_PROFILE_V1,
@@ -212,6 +212,14 @@ def test_portable_excel_replays_by_key_and_redacts_provider_snapshots(tmp_path):
     replay = _portable(_client(), source, destination)
     assert replay.require_value().address == first.require_value().address
     assert "unique-submit-secret" not in repr(tuple(receipt.to_wire() for receipt in replay.receipts))
+
+
+def test_portable_excel_scopes_reused_key_to_the_canonical_worksheet(tmp_path):
+    source = pl.DataFrame({"id": [1]})
+    path = tmp_path / "scoped.xlsx"
+    first = _portable(_client(), source, f"file://{path}#sheet=First", key="same-key")
+    second = _portable(_client(), source, f"file://{path}#sheet=Second", key="same-key")
+    assert second.require_value().address.table_id != first.require_value().address.table_id
 
 
 def test_portable_excel_maps_stable_provider_conflict_to_stale_revision(tmp_path, monkeypatch):
