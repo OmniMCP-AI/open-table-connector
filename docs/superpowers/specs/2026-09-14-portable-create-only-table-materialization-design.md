@@ -32,10 +32,10 @@ complete only after its focused tests and the task review pass.
 
 ### Task 2 — Portable local JSON and JSONL materialization
 
-- [ ] Implement deterministic versioned JSON and JSONL envelopes, typed
+- [x] Implement deterministic versioned JSON and JSONL envelopes, typed
       recovery, strict destination validation, atomic no-replace publication,
       and independent readback for local JSON/JSONL.
-- [ ] Preserve legacy untyped reads without implicit upgrade and add race,
+- [x] Preserve legacy untyped reads without implicit upgrade and add race,
       failure-injection, zero-row, all-null, Unicode, and exact-value tests.
 
 ### Task 3 — Portable Excel worksheet materialization
