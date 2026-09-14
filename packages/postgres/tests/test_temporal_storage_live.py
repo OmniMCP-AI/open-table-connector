@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import os
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
+import pyarrow as pa
 import pytest
-
 from open_table_connector.contract import TableURI
 from open_table_connector.postgres import PostgresManagedTemporalStore, lower_postgres
 from open_table_connector.timeseries import (
@@ -49,6 +49,14 @@ def test_live_postgres_temporal_storage(tmp_path: Path) -> None:
                 '"ts" TIMESTAMPTZ NOT NULL, "symbol" TEXT NOT NULL, "venue" TEXT NOT NULL, '
                 '"price" DOUBLE PRECISION, "size" BIGINT NOT NULL, "received_at" TIMESTAMPTZ NOT NULL)'
             )
+            source_table = ticks_table()
+            for field_name in ("ts", "received_at"):
+                field_index = source_table.schema.get_field_index(field_name)
+                source_table = source_table.set_column(
+                    field_index,
+                    field_name,
+                    source_table[field_name].cast(pa.timestamp("us", tz="UTC"), safe=False),
+                )
             rows = [
                 (
                     str(row["ts"]),
@@ -58,7 +66,7 @@ def test_live_postgres_temporal_storage(tmp_path: Path) -> None:
                     row["size"],
                     str(row["received_at"]),
                 )
-                for row in ticks_table().to_pylist()
+                for row in source_table.to_pylist()
             ]
             cursor.executemany(
                 f'INSERT INTO "{schema}"."ticks" VALUES (%s, %s, %s, %s, %s, %s)',
