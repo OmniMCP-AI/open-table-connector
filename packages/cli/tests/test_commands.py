@@ -1,12 +1,11 @@
+import csv
 import io
 import json
-import csv
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pyarrow as pa
 import pytest
-
 from open_table_connector.cli.commands import run_command
 from open_table_connector.cli.output import emit_error
 from open_table_connector.cli.registry import ConnectorRegistry
@@ -16,10 +15,11 @@ from open_table_connector.contract import (
     ConnectorError,
     ConnectorErrorCode,
     ConnectorIdentity,
+    MaterializationCapability,
     NeutralReceipt,
-    TableWriteResult,
     TableMode,
     TableURI,
+    TableWriteResult,
 )
 from open_table_connector.contract.coordinates import BaseConvention
 
@@ -77,6 +77,25 @@ class FakeAdapter:
         return TableWriteResult(self._receipt(), table.num_rows)
 
 
+class DynamicSdk:
+    identity = ConnectorIdentity("fake", "1", "1")
+    schemes = ("gsheets", "file")
+    capabilities = (CapabilityIdentity("table.materialize.create", "1.0"),)
+    modes = (TableMode.BASE,)
+    materialization = (
+        MaterializationCapability(
+            CapabilityIdentity("table.materialize.create", "1.0"),
+            ("otc.portable-table/v1",),
+            (TableMode.BASE,),
+        ),
+    )
+
+
+class DynamicMetadataAdapter(FakeAdapter):
+    def sdk_connector(self):
+        return DynamicSdk()
+
+
 @pytest.fixture
 def fake_registry(tmp_path):
     source = tmp_path / "data.jsonl"
@@ -101,6 +120,24 @@ def test_read_defaults_to_jsonl_row_events_then_summary(fake_registry, tmp_path)
     assert err.getvalue() == ""
 
 
+def test_list_exposes_runtime_sdk_materialization_metadata() -> None:
+    out, err = io.StringIO(), io.StringIO()
+    assert run_command(
+        type("Args", (), {"command": "list", "output_format": "jsonl"})(),
+        ConnectorRegistry([DynamicMetadataAdapter()]),
+        out,
+        err,
+    ) == 0
+    record = json.loads(out.getvalue())
+    assert {item["capability_id"] for item in record["capabilities"]} == {
+        "table.read.arrow",
+        "table.write",
+        "table.materialize.create",
+    }
+    assert record["materialization"][0]["profiles"] == ["otc.portable-table/v1"]
+    assert err.getvalue() == ""
+
+
 @pytest.mark.parametrize("format_name", ("json", "jsonl"))
 def test_read_normalizes_arrow_scalars_to_strict_json(format_name, fake_registry, tmp_path) -> None:
     adapter = fake_registry.list()[0]
@@ -110,7 +147,7 @@ def test_read_normalizes_arrow_scalars_to_strict_json(format_name, fake_registry
             "positive_infinity": [float("inf")],
             "negative_infinity": [float("-inf")],
             "date": [date(2026, 8, 28)],
-            "timestamp": [datetime(2026, 8, 28, 1, 2, 3, tzinfo=timezone.utc)],
+            "timestamp": [datetime(2026, 8, 28, 1, 2, 3, tzinfo=UTC)],
             "decimal": pa.array([Decimal("12.30")], type=pa.decimal128(4, 2)),
             "nested": pa.array([[float("nan"), float("inf"), float("-inf")]]),
         }

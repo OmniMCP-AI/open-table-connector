@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import pyarrow as pa
-
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode, ResourceLimits
 
 from .csv_reader import _headers
@@ -55,7 +54,12 @@ def read_excel_arrow(
                     "Excel worksheet does not exist",
                     {"sheet": sheet, "worksheets": list(workbook.sheetnames)},
                 ) from None
-        rows = worksheet.iter_rows(min_row=header_row, values_only=True)
+        # Preserve literal empty strings; openpyxl exposes inlineStr empties as None.
+        rows = (
+            tuple("" if cell.data_type == "inlineStr" and cell.value is None else cell.value
+                  for cell in row)
+            for row in worksheet.iter_rows(min_row=header_row)
+        )
         try:
             header_values = [cell_text(value) or "" for value in next(rows)]
         except StopIteration:

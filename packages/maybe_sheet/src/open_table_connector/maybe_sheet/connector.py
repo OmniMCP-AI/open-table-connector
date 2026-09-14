@@ -104,6 +104,27 @@ def _payload_value(payload: Mapping[str, Any], key: str) -> Any:
 
 def _payload_table(payload: Mapping[str, Any]) -> pa.Table:
     result = _payload_result(payload)
+    schema = result.get("schema")
+    typed_rows = result.get("rows")
+    if (
+        isinstance(schema, Mapping)
+        and isinstance(schema.get("fields"), list)
+        and isinstance(typed_rows, list)
+        and all(isinstance(field, Mapping) for field in schema["fields"])
+        and all(isinstance(row, list) for row in typed_rows)
+    ):
+        fields = schema["fields"]
+        if all(set(field) == {"name", "type"} and isinstance(field["name"], str) and isinstance(field["type"], str) for field in fields):
+            try:
+                from open_table_connector.sdk.model import _dtype_from_wire
+
+                return pl.DataFrame(
+                    typed_rows,
+                    schema={field["name"]: _dtype_from_wire(field["type"]) for field in fields},
+                    orient="row",
+                ).to_arrow()
+            except Exception:
+                return pa.table({})
     rows = result.get("rows")
     if isinstance(rows, list) and rows and all(isinstance(row, Mapping) for row in rows):
         names: list[str] = []

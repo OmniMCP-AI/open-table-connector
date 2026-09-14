@@ -189,3 +189,56 @@ OTC Python SDK <-> Rust adapter SDK <-> OTS Rust
 ```
 
 That bridge is deferred until after the Python SDK surface is stabilized.
+
+### Excel tables and report blocks
+
+Local worksheet tables can be created through the standard table API:
+
+```python
+import polars as pl
+from open_table_connector.sdk import Client, load_client_config
+
+with Client.from_config(load_client_config()) as client:
+    uri = 'file:///absolute/report.xlsx#sheet=Base'
+    written = client.materialize(pl.DataFrame({'metric': ['revenue'], 'amount': [120]}), to=uri)
+    frame = written.require_value().read().require_value()
+    reopened = client.open(uri).require_value().read().require_value()
+```
+
+This creates the file or adds a new worksheet to an existing workbook. An existing
+worksheet, including a case-insensitive match, is a conflict; no implicit append
+or replacement occurs. Use a percent-encoded `sheet` selector when needed. Only
+DirectDestination `.xlsx` file URIs with one explicit worksheet are supported.
+The existing workbook provider enforces preservation, limits, exclusive creation
+and revision-checked atomic replacement. Success includes physical verification
+and a comparison of persisted table values; failures after commit retain the
+committed effect and receipts.
+
+Reads follow the existing RAW lexical contract: string columns with nulls, no
+schema inference. Materialization accepts string, boolean, integer and floating
+columns. Integers with at most 15 decimal digits are numeric Excel cells so SUM
+and SUMIFS can aggregate them; larger integers, booleans and floats are written
+as lexical strings to avoid precision/coercion surprises. Formula-like string
+values are always literal. Empty strings remain distinct from nulls. All-null
+rows are rejected for whole-worksheet materialization because the RAW worksheet
+reader omits them. Nested, object, binary and temporal columns require explicit
+consumer conversion to strings. No hidden schema sheet or template engine is added.
+
+For bounded report blocks, use an existing workbook session:
+
+```python
+book = client.workbook.open('file:///absolute/report.xlsx')
+sheet = book.worksheet.create('Details')
+block = sheet.range('B2:C3')
+block.write_table(pl.DataFrame({'metric': ['revenue'], 'amount': ['120']}))
+observed = block.read_table().require_value()
+book.write()
+```
+
+Range table writes are lexical, include headers by default and require the exact
+rectangle shape. `header=False` omits headers on write and assigns `column_1`,
+`column_2`, etc. on read. All-null rows are retained in bounded ranges under the
+general profile; the literal-artifact profile still requires string-only cells.
+Styles can be passed with `style=...`; titles, formulas, images and print layout
+remain ordinary workbook operations. Read results keep the underlying committed
+or staged observation evidence and do not claim independent verification.

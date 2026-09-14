@@ -113,8 +113,9 @@ _EXPECTED_METADATA = {
             ("spreadsheet.range.merge", "1.0"),
             ("spreadsheet.range.unmerge", "1.0"),
             ("spreadsheet.formula.set", "1.0"),
+            ("table.materialize.create", "1.0"),
         ),
-        modes=("sheet",),
+        modes=("sheet", "base"),
         schemes=("file", "json", "jsonl"),
     ),
     "google_sheets": _ExpectedConnectorMetadata(

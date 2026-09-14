@@ -4,10 +4,10 @@ from .adapters import (
     AdapterEndpoint,
     AdapterFormat,
     AdapterOptions,
+    BaseTableBindingAdapter,
     ConfigScalar,
     ConfigValue,
     ConnectorAdapter,
-    BaseTableBindingAdapter,
     ProviderConfig,
     ProviderFactoryContext,
     WritePreflightAdapter,
@@ -22,7 +22,7 @@ from .bounded_reads import (
     BoundedTableReadRequest,
     ReadExtent,
 )
-from .capabilities import CapabilityManifest, TableMode
+from .capabilities import CapabilityManifest, MaterializationCapability, TableMode
 from .coordinates import (
     BaseConvention,
     BaseCoordinate,
@@ -41,6 +41,7 @@ from .execution import (
 from .identity import CapabilityIdentity, ConnectorIdentity
 from .inspect import InspectRequest, TableInspection, TableInspector
 from .names import (
+    CAPABILITY_TABLE_MATERIALIZE_CREATE,
     CAPABILITY_TABLE_READ_ARROW,
     CAPABILITY_TABLE_WRITE,
     CLI_CONFIG_DIRECTORY,
@@ -57,8 +58,10 @@ from .names import (
     IF_EXISTS_APPEND,
     IF_EXISTS_ERROR,
     IF_EXISTS_REPLACE,
+    OPTION_LIVE_MATERIALIZATION_EVIDENCE,
     OPTION_TIMEOUT_SECONDS,
     PACKAGE_NAMESPACE,
+    PORTABLE_TABLE_PROFILE_V1,
     PROCESS_PLUGIN_GROUP,
     PROVIDER_CSV,
     PROVIDER_DBT,
@@ -123,6 +126,7 @@ __all__ = [
     "BaseCoordinate",
     "CapabilityIdentity",
     "CapabilityManifest",
+    "MaterializationCapability",
     "ConnectorError",
     "ConnectorErrorCode",
     "ConnectorIdentity",
@@ -142,6 +146,7 @@ __all__ = [
     "CLI_CONFIG_SCHEMA_VERSION",
     "XDG_CONFIG_HOME_ENV",
     "CAPABILITY_TABLE_READ_ARROW",
+    "CAPABILITY_TABLE_MATERIALIZE_CREATE",
     "CAPABILITY_TABLE_WRITE",
     "CREDENTIAL_ACCESS_TOKEN",
     "CREDENTIAL_TENANT_ACCESS_TOKEN",
@@ -177,6 +182,8 @@ __all__ = [
     "SETTING_BINARY",
     "SETTING_ENDPOINT",
     "OPTION_TIMEOUT_SECONDS",
+    "OPTION_LIVE_MATERIALIZATION_EVIDENCE",
+    "PORTABLE_TABLE_PROFILE_V1",
     "HOST_GOOGLE_DOCS",
     "HOST_MAYBE",
     "ResolvedTable",

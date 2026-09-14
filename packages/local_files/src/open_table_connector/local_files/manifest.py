@@ -7,9 +7,14 @@ from open_table_connector.contract import (
     SCHEME_FILE,
     CapabilityIdentity,
     CapabilityManifest,
+    MaterializationCapability,
     TableMode,
 )
 from open_table_connector.formulas import GRID_READ, GRID_SET
+from open_table_connector.sdk.materialization import (
+    MATERIALIZE_CREATE_CAPABILITY,
+    PORTABLE_TABLE_PROFILE_V1,
+)
 
 from .identity import (
     CONNECTOR_IDENTITY,
@@ -68,6 +73,13 @@ CAPABILITY_MANIFEST = capability_manifest(
     connector=CONNECTOR_IDENTITY,
     uri_schemes=(SCHEME_FILE, PROVIDER_JSON, PROVIDER_JSONL),
     extra_capabilities=SPREADSHEET_CAPABILITIES,
+)
+CAPABILITY_MANIFEST = CapabilityManifest(
+    connector=CAPABILITY_MANIFEST.connector,
+    capabilities=(*CAPABILITY_MANIFEST.capabilities, MATERIALIZE_CREATE_CAPABILITY),
+    modes=(TableMode.SHEET, TableMode.BASE),
+    uri_schemes=CAPABILITY_MANIFEST.uri_schemes,
+    materialization=(MaterializationCapability(MATERIALIZE_CREATE_CAPABILITY, (PORTABLE_TABLE_PROFILE_V1,), (TableMode.BASE, TableMode.SHEET)),),
 )
 
 EXCEL_CAPABILITY_MANIFEST = capability_manifest(

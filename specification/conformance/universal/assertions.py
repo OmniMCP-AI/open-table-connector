@@ -4,10 +4,10 @@ import csv
 import io
 import json
 import re
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 import pyarrow as pa
-
 from open_table_connector.contract import (
     CapabilityIdentity,
     CapabilityManifest,
@@ -21,7 +21,6 @@ from open_table_connector.contract.fingerprints import (
     arrow_content_fingerprint,
     arrow_schema_fingerprint,
 )
-
 
 _RECEIPT_WIRE_KEYS = {
     "contract_version",
@@ -200,7 +199,7 @@ def assert_capabilities_are_unique(
 
         _assert_closed_wire(
             wire,
-            {"connector", "capabilities", "modes", "uri_schemes"},
+            {"connector", "capabilities", "modes", "uri_schemes", "materialization"},
             "CapabilityManifest",
         )
         assert CapabilityManifest.from_wire(wire) == manifest
@@ -209,6 +208,10 @@ def assert_capabilities_are_unique(
         assert set(manifest.modes) == set(expected_modes)
         assert set(manifest.uri_schemes) == {item.casefold() for item in expected_schemes}
         assert tuple(manifest.uri_schemes) == tuple(dict.fromkeys(manifest.uri_schemes))
+        for materialization in manifest.materialization:
+            assert materialization.capability in manifest.capabilities
+            assert set(materialization.modes).issubset(set(manifest.modes))
+            assert len(materialization.profiles) == len(set(materialization.profiles))
 
 
 def assert_safe_uri(uri: TableURI, *, allowed_schemes: frozenset[str]) -> None:
@@ -262,5 +265,27 @@ def assert_error_is_safe(
     _assert_closed_wire(wire, {"code", "message", "safe_details"}, "ConnectorError")
     for key, _ in _iter_mapping_items(wire["safe_details"]):
         assert key.casefold() not in _SECRET_DETAIL_KEYS
+    for forbidden in forbidden_values:
+        assert forbidden not in encoded
+
+
+def assert_sdk_materialization_safe(
+    receipts: tuple[object, ...],
+    result: object,
+    *,
+    forbidden_values: tuple[str, ...],
+) -> None:
+    """Assert the public SDK materialization wire boundary never leaks secrets."""
+
+    receipt_wires = tuple(receipt.to_wire() for receipt in receipts)
+    result_wire = result.to_wire()
+    encoded = json.dumps(
+        {"receipts": receipt_wires, "result": result_wire},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    for wire in receipt_wires:
+        for key, _ in _iter_mapping_items(wire):
+            assert key.casefold() not in _SECRET_DETAIL_KEYS
     for forbidden in forbidden_values:
         assert forbidden not in encoded

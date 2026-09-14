@@ -524,6 +524,23 @@ def _local_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
     def make_inspect_request(resource_limits: ResourceLimits) -> InspectRequest:
         return InspectRequest(table_uri, resource_limits)
 
+    def invoke_materialize() -> object:
+        from open_table_connector.sdk import (
+            PORTABLE_TABLE_PROFILE_V1,
+            DirectDestination,
+            MaterializationRequest,
+        )
+
+        source = pl.from_arrow(connector.read_arrow(make_read_request(ResourceLimits())).table)
+        with TemporaryDirectory(dir=bundle.csv_path.parent) as directory:
+            request = MaterializationRequest(
+                source=source,
+                destination=DirectDestination((Path(directory) / "table.json").as_uri()),
+                profile=PORTABLE_TABLE_PROFILE_V1,
+                idempotency_key="universal-local-files-materialization",
+            )
+            return connector.create_table(request, None)
+
     capability_bindings = {
         "uri.resolve": _binding(
             "uri.resolve",
@@ -562,6 +579,11 @@ def _local_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
                 identity,
                 expected_mode=TableMode.SHEET,
                 invoke=lambda operation=operation: _invoke_local_spreadsheet(operation),
+            )
+        elif identity.capability_id == "table.materialize.create":
+            capability_bindings[identity.capability_id] = _binding(
+                identity,
+                invoke=invoke_materialize,
             )
 
     return ConnectorCase(

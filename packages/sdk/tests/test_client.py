@@ -142,8 +142,8 @@ def test_client_materialize_collects_table_sources_and_orders_receipts(fake_conn
 
     assert result.require_value().uri.value == "fake://warehouse/materialized"
     assert [receipt.operation for receipt in result.receipts[-2:]] == [
-        "table.read",
         "table.create",
+        "table.read",
     ]
     assert all(
         call[0] != "create_table" or call[1] == "fake://warehouse/materialized"

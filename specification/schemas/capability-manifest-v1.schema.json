@@ -41,6 +41,78 @@
       "minItems": 1,
       "uniqueItems": true,
       "items": {"type": "string", "minLength": 1}
+    },
+    "materialization": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["capability", "profiles", "modes"],
+        "properties": {
+          "capability": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["capability_id", "capability_version"],
+            "properties": {
+              "capability_id": {"const": "table.materialize.create"},
+              "capability_version": {"const": "1.0"}
+            }
+          },
+          "profiles": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "modes": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"enum": ["base", "sheet"]}
+          }
+        }
+      }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["materialization"],
+        "properties": {"materialization": {"minItems": 1}}
+      },
+      "then": {
+        "properties": {
+          "materialization": {
+            "contains": {
+              "properties": {
+                "profiles": {
+                  "contains": {"const": "otc.portable-table/v1"},
+                  "minContains": 1
+                }
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "contains": {
+              "properties": {
+                "capability_id": {"const": "table.materialize.create"}
+              }
+            },
+            "minContains": 1
+          }
+        }
+      },
+      "then": {
+        "required": ["materialization"],
+        "properties": {"materialization": {"minItems": 1}}
+      }
+    }
+  ]
 }

@@ -9,7 +9,14 @@ from typing import TYPE_CHECKING, Any
 import polars as pl
 from open_table_connector.contract import TableURI
 
-from .model import TableMode
+from .model import (
+    BaseModeTableAddress,
+    DatabaseTableAddress,
+    DirectTableAddress,
+    ExistingTableAddress,
+    SheetModeTableAddress,
+    TableMode,
+)
 from .result import CommitState, OperationResult, OTCError, Outcome, VerificationState
 
 if TYPE_CHECKING:
@@ -49,8 +56,20 @@ class TableBinding:
     schema: pl.Schema
     observed_revision: str | None
     connector_id: str
+    profile: str | None = None
+    row_count: int | None = None
+    schema_fingerprint: str | None = None
+    content_fingerprint: str | None = None
+    address: ExistingTableAddress | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.uri, TableURI):
+            object.__setattr__(self, "uri", TableURI(self.uri))
+        if self.address is not None and not isinstance(
+            self.address,
+            (DirectTableAddress, DatabaseTableAddress, BaseModeTableAddress, SheetModeTableAddress),
+        ):
+            raise TypeError("address must be an ExistingTableAddress or None")
         object.__setattr__(self, "mode", TableMode.from_wire(str(self.mode)))
         if not isinstance(self.schema, pl.Schema):
             object.__setattr__(self, "schema", pl.Schema(self.schema))
@@ -61,6 +80,14 @@ class TableBinding:
                 _required_text(self.observed_revision, "observed_revision"),
             )
         object.__setattr__(self, "connector_id", _required_text(self.connector_id, "connector_id"))
+        if self.profile is not None:
+            object.__setattr__(self, "profile", _required_text(self.profile, "profile"))
+        if self.row_count is not None and self.row_count < 0:
+            raise ValueError("row_count must be non-negative")
+        for field_name in ("schema_fingerprint", "content_fingerprint"):
+            value = getattr(self, field_name)
+            if value is not None:
+                object.__setattr__(self, field_name, _required_text(value, field_name))
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,9 +149,7 @@ class TableTransaction:
         self._table._client._assert_open()
         if where is None:
             raise ValueError("where is required")
-        self._commands.append(
-            ("delete", where, None if parameters is None else dict(parameters))
-        )
+        self._commands.append(("delete", where, None if parameters is None else dict(parameters)))
         return self
 
     def commit(self):
@@ -201,6 +226,10 @@ class Table:
     @property
     def uri(self) -> TableURI:
         return self._binding.uri
+
+    @property
+    def address(self) -> ExistingTableAddress | None:
+        return self._binding.address
 
     @property
     def mode(self) -> TableMode:

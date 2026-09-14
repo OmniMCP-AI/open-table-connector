@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, TypeAlias
 
-from .capabilities import TableMode
+from .capabilities import MaterializationCapability, TableMode
 from .identity import CapabilityIdentity, ConnectorIdentity
 from .names import SCHEME_HTTPS
 
@@ -33,8 +33,10 @@ class PluginDescriptor:
     hosts: tuple[str, ...] = ()
     capabilities: tuple[CapabilityIdentity, ...] = ()
     modes: tuple[TableMode, ...] = ()
+    materialization: tuple[MaterializationCapability, ...] = ()
     local: bool = False
     handles_paths: bool = False
+    runtime_metadata: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -52,7 +54,10 @@ class PluginDescriptor:
         if any(not isinstance(item, TableMode) for item in self.modes):
             raise TypeError("plugin modes must be TableMode values")
         object.__setattr__(self, "modes", tuple(self.modes))
-        if not isinstance(self.local, bool) or not isinstance(self.handles_paths, bool):
+        if any(not isinstance(item, MaterializationCapability) for item in self.materialization):
+            raise TypeError("plugin materialization must contain MaterializationCapability values")
+        object.__setattr__(self, "materialization", tuple(self.materialization))
+        if not isinstance(self.local, bool) or not isinstance(self.handles_paths, bool) or not isinstance(self.runtime_metadata, bool):
             raise TypeError("plugin local metadata must be bool values")
         if self.handles_paths and not self.local:
             raise ValueError("plugin handles_paths requires local=True")

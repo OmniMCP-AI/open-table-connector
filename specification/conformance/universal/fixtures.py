@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import sqlite3
 from argparse import Namespace
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from io import StringIO
-import json
+from multiprocessing import get_context
 from pathlib import Path
-import sqlite3
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any
 
-from openpyxl import Workbook
+import open_table_connector.sdk as otc
+import polars as pl
 import pyarrow as pa
-
 from open_table_connector.cli.adapters import (
     CsvAdapter,
     ExcelAdapter,
@@ -28,6 +31,7 @@ from open_table_connector.contract import (
     BaseConvention,
     CapabilityIdentity,
     ConnectorIdentity,
+    MaterializationCapability,
     NeutralReceipt,
     TableInspection,
     TableMode,
@@ -37,6 +41,14 @@ from open_table_connector.contract import (
 from open_table_connector.contract.fingerprints import (
     arrow_content_fingerprint,
     arrow_schema_fingerprint,
+)
+from open_table_connector.sdk.connector import ArrowTableCarrier
+from open_table_connector.sdk.table import TableBinding
+from openpyxl import Workbook
+
+from .materialization import (
+    PortableMaterializationCase,
+    register_portable_materialization_case,
 )
 
 
@@ -59,6 +71,293 @@ class RecordedProcessCall:
 
 def _copy_payload(payload: Any) -> Any:
     return json.loads(json.dumps(payload, ensure_ascii=False, default=str))
+
+
+class _PortableMaterializationConnector:
+    identity = ConnectorIdentity("universal_portable", "0.1.0", "1.0")
+    schemes = ("universal",)
+    hosts: tuple[str, ...] = ()
+    capabilities = (CapabilityIdentity("table.materialize.create", "1.0"),)
+    materialization = (
+        MaterializationCapability(
+            capability=CapabilityIdentity("table.materialize.create", "1.0"),
+            profiles=("otc.portable-table/v1",),
+            modes=(TableMode.BASE,),
+        ),
+    )
+    modes = (otc.TableMode.BASE_MODE,)
+    local = True
+    handles_paths = False
+
+    def __init__(self, root: Path) -> None:
+        self._root = root
+        self._root.mkdir(parents=True, exist_ok=True)
+
+    def _table_path(self, uri: str) -> Path:
+        return self._root / f"{hashlib.sha256(uri.encode('utf-8')).hexdigest()}.arrow"
+
+    @property
+    def _replay_path(self) -> Path:
+        return self._root / "idempotency.json"
+
+    def _replays(self) -> dict[str, dict[str, str]]:
+        if not self._replay_path.exists():
+            return {}
+        return json.loads(self._replay_path.read_text(encoding="utf-8"))
+
+    def _write_replays(self, replays: dict[str, dict[str, str]]) -> None:
+        self._replay_path.write_text(
+            json.dumps(replays, ensure_ascii=False, sort_keys=True), encoding="utf-8"
+        )
+
+    @staticmethod
+    def _encode_frame(frame: pl.DataFrame) -> bytes:
+        sink = pa.BufferOutputStream()
+        with pa.ipc.new_stream(sink, frame.to_arrow().schema) as writer:
+            writer.write_table(frame.to_arrow())
+        return sink.getvalue().to_pybytes()
+
+    @staticmethod
+    def _decode_frame(payload: bytes) -> pl.DataFrame:
+        return pl.from_arrow(pa.ipc.open_stream(payload).read_all())
+
+    def _binding(self, uri: str, request: otc.MaterializationRequest | None = None) -> TableBinding:
+        frame = self._decode_frame(self._table_path(uri).read_bytes())
+        return TableBinding(
+            uri=TableURI(uri),
+            mode=otc.TableMode.BASE_MODE,
+            schema=frame.schema,
+            observed_revision="universal-revision",
+            connector_id=self.identity.connector_id,
+            profile=None if request is None else request.profile,
+            row_count=None if request is None else request.row_count,
+            schema_fingerprint=None if request is None else request.schema_fingerprint,
+            content_fingerprint=None if request is None else request.content_fingerprint,
+            address=None if request is None else otc.DirectTableAddress(uri),
+        )
+
+    def _success(self, value, *, commit: otc.CommitState, receipts=()):
+        return otc.OperationResult(
+            value=value,
+            outcome=otc.Outcome.SUCCEEDED,
+            commit=commit,
+            verification=otc.VerificationState.PASSED,
+            receipts=tuple(receipts),
+        )
+
+    def _receipt(self, operation: str, uri: str) -> otc.Receipt:
+        return otc.Receipt(
+            kind="universal-physical",
+            operation=operation,
+            connector_id=self.identity.connector_id,
+            capability="table.materialize.create/1.0",
+            safe_target=TableURI(uri),
+            mode=otc.TableMode.BASE_MODE,
+            details={"fixture": "portable-materialization"},
+        )
+
+    def open_table(self, address: object):
+        uri = address.uri.value
+        return self._success(
+            self._binding(uri),
+            commit=otc.CommitState.NOT_APPLICABLE,
+            receipts=(self._receipt("table.open", uri),),
+        )
+
+    def read_table(self, binding: TableBinding, *, limit=None, continuation=None):
+        del continuation
+        frame = self._decode_frame(self._table_path(binding.uri.value).read_bytes())
+        if limit is not None:
+            frame = frame.head(limit)
+        return self._success(
+            ArrowTableCarrier(frame.to_arrow()),
+            commit=otc.CommitState.NOT_APPLICABLE,
+            receipts=(self._receipt("table.read", binding.uri.value),),
+        )
+
+    def create_table(self, source, destination=None):
+        assert isinstance(source, otc.MaterializationRequest)
+        uri = source.destination.uri.value
+        if uri.endswith("/failure"):
+            return otc.OperationResult(
+                value=None,
+                outcome=otc.Outcome.UNKNOWN,
+                commit=otc.CommitState.UNKNOWN,
+                verification=otc.VerificationState.UNAVAILABLE,
+                receipts=(self._receipt("table.create.failure", uri),),
+                error=otc.ErrorInfo(
+                    code=otc.ErrorCode.UNCERTAIN_MUTATION,
+                    message="provider response is uncertain",
+                    safe_details={"token": "fixture-secret", "attempt": 1},
+                ),
+            )
+        replays = self._replays()
+        replay = replays.get(source.idempotency_key)
+        if replay is not None:
+            if (
+                replay["schema"],
+                replay["content"],
+                replay["uri"],
+            ) != (
+                source.schema_fingerprint,
+                source.content_fingerprint,
+                uri,
+            ):
+                return otc.OperationResult(
+                    value=None,
+                    outcome=otc.Outcome.REJECTED,
+                    commit=otc.CommitState.NOT_STARTED,
+                    verification=otc.VerificationState.SKIPPED,
+                    receipts=(),
+                    error=otc.ErrorInfo(
+                        code=otc.ErrorCode.IDEMPOTENCY_CONFLICT,
+                        message="idempotency key was reused for a different request",
+                    ),
+                )
+            return self._success(
+                self._binding(uri, source),
+                commit=otc.CommitState.COMMITTED,
+                receipts=(self._receipt("table.create.replay", uri), self._receipt("table.read", uri)),
+            )
+        self._table_path(uri).write_bytes(self._encode_frame(source.source))
+        replays[source.idempotency_key] = {
+            "schema": source.schema_fingerprint,
+            "content": source.content_fingerprint,
+            "uri": uri,
+        }
+        self._write_replays(replays)
+        return self._success(
+            self._binding(uri, source),
+            commit=otc.CommitState.COMMITTED,
+            receipts=(self._receipt("table.create", uri), self._receipt("table.read", uri)),
+        )
+
+    def close(self) -> None:
+        pass
+
+
+def _read_portable_frame_in_fresh_process(root: str, uri: str, output) -> None:
+    try:
+        connector = _PortableMaterializationConnector(Path(root))
+        client = otc.Client(registry=otc.ConnectorRegistry([connector]))
+        frame = client.open(uri).require_value().read().require_value()
+        output.put(("ok", _PortableMaterializationConnector._encode_frame(frame)))
+    except BaseException as exc:
+        output.put(("error", f"{type(exc).__name__}: {exc}"))
+    finally:
+        output.close()
+
+
+@register_portable_materialization_case
+def portable_materialization_case(root: Path) -> PortableMaterializationCase:
+    """Reference registration for the universal public-SDK materialization suite."""
+
+    case_root = root / "universal-memory"
+
+    def make_client() -> otc.Client:
+        return otc.Client(registry=otc.ConnectorRegistry([_PortableMaterializationConnector(case_root)]))
+
+    def read_in_fresh_process(uri: object) -> pl.DataFrame:
+        uri_text = uri.uri.value if isinstance(uri, otc.DirectTableAddress) else uri.value
+        context = get_context("spawn")
+        output = context.Queue()
+        process = context.Process(
+            target=_read_portable_frame_in_fresh_process,
+            args=(str(case_root), uri_text, output),
+        )
+        process.start()
+        status, payload = output.get(timeout=10)
+        process.join(timeout=10)
+        if process.exitcode != 0 or status != "ok":
+            raise AssertionError(f"fresh-process readback failed: {payload}")
+        return _PortableMaterializationConnector._decode_frame(payload)
+
+    return PortableMaterializationCase(
+        name="universal-memory",
+        make_client=make_client,
+        read_in_fresh_process=read_in_fresh_process,
+        destination=otc.DirectDestination("universal://materialized/result"),
+        failure_destination=otc.DirectDestination("universal://materialized/failure"),
+        source=pl.DataFrame({"id": [1], "label": ["東京"]}),
+        changed_source=pl.DataFrame({"id": [2], "label": ["changed"]}),
+    )
+
+
+def _read_local_frame_in_fresh_process(address_wire: object, output) -> None:
+    try:
+        from open_table_connector.local_files import LocalFilesConnector
+
+        client = otc.Client(registry=otc.ConnectorRegistry([LocalFilesConnector()]))
+        if isinstance(address_wire, dict):
+            address = (
+                otc.DirectTableAddress.from_wire(address_wire)
+                if address_wire.get("kind") == "direct_table"
+                else otc.SheetModeTableAddress.from_wire(address_wire)
+            )
+        else:
+            address = address_wire
+        frame = client.open(address).require_value().read().require_value()
+        output.put(("ok", _PortableMaterializationConnector._encode_frame(frame)))
+    except BaseException as exc:
+        output.put(("error", f"{type(exc).__name__}: {exc}"))
+    finally:
+        output.close()
+
+
+def _local_sdk_case(root: Path, name: str, destination: object, failure_destination: object) -> PortableMaterializationCase:
+    from open_table_connector.local_files import LocalFilesConnector
+
+    def make_client() -> otc.Client:
+        return otc.Client(registry=otc.ConnectorRegistry([LocalFilesConnector()]))
+
+    def read_in_fresh_process(address: object) -> pl.DataFrame:
+        context = get_context("spawn")
+        output = context.Queue()
+        wire = address.to_wire() if hasattr(address, "to_wire") else address
+        process = context.Process(target=_read_local_frame_in_fresh_process, args=(wire, output))
+        process.start()
+        status, payload = output.get(timeout=10)
+        process.join(timeout=10)
+        if process.exitcode != 0 or status != "ok":
+            raise AssertionError(f"fresh-process local readback failed: {payload}")
+        return _PortableMaterializationConnector._decode_frame(payload)
+
+    return PortableMaterializationCase(
+        name=name,
+        make_client=make_client,
+        read_in_fresh_process=read_in_fresh_process,
+        destination=destination,
+        failure_destination=failure_destination,
+        source=pl.DataFrame({"id": [1], "label": ["fixture-secret"]}, schema={"id": pl.Int64, "label": pl.String}),
+        changed_source=pl.DataFrame({"id": [2], "label": ["changed"]}, schema={"id": pl.Int64, "label": pl.String}),
+    )
+
+
+@register_portable_materialization_case
+def local_json_portable_materialization_case(root: Path) -> PortableMaterializationCase:
+    path = root / "local-json.json"
+    failure = root / "local-json-failure.json"
+    failure.write_text("[]\n", encoding="utf-8")
+    return _local_sdk_case(root, "local-json", path.as_uri().replace("file://", "json://", 1), failure.as_uri().replace("file://", "json://", 1))
+
+
+@register_portable_materialization_case
+def local_jsonl_portable_materialization_case(root: Path) -> PortableMaterializationCase:
+    path = root / "local-jsonl.jsonl"
+    failure = root / "local-jsonl-failure.jsonl"
+    failure.write_text("{}\n", encoding="utf-8")
+    return _local_sdk_case(root, "local-jsonl", path.as_uri().replace("file://", "jsonl://", 1), failure.as_uri().replace("file://", "jsonl://", 1))
+
+
+@register_portable_materialization_case
+def local_excel_portable_materialization_case(root: Path) -> PortableMaterializationCase:
+    path = root / "local-excel.xlsx"
+    failure = root / "local-excel-failure.xlsx"
+    book = Workbook()
+    book.active.title = "Data"
+    book.save(failure)
+    book.close()
+    return _local_sdk_case(root, "local-excel", otc.SheetModeDestination(path.as_uri(), "A1", True, "Data"), otc.SheetModeDestination(failure.as_uri(), "A1", True, "Data"))
 
 
 class RecordingSheetsTransport:

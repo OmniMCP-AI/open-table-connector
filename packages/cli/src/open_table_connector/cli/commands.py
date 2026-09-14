@@ -70,30 +70,61 @@ def _emit_list(
     registry: ConnectorRegistry, out: TextIO, output_format: FormatName = FormatName.JSONL
 ) -> None:
     payloads = []
-    for adapter in registry.list():
+    runtime_list = getattr(registry, "list_with_runtime_metadata", None)
+    adapters = runtime_list() if callable(runtime_list) else registry.list()
+    for adapter in adapters:
+        runtime = None
+        static_materialization = ()
         if hasattr(adapter, "descriptor"):
             adapter = adapter.descriptor
         if hasattr(adapter, "identity") and hasattr(adapter, "schemes"):
-            manifest = None
-            capabilities = tuple(getattr(adapter, "capabilities", ()))
-            modes = tuple(getattr(adapter, "modes", ()))
-            schemes = tuple(getattr(adapter, "schemes", ()))
+            manifest = getattr(getattr(adapter, "connector", None), "manifest", None)
+            runtime = None
+            sdk_factory = getattr(adapter, "sdk_connector", None)
+            if callable(sdk_factory):
+                runtime = sdk_factory()
+                if manifest is None:
+                    manifest = getattr(runtime, "manifest", None)
+            static_capabilities = tuple(getattr(adapter, "capabilities", ()))
+            runtime_capabilities = tuple(getattr(runtime, "capabilities", ()))
+            static_materialization = tuple(
+                getattr(manifest, "materialization", getattr(adapter, "materialization", ()))
+            )
+            runtime_materialization = tuple(getattr(runtime, "materialization", ()))
+            capabilities = (
+                tuple(dict.fromkeys((*static_capabilities, *runtime_capabilities)))
+                if runtime_materialization and not static_materialization
+                else static_capabilities
+            )
+            modes = tuple(getattr(adapter, "modes", getattr(runtime, "modes", ())))
+            schemes = tuple(getattr(adapter, "schemes", getattr(runtime, "schemes", ())))
             identity = adapter.identity
         else:
             manifest, capabilities, modes, schemes = _manifest(adapter)
             identity = getattr(manifest, "connector", getattr(adapter, "identity", None))
+            static_materialization = tuple(
+                getattr(manifest, "materialization", getattr(adapter, "materialization", ()))
+            )
         payload = {
             "connector_id": identity.connector_id,
             "schemes": list(schemes),
             "capabilities": [_wire_item(item) for item in capabilities],
             "modes": [_wire_item(item) for item in modes],
         }
+        materialization = static_materialization
+        if not materialization and runtime is not None:
+            materialization = tuple(getattr(runtime, "materialization", ()))
+        if materialization:
+            payload["materialization"] = [_wire_item(item) for item in materialization]
         payloads.append(payload)
+    headers = ("connector_id", "schemes", "capabilities", "modes")
+    if any("materialization" in payload for payload in payloads):
+        headers += ("materialization",)
     emit_records(
         payloads,
         output_format,
         out,
-        headers=("connector_id", "schemes", "capabilities", "modes"),
+        headers=headers,
     )
 
 
@@ -101,7 +132,8 @@ def _wire_item(value: Any) -> Any:
     to_wire = getattr(value, "to_wire", None)
     if callable(to_wire):
         return to_wire()
-    return getattr(value, "value", value)
+    value = getattr(value, "value", value)
+    return {"base-mode": "base", "sheet-mode": "sheet"}.get(value, value)
 
 
 def _emit_json(payload: Any, out: TextIO) -> None:

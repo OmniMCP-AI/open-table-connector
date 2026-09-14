@@ -355,9 +355,13 @@ class OperationResult(Generic[T]):
             }:
                 raise ValueError("planned outcome requires not_applicable or skipped verification")
         if self.outcome is Outcome.REJECTED:
-            if self.commit not in {CommitState.NOT_APPLICABLE, CommitState.NOT_STARTED}:
+            if self.commit not in {
+                CommitState.NOT_APPLICABLE,
+                CommitState.NOT_STARTED,
+                CommitState.NOT_COMMITTED,
+            }:
                 raise ValueError(
-                    "rejected outcome requires not_applicable or not_started commit state"
+                    "rejected outcome requires not_applicable, not_started, or not_committed commit state"
                 )
             if self.verification is not VerificationState.SKIPPED:
                 raise ValueError("rejected outcome requires skipped verification")

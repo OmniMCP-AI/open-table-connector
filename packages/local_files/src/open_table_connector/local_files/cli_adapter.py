@@ -547,7 +547,11 @@ class LocalFilesCliAdapter(_LocalCliAdapter):
     identity = ConnectorIdentity(PROVIDER_LOCAL_FILES, "0.1.0", "1.0")
     schemes = (SCHEME_FILE, PROVIDER_JSON, PROVIDER_JSONL)
     hosts: tuple[str, ...] = ()
-    modes = (TableMode.SHEET,)
+    modes = tuple(LocalFilesConnector.manifest.modes)
+
+    def sdk_connector(self):
+        """Expose the native table SDK while retaining the CLI adapter contract."""
+        return self.connector
 
     def spreadsheet_provider(self):
         return self.connector.spreadsheet_provider()
@@ -660,6 +664,7 @@ def local_files_cli_plugin() -> PluginDescriptor:
         lambda context: _context_factory(LocalFilesCliAdapter, LocalFilesConnector, context),
         capabilities=LocalFilesCliAdapter.capabilities,
         modes=LocalFilesCliAdapter.modes,
+        materialization=tuple(LocalFilesConnector.manifest.materialization),
         local=True,
         handles_paths=True,
     )

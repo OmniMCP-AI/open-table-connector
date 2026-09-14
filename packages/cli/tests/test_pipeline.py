@@ -154,6 +154,7 @@ class SdkRecordingConnector:
     schemes = ("sdk-fake",)
     hosts = ()
     capabilities = (CapabilityIdentity("table.write", "1"), CapabilityIdentity("table.read", "1"))
+    materialization = ()
     modes = (otc.TableMode.BASE_MODE,)
     local = False
     handles_paths = False

@@ -514,6 +514,26 @@ class Range:
             }
         return _adapt(value, self._book.uri, "range.read")
 
+    def write_table(self, frame, *, header=True, style=None):
+        """Queue a lexical DataFrame in this exact rectangle; commit with workbook.write."""
+        from ._excel_table import rectangle_shape, table_matrix
+
+        shape = (frame.height + int(header), frame.width)
+        if rectangle_shape(self.address) != shape:
+            raise ValueError("table shape must equal the range rectangle")
+        # Validate range limits before constructing a Python matrix.
+        self.read()
+        return self.write(table_matrix(frame, header=header), style=style, format="@")
+
+    def read_table(self, *, header=True):
+        """Decode the bounded observation as a lexical DataFrame, preserving receipts."""
+        from dataclasses import replace
+
+        from ._excel_table import matrix_table
+
+        result = self.read()
+        return replace(result, value=matrix_table(result.require_value(), header=header))
+
     def write(self, values, *, format=None, style=None):
         from dataclasses import asdict
 
