@@ -14,6 +14,56 @@ The implementation baseline is OTC commit `6a67a4d`, which already contains
 verified Excel worksheet-table materialization. FinClaw currently pins that
 commit. This document does not authorize a FinClaw-side provider workaround.
 
+## Implementation checklist
+
+The implementation follows the delivery order in Section 13. Each task is
+complete only after its focused tests and the task review pass.
+
+### Task 1 — Contract, portable profile, and shared conformance
+
+- [ ] Add the `otc.portable-table/v1` logical profile, validation, schema and
+      content fingerprints, capability identity, structured materialization
+      request/result data, and the outcome/error states required by Sections
+      5, 6, and 10.
+- [ ] Extend `Client.materialize` and connector dispatch with profile and
+      idempotency-key validation while preserving legacy unprofiled calls.
+- [ ] Add shared public-interface conformance cases for the profile,
+      capability discovery, fresh readback, idempotency, and safe receipts.
+
+### Task 2 — Portable local JSON and JSONL materialization
+
+- [ ] Implement deterministic versioned JSON and JSONL envelopes, typed
+      recovery, strict destination validation, atomic no-replace publication,
+      and independent readback for local JSON/JSONL.
+- [ ] Preserve legacy untyped reads without implicit upgrade and add race,
+      failure-injection, zero-row, all-null, Unicode, and exact-value tests.
+
+### Task 3 — Portable Excel worksheet materialization
+
+- [ ] Align Excel creation with the portable profile, durable adapter-owned
+      schema metadata, structured sheet destinations/addresses, revision
+      comparison, and typed independent readback while preserving unrelated
+      workbook content.
+- [ ] Add the required conflict, stale-revision, metadata, typed-value, and
+      committed-readback-failure tests.
+
+### Task 4 — Maybe native Base create and reconciliation
+
+- [ ] Add the provider-native `mbs db-table create` process contract with
+      stable table IDs, typed schema/rows, idempotency, and reconciliation.
+- [ ] Implement the Maybe adapter gate, canonical container validation,
+      stable-ID binding/readback, unknown/partial outcomes, and recorded
+      conformance coverage without append or name-based emulation.
+
+### Task 5 — Full verification and release evidence
+
+- [ ] Run the complete workspace verification and the shared/local/Excel/
+      Maybe conformance suites, fixing regressions without weakening the
+      create-only contract.
+- [ ] Record the exact verified commands and evidence needed for OTC to be
+      pinned by downstreams; leave only this checklist's completed boxes and
+      the final commit/PR metadata to be filled in during delivery.
+
 ## 1. Decision
 
 OTC will make create-only materialization an explicit, discoverable connector
