@@ -275,6 +275,12 @@ class MaybeSheetCliAdapter(
             ),
         )
 
+    def sdk_connector(self):
+        """Expose native Base creation only when the process proves its contract."""
+        from .materialization import MaybeSheetSdkConnector
+
+        return MaybeSheetSdkConnector(self)
+
 
 def _factory(context: ProviderFactoryContext) -> MaybeSheetCliAdapter:
     allowed = {SETTING_BINARY}

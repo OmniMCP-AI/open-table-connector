@@ -3,6 +3,7 @@ from .connector import MaybeSheetConnector, MaybeSheetReadRequest, ProcessClient
 from .field_formula import MaybeSheetFieldFormulaExtension
 from .grid_formula import MaybeSheetGridFormulaExtension
 from .identity import CONNECTOR_IDENTITY, TABLE_WRITE_CAPABILITY
+from .materialization import MaybeSheetSdkConnector, probe_native_materialization
 from .process import SubprocessProcessClient, _absolute_executable
 from .temporal import (
     MaybeSheetManagedTemporalStore,
@@ -19,10 +20,12 @@ __all__ = [
     "MaybeSheetFieldFormulaExtension",
     "MaybeSheetManagedTemporalStore",
     "MaybeSheetReadRequest",
+    "MaybeSheetSdkConnector",
     "MaybeSheetTemporalExecutor",
     "ProcessClient",
     "SubprocessProcessClient",
     "_absolute_executable",
     "probe_temporal_capabilities",
+    "probe_native_materialization",
     "maybe_sheet_cli_plugin",
 ]

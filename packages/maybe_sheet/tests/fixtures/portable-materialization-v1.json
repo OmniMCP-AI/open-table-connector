@@ -1,0 +1,38 @@
+{
+  "describe": {
+    "schema_version": "mbs.db-table-describe/v1",
+    "provider_identity": "maybe-sheet",
+    "capabilities": [
+      "db-table.create.typed/v1",
+      "db-table.read-by-id/v1",
+      "db-table.idempotency/v1",
+      "db-table.reconcile/v1"
+    ],
+    "commands": {
+      "create": {"version": "1.0", "schema": "mbs.db-table-create-result/v1"},
+      "reconcile": {"version": "1.0", "schema": "mbs.db-table-reconcile-result/v1"}
+    }
+  },
+  "create": {
+    "schema_version": "mbs.db-table-create-result/v1",
+    "result": {
+      "document_id": "doc-123",
+      "table_id": "tbl-orders",
+      "provider_revision": "rev-1",
+      "affected_rows": 1,
+      "idempotency_key": "maybe-create-1",
+      "receipt_id": "vendor-create-1"
+    }
+  },
+  "read": {
+    "schema_version": "mbs.db-table-read-result/v1",
+    "result": {
+      "table_id": "tbl-orders",
+      "provider_revision": "rev-1",
+      "source_revision": "rev-1",
+      "schema": {"fields": [{"name": "id", "type": "Int64"}]},
+      "rows": [[1]],
+      "receipt_id": "vendor-read-1"
+    }
+  }
+}
