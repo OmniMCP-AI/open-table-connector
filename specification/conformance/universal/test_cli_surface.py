@@ -174,8 +174,9 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
                 {"capability_id": "spreadsheet.range.merge", "capability_version": "1.0"},
                 {"capability_id": "spreadsheet.range.unmerge", "capability_version": "1.0"},
                 {"capability_id": "spreadsheet.formula.set", "capability_version": "1.0"},
+                {"capability_id": "table.materialize.create", "capability_version": "1.0"},
             ],
-            "modes": ["sheet"],
+            "modes": ["sheet", "base"],
         },
         {
             "connector_id": "google_sheets",

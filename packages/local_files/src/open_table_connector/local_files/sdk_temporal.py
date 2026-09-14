@@ -14,6 +14,8 @@ import polars as pl
 import pyarrow as pa
 from open_table_connector.contract import (
     PROVIDER_CSV,
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
     SCHEME_FILE,
     SCHEME_MANAGED_CSV,
     ConnectorError,
@@ -125,7 +127,7 @@ def _as_file_uri(address: object) -> TableURI:
     if isinstance(address, str):
         parsed = urlsplit(address)
         if parsed.scheme:
-            if parsed.scheme in {"json", "jsonl"}:
+            if parsed.scheme in {PROVIDER_JSON, PROVIDER_JSONL}:
                 return TableURI(address.replace(f"{parsed.scheme}://", "file://", 1))
             return TableURI(address)
         return TableURI(Path(address).absolute().as_uri())

@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlsplit
 
 import polars as pl
-from open_table_connector.contract import ConnectorError
+from open_table_connector.contract import SCHEME_FILE, ConnectorError
 from open_table_connector.sdk._excel_table import table_address, table_matrix
 from open_table_connector.sdk.materialization import MaterializationRequest
 from open_table_connector.sdk.model import (
@@ -96,7 +96,7 @@ def _destination(destination):
         raise ValueError("Excel materialization requires a sheet destination")
     parsed = urlsplit(uri)
     if (
-        parsed.scheme != "file"
+        parsed.scheme != SCHEME_FILE
         or parsed.netloc not in ("", "localhost")
         or parsed.query
         or parsed.fragment
@@ -461,7 +461,7 @@ def create_excel_table(connector, source, destination):
         parsed = urlsplit(uri.value)
         selectors = parse_qsl(parsed.fragment, keep_blank_values=True)
         if (
-            parsed.scheme != "file"
+            parsed.scheme != SCHEME_FILE
             or parsed.netloc not in ("", "localhost")
             or parsed.query
             or len(selectors) != 1

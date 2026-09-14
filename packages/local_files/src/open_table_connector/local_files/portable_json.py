@@ -36,7 +36,7 @@ def destination_path(uri: TableURI) -> tuple[Path, str]:
     parent = path.parent
     if not parent.is_dir() or parent.is_symlink():
         raise ValueError("portable JSON destination parent must be an existing non-symlink directory")
-    mode = "jsonl" if parsed.scheme == PROVIDER_JSONL or path.suffix.lower() == ".jsonl" else "json"
+    mode = PROVIDER_JSONL if parsed.scheme == PROVIDER_JSONL or path.suffix.lower() == ".jsonl" else PROVIDER_JSON
     if path.suffix.lower() not in {".json", ".jsonl"} or (parsed.scheme == PROVIDER_JSON and path.suffix.lower() != ".json") or (parsed.scheme == PROVIDER_JSONL and path.suffix.lower() != ".jsonl"):
         raise ValueError("portable JSON destination scheme and suffix must agree")
     return path, mode
@@ -66,7 +66,7 @@ def encode(frame: pl.DataFrame, mode: str) -> bytes:
     rows = [[_value(value, dtype) for value, dtype in zip(row, frame.dtypes, strict=True)] for row in frame.iter_rows()]
     def dump(value: object) -> str:
         return json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
-    if mode == "json":
+    if mode == PROVIDER_JSON:
         payload = {"schemaVersion": SCHEMA_VERSION, "profile": PORTABLE_TABLE_PROFILE_V1, "schema": fields, "rows": rows}
         return (dump(payload) + "\n").encode("utf-8")
     metadata = {"$otc": {"schemaVersion": JSONL_SCHEMA_VERSION, "profile": PORTABLE_TABLE_PROFILE_V1, "schema": fields}}
@@ -99,7 +99,7 @@ def _parsed(value: object, dtype: pl.DataType) -> object:
 
 
 def decode(payload: object, *, mode: str) -> pl.DataFrame | None:
-    if mode == "json":
+    if mode == PROVIDER_JSON:
         if not isinstance(payload, dict) or payload.get("schemaVersion") != SCHEMA_VERSION:
             return None
         metadata, rows = payload, payload.get("rows")
@@ -107,8 +107,8 @@ def decode(payload: object, *, mode: str) -> pl.DataFrame | None:
         if not isinstance(payload, list) or not payload or not isinstance(payload[0], dict) or set(payload[0]) != {"$otc"}:
             return None
         metadata, rows = payload[0]["$otc"], payload[1:]
-    expected_version = SCHEMA_VERSION if mode == "json" else JSONL_SCHEMA_VERSION
-    required = {"schemaVersion", "profile", "schema", "rows"} if mode == "json" else {"schemaVersion", "profile", "schema"}
+    expected_version = SCHEMA_VERSION if mode == PROVIDER_JSON else JSONL_SCHEMA_VERSION
+    required = {"schemaVersion", "profile", "schema", "rows"} if mode == PROVIDER_JSON else {"schemaVersion", "profile", "schema"}
     if not isinstance(metadata, dict) or set(metadata) != required or metadata.get("schemaVersion") != expected_version or metadata.get("profile") != PORTABLE_TABLE_PROFILE_V1 or not isinstance(metadata.get("schema"), list) or not isinstance(rows, list):
         raise ValueError("portable JSON envelope is invalid")
     fields = metadata["schema"]

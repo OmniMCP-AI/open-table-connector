@@ -9,7 +9,12 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pyarrow as pa
-from open_table_connector.contract import ConnectorError, ConnectorErrorCode
+from open_table_connector.contract import (
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
+    ConnectorError,
+    ConnectorErrorCode,
+)
 
 from .portable_json import decode as decode_portable
 
@@ -78,7 +83,7 @@ def parse_json_table(text: str, *, source: str) -> pa.Table:
         raise TypeError("text must be a string")
     payload = _loads(text, source=source)
     try:
-        portable = decode_portable(payload, mode="json")
+        portable = decode_portable(payload, mode=PROVIDER_JSON)
     except ValueError as exc:
         raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, str(exc), {"source": source}) from None
     if portable is not None:
@@ -117,7 +122,7 @@ def parse_jsonl_table(text: str, *, source: str) -> pa.Table:
             )
         rows.append(item)
     try:
-        portable = decode_portable(rows, mode="jsonl")
+        portable = decode_portable(rows, mode=PROVIDER_JSONL)
     except ValueError as exc:
         raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, str(exc), {"source": source}) from None
     if portable is not None:

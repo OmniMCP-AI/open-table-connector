@@ -13,7 +13,14 @@ from typing import TYPE_CHECKING, Any, overload
 from urllib.parse import urlsplit
 
 import polars as pl
-from open_table_connector.contract import PluginDescriptor, TableURI, parse_adapter_endpoint
+from open_table_connector.contract import (
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
+    SCHEME_FILE,
+    PluginDescriptor,
+    TableURI,
+    parse_adapter_endpoint,
+)
 
 from .config import ClientConfig, load_client_config
 from .connector import ArrowTableCarrier, _destination_uri
@@ -75,9 +82,9 @@ def _materialization_mode(destination: TableDestination, connector: object) -> s
         return "sheet"
     if isinstance(destination, DirectDestination):
         scheme = urlsplit(destination.uri.value).scheme
-        if scheme in {"json", "jsonl"} or (scheme == "file" and urlsplit(destination.uri.value).path.lower().endswith((".json", ".jsonl"))):
+        if scheme in {PROVIDER_JSON, PROVIDER_JSONL} or (scheme == SCHEME_FILE and urlsplit(destination.uri.value).path.lower().endswith((".json", ".jsonl"))):
             return "base"
-        if scheme == "file" and urlsplit(destination.uri.value).path.lower().endswith(".xlsx") and urlsplit(destination.uri.value).fragment:
+        if scheme == SCHEME_FILE and urlsplit(destination.uri.value).path.lower().endswith(".xlsx") and urlsplit(destination.uri.value).fragment:
             return "sheet"
     connector_modes = tuple(getattr(connector, "modes", ()))
     if len(connector_modes) != 1:
@@ -479,7 +486,7 @@ class Client:
             return address, address
         if isinstance(target, str):
             parsed = urlsplit(target)
-            if parsed.scheme == "file" and parsed.fragment:
+            if parsed.scheme == SCHEME_FILE and parsed.fragment:
                 # Registry validates worksheet selectors before routing.
                 address = DirectTableAddress(TableURI(target))
                 return address, address

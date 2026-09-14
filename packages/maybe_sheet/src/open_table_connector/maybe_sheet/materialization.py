@@ -17,6 +17,8 @@ from urllib.parse import quote, urlsplit
 import polars as pl
 from open_table_connector.contract import (
     HOST_MAYBE,
+    PROVIDER_JSON,
+    SCHEME_HTTPS,
     ConnectorError,
     ConnectorErrorCode,
     MaterializationCapability,
@@ -66,7 +68,7 @@ def probe_native_materialization(client: ProcessClient) -> bool:
     """Prove every provider guarantee required for portable Base creation."""
 
     try:
-        payload = _run(client, ("mbs", "db-table", "describe", "--format", "json"))
+        payload = _run(client, ("mbs", "db-table", "describe", "--format", PROVIDER_JSON))
     except Exception:
         return False
     if not isinstance(payload, Mapping) or set(payload) != {
@@ -110,7 +112,7 @@ def _canonical_destination(destination: BaseModeDestination) -> tuple[TableURI, 
     document_id = parsed.path.removeprefix("/docs/spreadsheets/d/")
     canonical = f"https://{HOST_MAYBE}/docs/spreadsheets/d/{quote(document_id, safe='')}"
     if (
-        parsed.scheme != "https"
+        parsed.scheme != SCHEME_HTTPS
         or parsed.hostname != HOST_MAYBE
         or parsed.port is not None
         or parsed.username is not None
@@ -366,7 +368,7 @@ class MaybeSheetSdkConnector:
         )
 
     def open_table(self, address: object) -> OperationResult[TableBinding]:
-        if isinstance(address, BaseModeTableAddress) and address.container.scheme == "https":
+        if isinstance(address, BaseModeTableAddress) and address.container.scheme == SCHEME_HTTPS:
             try:
                 binding, _, receipt = self._read_by_id(address)
             except Exception as exc:

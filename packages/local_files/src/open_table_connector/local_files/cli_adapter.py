@@ -547,7 +547,7 @@ class LocalFilesCliAdapter(_LocalCliAdapter):
     identity = ConnectorIdentity(PROVIDER_LOCAL_FILES, "0.1.0", "1.0")
     schemes = (SCHEME_FILE, PROVIDER_JSON, PROVIDER_JSONL)
     hosts: tuple[str, ...] = ()
-    modes = (TableMode.SHEET,)
+    modes = tuple(LocalFilesConnector.manifest.modes)
 
     def sdk_connector(self):
         """Expose the native table SDK while retaining the CLI adapter contract."""
