@@ -27,8 +27,8 @@ class MaterializationCapability:
         if self.capability != CapabilityIdentity("table.materialize.create", "1.0"):
             raise ValueError("materialization capability must be table.materialize.create/1.0")
         profiles = tuple(str(profile).strip() for profile in self.profiles)
-        if not profiles or any(not profile for profile in profiles) or len(set(profiles)) != len(profiles):
-            raise ValueError("materialization profiles must be non-empty and unique")
+        if profiles != ("otc.portable-table/v1",):
+            raise ValueError("materialization profiles must be exactly otc.portable-table/v1")
         modes = tuple(self.modes)
         if not modes or any(not isinstance(mode, TableMode) for mode in modes):
             raise ValueError("materialization capability requires valid table modes")

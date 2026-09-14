@@ -17,6 +17,7 @@ from open_table_connector.contract import (
     ConnectorIdentity,
     ExecutionRequest,
     ExecutionResult,
+    MaterializationCapability,
     NeutralReceipt,
     PluginDescriptor,
     TableURI,
@@ -802,6 +803,7 @@ class FakeSdkConnector:
         CapabilityIdentity("table.drop", "1.0"),
         CapabilityIdentity("table.transaction", "1.0"),
     )
+    materialization: tuple[MaterializationCapability, ...] = ()
     modes: tuple[otc.TableMode, ...] = (otc.TableMode.BASE_MODE,)
     local: bool = False
     handles_paths: bool = False
@@ -817,6 +819,9 @@ class FakeSdkConnector:
         )
     )
     existing_destinations: set[str] = field(default_factory=lambda: {"fake://warehouse/existing"})
+    materialization_replays: dict[str, tuple[str, str, otc.TableBinding]] = field(
+        default_factory=dict
+    )
     temporal_extension: FakeTemporalExtension = field(default_factory=FakeTemporalExtension)
     formula_extension: FakeFormulaExtension = field(default_factory=FakeFormulaExtension)
     open_mode: otc.TableMode = otc.TableMode.BASE_MODE
@@ -1037,6 +1042,33 @@ class FakeSdkConnector:
         self.calls.append(
             ("create_table", request if request is not None else destination_uri or destination.to_wire())
         )
+        if request is not None:
+            replay = self.materialization_replays.get(request.idempotency_key)
+            if replay is not None:
+                schema_fingerprint, content_fingerprint, binding = replay
+                if (
+                    schema_fingerprint != request.schema_fingerprint
+                    or content_fingerprint != request.content_fingerprint
+                    or binding.uri.value != destination_uri
+                ):
+                    return otc.OperationResult(
+                        value=None,
+                        outcome=otc.Outcome.REJECTED,
+                        commit=otc.CommitState.NOT_STARTED,
+                        verification=otc.VerificationState.SKIPPED,
+                        receipts=(),
+                        error=otc.ErrorInfo(
+                            code=otc.ErrorCode.IDEMPOTENCY_CONFLICT,
+                            message="idempotency key was reused for a different request",
+                        ),
+                    )
+                return otc.OperationResult(
+                    value=binding,
+                    outcome=otc.Outcome.SUCCEEDED,
+                    commit=otc.CommitState.COMMITTED,
+                    verification=otc.VerificationState.PASSED,
+                    receipts=(make_receipt("table.create.replay", uri=destination_uri),),
+                )
         if destination_uri in self.existing_destinations:
             return otc.OperationResult(
                 value=None,
@@ -1050,14 +1082,23 @@ class FakeSdkConnector:
                 ),
             )
         uri = destination_uri or self.table_uri
-        return otc.OperationResult(
-            value=otc.TableBinding(
+        binding = otc.TableBinding(
                 uri=TableURI(uri),
                 mode=self.open_mode,
                 schema=self.frame.schema if not isinstance(source, pl.DataFrame) else source.schema,
                 observed_revision="rev-created",
                 connector_id=self.identity.connector_id,
-            ),
+            )
+        if request is not None:
+            self.frame = source.clone()
+            self.table_uri = uri
+            self.materialization_replays[request.idempotency_key] = (
+                request.schema_fingerprint,
+                request.content_fingerprint,
+                binding,
+            )
+        return otc.OperationResult(
+            value=binding,
             outcome=otc.Outcome.SUCCEEDED,
             commit=otc.CommitState.COMMITTED,
             verification=otc.VerificationState.PASSED,

@@ -23,12 +23,15 @@ from .materialization import (
     MaterializationRequest,
 )
 from .model import (
+    BaseModeDestination,
     DirectDestination,
     DirectTableAddress,
     ExistingTableAddress,
     SchemaPolicy,
+    SheetModeDestination,
     SheetRangeSource,
     TableDestination,
+    TableMode,
 )
 from .query import Query, QueryLane, SqlResourceLimits
 from .registry import ConnectorRegistry, discover_descriptors, with_default_credential_bindings
@@ -62,6 +65,17 @@ def _failure(message: str, code: ErrorCode, **details: object) -> OTCError:
         error=ErrorInfo(code=code, message=message, safe_details=details),
     )
     return OTCError(message, result)
+
+
+def _materialization_mode(destination: TableDestination, connector: object) -> str | None:
+    if isinstance(destination, BaseModeDestination):
+        return "base"
+    if isinstance(destination, SheetModeDestination):
+        return "sheet"
+    connector_modes = tuple(getattr(connector, "modes", ()))
+    if len(connector_modes) != 1:
+        return None
+    return "base" if connector_modes[0] is TableMode.BASE_MODE else "sheet"
 
 
 def _polars_query_worker(
@@ -185,6 +199,15 @@ class Client:
             if MATERIALIZE_CREATE_CAPABILITY not in tuple(getattr(connector, "capabilities", ())):
                 raise _failure(
                     "connector does not support portable create-only materialization",
+                    ErrorCode.UNSUPPORTED_CAPABILITY,
+                )
+            destination_mode = _materialization_mode(destination, connector)
+            if destination_mode is None or not any(
+                request.profile in capability.profiles and destination_mode in capability.modes
+                for capability in tuple(getattr(connector, "materialization", ()))
+            ):
+                raise _failure(
+                    "connector does not advertise portable materialization for this profile and mode",
                     ErrorCode.UNSUPPORTED_CAPABILITY,
                 )
         result = connector.create_table(request if request is not None else source_value, None if request is not None else destination)
