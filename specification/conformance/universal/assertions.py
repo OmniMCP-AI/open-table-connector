@@ -267,3 +267,25 @@ def assert_error_is_safe(
         assert key.casefold() not in _SECRET_DETAIL_KEYS
     for forbidden in forbidden_values:
         assert forbidden not in encoded
+
+
+def assert_sdk_materialization_safe(
+    receipts: tuple[object, ...],
+    result: object,
+    *,
+    forbidden_values: tuple[str, ...],
+) -> None:
+    """Assert the public SDK materialization wire boundary never leaks secrets."""
+
+    receipt_wires = tuple(receipt.to_wire() for receipt in receipts)
+    result_wire = result.to_wire()
+    encoded = json.dumps(
+        {"receipts": receipt_wires, "result": result_wire},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    for wire in receipt_wires:
+        for key, _ in _iter_mapping_items(wire):
+            assert key.casefold() not in _SECRET_DETAIL_KEYS
+    for forbidden in forbidden_values:
+        assert forbidden not in encoded
