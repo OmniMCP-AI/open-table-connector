@@ -10,6 +10,7 @@ from multiprocessing import get_context
 from pathlib import Path
 from time import monotonic_ns
 from typing import TYPE_CHECKING, Any, overload
+from urllib.parse import urlsplit
 
 import polars as pl
 from open_table_connector.contract import PluginDescriptor, TableURI, parse_adapter_endpoint
@@ -382,6 +383,11 @@ class Client:
             address = DirectTableAddress(target)
             return address, address
         if isinstance(target, str):
+            parsed = urlsplit(target)
+            if parsed.scheme == "file" and parsed.fragment:
+                # Registry validates worksheet selectors before routing.
+                address = DirectTableAddress(TableURI(target))
+                return address, address
             endpoint = parse_adapter_endpoint(target)
             if endpoint.path is not None or endpoint.is_stdio:
                 return target, target

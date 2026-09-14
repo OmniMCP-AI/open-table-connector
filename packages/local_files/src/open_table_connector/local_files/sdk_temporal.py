@@ -440,7 +440,12 @@ class LocalFilesSdkConnectorMixin:
         raise RuntimeError("local-files SDK does not support transactions")
 
     def create_table(self, source: object, destination: object) -> OperationResult[TableBinding]:
-        del source, destination
+        from open_table_connector.sdk.model import DirectDestination
+
+        from .sdk_excel_table import create_excel_table
+
+        if isinstance(destination, DirectDestination) and urlsplit(destination.uri.value).path.lower().endswith(".xlsx"):
+            return create_excel_table(self, source, destination)
         return _failure(
             ConnectorError(
                 ConnectorErrorCode.UNSUPPORTED_CAPABILITY,

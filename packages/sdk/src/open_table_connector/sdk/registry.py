@@ -15,6 +15,7 @@ from open_table_connector.contract import (
     PROVIDER_FEISHU_BITABLE,
     PROVIDER_GOOGLE_SHEETS,
     PROVIDER_MAYBE_SHEET,
+    SCHEME_FILE,
     SCHEME_HTTPS,
     ConnectorAdapter,
     PluginDescriptor,
@@ -273,7 +274,10 @@ class ConnectorRegistry:
         finally:
             if lease is not None:
                 lease.dispose()
-        if isinstance(connector, ConnectorAdapter):
+        native = getattr(connector, "sdk_connector", None)
+        if callable(native):
+            wrapped = native()
+        elif isinstance(connector, ConnectorAdapter):
             wrapped = LegacyConnectorAdapterBridge(connector)
         else:
             wrapped = connector
@@ -288,9 +292,19 @@ class ConnectorRegistry:
         self._connectors.clear()
 
     def _plugin_for(self, target: str | object) -> ConfiguredPlugin:
-        endpoint = parse_adapter_endpoint(
-            target if isinstance(target, str) else self._route_key_value(target)
-        )
+        route = target if isinstance(target, str) else self._route_key_value(target)
+        parsed_route = urlsplit(route)
+        # Route a worksheet-qualified file by its container. The original URI
+        # still reaches the connector, which validates and binds the selector.
+        if parsed_route.scheme == SCHEME_FILE and parsed_route.fragment:
+            from urllib.parse import parse_qsl, unquote
+
+            selectors = parse_qsl(parsed_route.fragment, keep_blank_values=True)
+            if (parsed_route.query or not unquote(parsed_route.path).lower().endswith(".xlsx")
+                    or len(selectors) != 1 or selectors[0][0] != "sheet" or not selectors[0][1]):
+                raise _registry_error(ErrorCode.INVALID_TARGET, "invalid Excel worksheet selector")
+            route = parsed_route._replace(fragment="").geturl()
+        endpoint = parse_adapter_endpoint(route)
         if endpoint.is_stdio or endpoint.path is not None:
             if self._path_connector_id is None:
                 raise _registry_error(

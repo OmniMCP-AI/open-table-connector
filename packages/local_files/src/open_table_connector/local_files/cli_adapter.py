@@ -549,6 +549,10 @@ class LocalFilesCliAdapter(_LocalCliAdapter):
     hosts: tuple[str, ...] = ()
     modes = (TableMode.SHEET,)
 
+    def sdk_connector(self):
+        """Expose the native table SDK while retaining the CLI adapter contract."""
+        return self.connector
+
     def spreadsheet_provider(self):
         return self.connector.spreadsheet_provider()
 
