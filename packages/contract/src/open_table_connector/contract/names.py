@@ -23,6 +23,7 @@ CLI_CONFIG_DIRECTORY = "open-table-connector"
 CLI_CONFIG_FILENAME = "config.toml"
 
 CAPABILITY_TABLE_READ_ARROW = "table.read.arrow"
+CAPABILITY_TABLE_MATERIALIZE_CREATE = "table.materialize.create"
 CAPABILITY_TABLE_WRITE = "table.write"
 IF_EXISTS_APPEND = "append"
 IF_EXISTS_REPLACE = "replace"

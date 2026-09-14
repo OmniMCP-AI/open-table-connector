@@ -9,8 +9,8 @@ from typing import Any, Protocol, runtime_checkable
 import polars as pl
 import pyarrow as pa
 from open_table_connector.contract import (
-    AdapterOptions,
     AdapterEndpoint,
+    AdapterOptions,
     ConnectorAdapter,
     NeutralReceipt,
     TableWriteResult,
@@ -24,6 +24,7 @@ from open_table_connector.contract import (
 )
 from open_table_connector.formulas import FormulaConnectorExtension
 
+from .materialization import MaterializationRequest
 from .model import (
     BaseModeDestination,
     BaseModeTableAddress,
@@ -171,7 +172,7 @@ class TableConnector(Protocol):
     def begin_transaction(self, binding: TableBinding) -> object: ...
 
     def create_table(
-        self, source: object, destination: TableDestination
+        self, source: object | MaterializationRequest, destination: TableDestination | None = None
     ) -> OperationResult[TableBinding]: ...
 
     def close(self) -> None: ...
@@ -344,8 +345,17 @@ class LegacyConnectorAdapterBridge:
         raise RuntimeError("legacy adapters do not support transactions")
 
     def create_table(
-        self, source: object, destination: TableDestination
+        self,
+        source: object | MaterializationRequest,
+        destination: TableDestination | None = None,
     ) -> OperationResult[TableBinding]:
+        if isinstance(source, MaterializationRequest):
+            return _rejected(
+                "legacy adapters do not support portable create-only materialization",
+                ErrorCode.UNSUPPORTED_CAPABILITY,
+            )
+        if destination is None:
+            return _rejected("destination is required", ErrorCode.INVALID_TARGET)
         if not isinstance(destination, DirectDestination):
             return _rejected(
                 "legacy adapters only support direct destinations",
