@@ -17,6 +17,11 @@ from open_table_connector.contract import PluginDescriptor, TableURI, parse_adap
 from .config import ClientConfig, load_client_config
 from .connector import ArrowTableCarrier, _destination_uri
 from .credentials import CredentialResolver, EnvironmentCredentialResolver
+from .materialization import (
+    MATERIALIZE_CREATE_CAPABILITY,
+    PORTABLE_TABLE_PROFILE_V1,
+    MaterializationRequest,
+)
 from .model import (
     DirectDestination,
     DirectTableAddress,
@@ -141,7 +146,14 @@ class Client:
             binding = replace(binding, schema=declared_schema)
         return replace(delivered, value=self._wrap_binding(binding))
 
-    def materialize(self, source: object, *, to: str | TableDestination):
+    def materialize(
+        self,
+        source: object,
+        *,
+        to: str | TableDestination,
+        profile: str | None = None,
+        idempotency_key: str | None = None,
+    ):
         self._assert_open()
         destination = DirectDestination(to) if isinstance(to, str) else to
         source_result = None
@@ -154,14 +166,44 @@ class Client:
             source_result = self.collect(source)
             source_value = source_result.require_value()
         connector = self._registry.connector_for(_destination_uri(destination).value)
-        result = connector.create_table(source_value, destination)
+        request = None
+        if profile is not None or idempotency_key is not None:
+            try:
+                request = MaterializationRequest(
+                    source=source_value,
+                    destination=destination,
+                    profile=profile or "",
+                    idempotency_key=idempotency_key or "",
+                )
+            except (TypeError, ValueError) as exc:
+                code = (
+                    ErrorCode.INVALID_SCHEMA
+                    if "profile rejects" in str(exc) or "dtype" in str(exc)
+                    else ErrorCode.INVALID_CONFIGURATION
+                )
+                raise _failure(str(exc), code) from exc
+            if MATERIALIZE_CREATE_CAPABILITY not in tuple(getattr(connector, "capabilities", ())):
+                raise _failure(
+                    "connector does not support portable create-only materialization",
+                    ErrorCode.UNSUPPORTED_CAPABILITY,
+                )
+        result = connector.create_table(request if request is not None else source_value, None if request is not None else destination)
         delivered = self._deliver(result)
         receipts = delivered.receipts
         if source_result is not None:
             receipts = (*source_result.receipts, *receipts)
+        binding = delivered.require_value()
+        if request is not None:
+            binding = replace(
+                binding,
+                profile=PORTABLE_TABLE_PROFILE_V1,
+                row_count=request.row_count,
+                schema_fingerprint=request.schema_fingerprint,
+                content_fingerprint=request.content_fingerprint,
+            )
         return replace(
             delivered,
-            value=self._wrap_binding(delivered.require_value()),
+            value=self._wrap_binding(binding),
             receipts=receipts,
         )
 

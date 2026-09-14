@@ -1024,12 +1024,19 @@ class FakeSdkConnector:
     def create_table(
         self,
         source: object,
-        destination: otc.TableDestination,
+        destination: otc.TableDestination | None = None,
     ) -> otc.OperationResult[otc.TableBinding]:
+        request = source if isinstance(source, otc.MaterializationRequest) else None
+        if isinstance(source, otc.MaterializationRequest):
+            destination = source.destination
+            source = source.source
+        assert destination is not None
         destination_uri = (
             destination.uri.value if isinstance(destination, otc.DirectDestination) else ""
         )
-        self.calls.append(("create_table", destination_uri or destination.to_wire()))
+        self.calls.append(
+            ("create_table", request if request is not None else destination_uri or destination.to_wire())
+        )
         if destination_uri in self.existing_destinations:
             return otc.OperationResult(
                 value=None,

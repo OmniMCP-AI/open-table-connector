@@ -49,6 +49,10 @@ class TableBinding:
     schema: pl.Schema
     observed_revision: str | None
     connector_id: str
+    profile: str | None = None
+    row_count: int | None = None
+    schema_fingerprint: str | None = None
+    content_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "mode", TableMode.from_wire(str(self.mode)))
@@ -61,6 +65,14 @@ class TableBinding:
                 _required_text(self.observed_revision, "observed_revision"),
             )
         object.__setattr__(self, "connector_id", _required_text(self.connector_id, "connector_id"))
+        if self.profile is not None:
+            object.__setattr__(self, "profile", _required_text(self.profile, "profile"))
+        if self.row_count is not None and self.row_count < 0:
+            raise ValueError("row_count must be non-negative")
+        for field_name in ("schema_fingerprint", "content_fingerprint"):
+            value = getattr(self, field_name)
+            if value is not None:
+                object.__setattr__(self, field_name, _required_text(value, field_name))
 
 
 @dataclass(frozen=True, slots=True)

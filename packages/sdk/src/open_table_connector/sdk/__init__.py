@@ -55,6 +55,11 @@ from .credentials import (
     parse_credential_overrides,
 )
 from .formula import FieldFormulaView, GridFormulaView
+from .materialization import (
+    MATERIALIZE_CREATE_CAPABILITY,
+    PORTABLE_TABLE_PROFILE_V1,
+    MaterializationRequest,
+)
 from .model import (
     BaseModeDestination,
     BaseModeTableAddress,
@@ -173,6 +178,8 @@ __all__ = [
     "ManagedSnapshot",
     "ManagedSnapshotState",
     "ManagedStage",
+    "MATERIALIZE_CREATE_CAPABILITY",
+    "MaterializationRequest",
     "MAYBE_BASE",
     "MAYBE_SHEET_A1",
     "MutationAtomicity",
@@ -184,6 +191,7 @@ __all__ = [
     "Outcome",
     "PolarsPlanMapper",
     "PortablePredicate",
+    "PORTABLE_TABLE_PROFILE_V1",
     "PredicateKind",
     "Query",
     "QueryLane",
