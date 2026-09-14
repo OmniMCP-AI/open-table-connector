@@ -32,8 +32,8 @@ Files: `packages/local_files/src/open_table_connector/local_files/sdk_excel_tabl
 ## Task 3: Documentation and delivery
 
 - [x] Document both public APIs, lexical/null semantics and destination restrictions in SDK README; record targeted verification and check off only completed work here.
-- [ ] Commit implementation/spec/plan/docs on `codex/excel-table-boundary`; push to origin. Do not merge without request.
-- [ ] Return to FinClaw and write updated integration spec/plan referencing pushed OTC revision and remaining consumer work.
+- [x] Commit implementation/spec/plan/docs on `codex/excel-table-boundary`; push to origin. Do not merge without request.
+- [x] Return to FinClaw and write updated integration spec/plan referencing pushed OTC revision and remaining consumer work.
 
 ## Execution evidence — 2026-09-14
 
@@ -44,3 +44,5 @@ Provider regressions: `uv run --all-packages pytest packages/local_files/tests/t
 Changed implementation/new test lint and `git diff --check` passed. Python 3.14.4. Repository-wide and other-Python suites were not run, per scoped verification instruction.
 
 Self-review: default plugin discovery also needed native SDK selection, and string-form `Client.open` needed worksheet URI routing; both are included and exercised. Safe integers remain numeric for Excel aggregations; oversized integers stay exact text. Empty inline strings are preserved by the canonical reader. Literal-artifact profile restrictions are unchanged. No consumer-specific template or financial schema was added.
+
+Delivery: implementation `3f285c09a2694cd540a278f16da928ec9e7a5ee6` pushed to `origin/codex/excel-table-boundary`. FinClaw spec and plan written at `../finclaw-ng/docs/superpowers/specs/2026-09-14-otc-excel-table-integration-v2-design.md` and `../finclaw-ng/docs/superpowers/plans/2026-09-14-otc-excel-table-integration-v2.md`; consumer implementation remains pending.
