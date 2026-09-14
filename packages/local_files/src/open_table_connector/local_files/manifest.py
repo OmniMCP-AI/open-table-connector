@@ -79,7 +79,7 @@ CAPABILITY_MANIFEST = CapabilityManifest(
     capabilities=(*CAPABILITY_MANIFEST.capabilities, MATERIALIZE_CREATE_CAPABILITY),
     modes=(TableMode.SHEET, TableMode.BASE),
     uri_schemes=CAPABILITY_MANIFEST.uri_schemes,
-    materialization=(MaterializationCapability(MATERIALIZE_CREATE_CAPABILITY, (PORTABLE_TABLE_PROFILE_V1,), (TableMode.BASE,)),),
+    materialization=(MaterializationCapability(MATERIALIZE_CREATE_CAPABILITY, (PORTABLE_TABLE_PROFILE_V1,), (TableMode.BASE, TableMode.SHEET)),),
 )
 
 EXCEL_CAPABILITY_MANIFEST = capability_manifest(

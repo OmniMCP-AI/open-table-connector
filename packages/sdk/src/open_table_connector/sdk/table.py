@@ -53,8 +53,11 @@ class TableBinding:
     row_count: int | None = None
     schema_fingerprint: str | None = None
     content_fingerprint: str | None = None
+    address: object | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.uri, TableURI):
+            object.__setattr__(self, "uri", TableURI(self.uri))
         object.__setattr__(self, "mode", TableMode.from_wire(str(self.mode)))
         if not isinstance(self.schema, pl.Schema):
             object.__setattr__(self, "schema", pl.Schema(self.schema))

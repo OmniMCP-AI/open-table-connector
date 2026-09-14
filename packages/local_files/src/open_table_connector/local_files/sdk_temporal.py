@@ -26,6 +26,7 @@ from open_table_connector.sdk.materialization import MaterializationRequest
 from open_table_connector.sdk.model import (
     BaseModeTableAddress,
     DirectTableAddress,
+    SheetModeDestination,
     SheetModeTableAddress,
     TableMode,
 )
@@ -326,6 +327,16 @@ class LocalFilesSdkConnectorMixin:
     """SDK TableConnector methods for the local-files compatibility facade."""
 
     def open_table(self, address: object) -> OperationResult[TableBinding]:
+        from .sdk_excel_table import open_portable_excel
+        portable_address = isinstance(address, SheetModeTableAddress)
+        direct_excel_sheet = (isinstance(address, DirectTableAddress) and urlsplit(address.uri.value).path.lower().endswith(".xlsx") and urlsplit(address.uri.value).fragment) or (isinstance(address, str) and urlsplit(address).path.lower().endswith(".xlsx") and urlsplit(address).fragment)
+        if portable_address or direct_excel_sheet:
+            try:
+                binding, _ = open_portable_excel(address.uri.value if isinstance(address, DirectTableAddress) else address)
+                return _success(binding, commit=CommitState.NOT_APPLICABLE)
+            except Exception as error:
+                if portable_address:
+                    return OperationResult(None, Outcome.REJECTED, CommitState.NOT_APPLICABLE, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.INVALID_SCHEMA, str(error)))
         try:
             uri = _as_file_uri(address)
             result = self.read_arrow(self._sdk_read_request(uri))
@@ -382,6 +393,13 @@ class LocalFilesSdkConnectorMixin:
                 ValueError("local-files SDK reads do not support continuation tokens"),
                 connector_id=self.identity.connector_id,
             )
+        if isinstance(binding.address, SheetModeTableAddress):
+            try:
+                from .sdk_excel_table import open_portable_excel
+                _, frame = open_portable_excel(binding.address)
+                return _success(ArrowTableCarrier(frame.to_arrow()), commit=CommitState.NOT_APPLICABLE)
+            except BaseException as error:
+                return _failure(error, connector_id=self.identity.connector_id)
         try:
             result = self.read_arrow(self._sdk_read_request(_as_file_uri(binding.uri), limit=limit))
             return _success(
@@ -449,6 +467,9 @@ class LocalFilesSdkConnectorMixin:
 
         from .sdk_excel_table import create_excel_table
 
+        if isinstance(source, MaterializationRequest) and isinstance(source.destination, (DirectDestination, SheetModeDestination)) and urlsplit(_as_file_uri(source.destination.grid if isinstance(source.destination, SheetModeDestination) else source.destination.uri).value).path.lower().endswith(".xlsx"):
+            from .sdk_excel_table import create_portable_excel_table
+            return create_portable_excel_table(self, source)
         if isinstance(destination, DirectDestination) and urlsplit(destination.uri.value).path.lower().endswith(".xlsx"):
             return create_excel_table(self, source, destination)
         if isinstance(source, MaterializationRequest) and destination is None:

@@ -76,6 +76,8 @@ def _materialization_mode(destination: TableDestination, connector: object) -> s
         scheme = urlsplit(destination.uri.value).scheme
         if scheme in {"json", "jsonl"} or (scheme == "file" and urlsplit(destination.uri.value).path.lower().endswith((".json", ".jsonl"))):
             return "base"
+        if scheme == "file" and urlsplit(destination.uri.value).path.lower().endswith(".xlsx") and urlsplit(destination.uri.value).fragment:
+            return "sheet"
     connector_modes = tuple(getattr(connector, "modes", ()))
     if len(connector_modes) != 1:
         return None
