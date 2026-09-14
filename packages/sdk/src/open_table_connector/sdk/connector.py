@@ -12,6 +12,7 @@ from open_table_connector.contract import (
     AdapterEndpoint,
     AdapterOptions,
     ConnectorAdapter,
+    MaterializationCapability,
     NeutralReceipt,
     TableWriteResult,
     parse_adapter_endpoint,
@@ -131,6 +132,7 @@ class TableConnector(Protocol):
     schemes: tuple[str, ...]
     hosts: tuple[str, ...]
     capabilities: tuple[object, ...]
+    materialization: tuple[MaterializationCapability, ...]
     modes: tuple[TableMode, ...]
     local: bool
     handles_paths: bool
@@ -189,6 +191,8 @@ class LegacyConnectorAdapterBridge:
         self.schemes = tuple(adapter.schemes)
         self.hosts = tuple(getattr(adapter, "hosts", ()))
         self.capabilities = tuple(getattr(adapter, "capabilities", ()))
+        manifest = getattr(adapter, "manifest", None)
+        self.materialization = tuple(getattr(manifest, "materialization", ()))
         self.modes = tuple(_legacy_mode_to_sdk(mode) for mode in getattr(adapter, "modes", ()))
         self.local = bool(getattr(adapter, "local", False))
         self.handles_paths = bool(getattr(adapter, "handles_paths", False))
