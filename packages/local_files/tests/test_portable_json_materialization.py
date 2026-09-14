@@ -1,0 +1,92 @@
+from __future__ import annotations
+
+from datetime import date, datetime, timezone
+from decimal import Decimal
+from pathlib import Path
+
+import polars as pl
+import pytest
+
+import open_table_connector.sdk as otc
+from open_table_connector.local_files import LocalFilesConnector
+
+
+def _client() -> otc.Client:
+    return otc.Client(registry=otc.ConnectorRegistry([LocalFilesConnector()]))
+
+
+def _uri(scheme: str, path: Path) -> str:
+    return path.as_uri().replace("file://", f"{scheme}://", 1)
+
+
+@pytest.mark.parametrize(
+    ("scheme", "suffix", "expected"),
+    [
+        ("json", ".json", b'{"schemaVersion":"otc.table-json/v1","profile":"otc.portable-table/v1","schema":[{"name":"id","type":"Int64"},{"name":"label","type":"String"}],"rows":[[9223372036854775807,"\xe6\x9d\xb1\xe4\xba\xac"],[null,""]]}\n'),
+        ("jsonl", ".jsonl", b'{"$otc":{"schemaVersion":"otc.table-json/v1","profile":"otc.portable-table/v1","schema":[{"name":"id","type":"Int64"},{"name":"label","type":"String"}]}}\n[9223372036854775807,"\xe6\x9d\xb1\xe4\xba\xac"]\n[null,""]\n'),
+    ],
+)
+def test_portable_materialization_writes_deterministic_versioned_bytes_and_recovers_types(
+    tmp_path: Path, scheme: str, suffix: str, expected: bytes
+) -> None:
+    """Catches an envelope that changes field order, scalar rendering, or typed recovery."""
+    path = tmp_path / f"portable{suffix}"
+    source = pl.DataFrame({"id": [2**63 - 1, None], "label": ["東京", ""]}, schema={"id": pl.Int64, "label": pl.String})
+
+    result = _client().materialize(source, to=_uri(scheme, path), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key=f"golden-{scheme}")
+
+    assert path.read_bytes() == expected
+    assert result.commit is otc.CommitState.COMMITTED
+    assert result.verification is otc.VerificationState.PASSED
+    assert _client().open(_uri(scheme, path)).require_value().read().require_value().equals(source)
+
+
+def test_portable_json_materialization_preserves_all_portable_scalar_types(tmp_path: Path) -> None:
+    """Catches type erasure for decimal, date, or UTC datetime values."""
+    path = tmp_path / "all-types.json"
+    source = pl.DataFrame({"truth": [True, None], "int": [-(2**63), None], "float": [1.25, None], "amount": [Decimal("123.450"), None], "day": [date(2026, 9, 14), None], "when": [datetime(2026, 9, 14, 1, 2, 3, 456789, timezone.utc), None]}, schema={"truth": pl.Boolean, "int": pl.Int64, "float": pl.Float64, "amount": pl.Decimal(precision=6, scale=3), "day": pl.Date, "when": pl.Datetime("us", "UTC")})
+
+    _client().materialize(source, to=_uri("json", path), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="all-types")
+
+    assert _client().open(_uri("json", path)).require_value().read().require_value().equals(source)
+
+
+@pytest.mark.parametrize(("scheme", "suffix"), [("json", ".json"), ("jsonl", ".jsonl")])
+def test_portable_materialization_writes_metadata_only_for_zero_rows(tmp_path: Path, scheme: str, suffix: str) -> None:
+    """Catches a zero-row materialization that loses its declared schema."""
+    path = tmp_path / f"empty{suffix}"
+    source = pl.DataFrame(schema={"all_null": pl.String, "count": pl.Int64})
+
+    _client().materialize(source, to=_uri(scheme, path), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key=f"empty-{scheme}")
+
+    observed = _client().open(_uri(scheme, path)).require_value().read().require_value()
+    assert observed.schema == source.schema
+    assert observed.height == 0
+
+
+def test_portable_materialization_keeps_legacy_json_and_jsonl_untyped(tmp_path: Path) -> None:
+    """Catches legacy reads being mistaken for versioned portable envelopes."""
+    json_path = tmp_path / "legacy.json"
+    jsonl_path = tmp_path / "legacy.jsonl"
+    json_path.write_text('[{"id":1,"name":"legacy"}]\n', encoding="utf-8")
+    jsonl_path.write_text('{"id":1,"name":"legacy"}\n', encoding="utf-8")
+
+    assert _client().open(_uri("json", json_path)).require_value().read().require_value().to_dicts() == [{"id": 1, "name": "legacy"}]
+    assert _client().open(_uri("jsonl", jsonl_path)).require_value().read().require_value().to_dicts() == [{"id": 1, "name": "legacy"}]
+
+
+def test_portable_materialization_is_create_only_and_rejects_invalid_destination(tmp_path: Path) -> None:
+    """Catches overwrites and routes unsafe/suffix-mismatched destinations before publication."""
+    path = tmp_path / "exists.json"
+    path.write_text("[]", encoding="utf-8")
+    client = _client()
+    source = pl.DataFrame({"id": [1]}, schema={"id": pl.Int64})
+
+    with pytest.raises(otc.OTCError) as exists:
+        client.materialize(source, to=_uri("json", path), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="exists")
+    assert exists.value.result.error.code is otc.ErrorCode.DESTINATION_EXISTS
+    assert path.read_text(encoding="utf-8") == "[]"
+
+    with pytest.raises(otc.OTCError) as invalid:
+        client.materialize(source, to=_uri("jsonl", tmp_path / "wrong.json"), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="wrong-suffix")
+    assert invalid.value.result.error.code is otc.ErrorCode.INVALID_TARGET

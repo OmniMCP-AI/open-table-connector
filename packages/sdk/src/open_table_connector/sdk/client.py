@@ -32,7 +32,6 @@ from .model import (
     SheetModeDestination,
     SheetRangeSource,
     TableDestination,
-    TableMode,
 )
 from .query import Query, QueryLane, SqlResourceLimits
 from .registry import ConnectorRegistry, discover_descriptors, with_default_credential_bindings
@@ -73,10 +72,15 @@ def _materialization_mode(destination: TableDestination, connector: object) -> s
         return "base"
     if isinstance(destination, SheetModeDestination):
         return "sheet"
+    if isinstance(destination, DirectDestination):
+        scheme = urlsplit(destination.uri.value).scheme
+        if scheme in {"json", "jsonl"}:
+            return "base"
     connector_modes = tuple(getattr(connector, "modes", ()))
     if len(connector_modes) != 1:
         return None
-    return "base" if connector_modes[0] is TableMode.BASE_MODE else "sheet"
+    mode = getattr(connector_modes[0], "value", connector_modes[0])
+    return "base" if mode in {"base", "base-mode"} else "sheet"
 
 
 def _polars_query_worker(

@@ -99,6 +99,7 @@ class LocalFilesConnector(
         *CAPABILITY_MANIFEST.capabilities,
         *(CapabilityIdentity.parse(item) for item in ALL_CAPABILITIES),
     )
+    materialization = CAPABILITY_MANIFEST.materialization
     modes = CAPABILITY_MANIFEST.modes
     local = True
     handles_paths = True

@@ -22,6 +22,7 @@ from open_table_connector.contract import (
     TableURI,
 )
 from open_table_connector.sdk.connector import ArrowTableCarrier
+from open_table_connector.sdk.materialization import MaterializationRequest
 from open_table_connector.sdk.model import (
     BaseModeTableAddress,
     DirectTableAddress,
@@ -117,10 +118,14 @@ def _failure(error: BaseException, *, connector_id: str) -> OperationResult:
 
 def _as_file_uri(address: object) -> TableURI:
     if isinstance(address, DirectTableAddress):
-        return address.uri
+        address = address.uri.value
+    if isinstance(address, TableURI):
+        address = address.value
     if isinstance(address, str):
         parsed = urlsplit(address)
         if parsed.scheme:
+            if parsed.scheme in {"json", "jsonl"}:
+                return TableURI(address.replace(f"{parsed.scheme}://", "file://", 1))
             return TableURI(address)
         return TableURI(Path(address).absolute().as_uri())
     if isinstance(address, (BaseModeTableAddress, SheetModeTableAddress)):
@@ -378,7 +383,7 @@ class LocalFilesSdkConnectorMixin:
                 connector_id=self.identity.connector_id,
             )
         try:
-            result = self.read_arrow(self._sdk_read_request(binding.uri, limit=limit))
+            result = self.read_arrow(self._sdk_read_request(_as_file_uri(binding.uri), limit=limit))
             return _success(
                 ArrowTableCarrier(result.table),
                 receipt=result.receipt,
@@ -446,6 +451,23 @@ class LocalFilesSdkConnectorMixin:
 
         if isinstance(destination, DirectDestination) and urlsplit(destination.uri.value).path.lower().endswith(".xlsx"):
             return create_excel_table(self, source, destination)
+        if isinstance(source, MaterializationRequest) and destination is None:
+            from .portable_json import destination_path, encode, publish
+            try:
+                path, mode = destination_path(source.destination.uri)
+                data = encode(source.source, mode)
+                revision = publish(path, data)
+                binding = TableBinding(source.destination.uri, TableMode.BASE_MODE, source.source.schema, revision, self.identity.connector_id, source.profile, source.row_count, source.schema_fingerprint, source.content_fingerprint)
+                readback = self.read_table(binding).require_value().to_polars()
+                if not readback.equals(source.source):
+                    return OperationResult(None, Outcome.FAILED, CommitState.COMMITTED, VerificationState.FAILED, (), error=ErrorInfo(ErrorCode.READBACK_MISMATCH, "portable JSON readback differs from submitted table", {"revision": revision}))
+                return OperationResult(binding, Outcome.SUCCEEDED, CommitState.COMMITTED, VerificationState.PASSED, ())
+            except FileExistsError:
+                return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.DESTINATION_EXISTS, "portable JSON destination already exists"))
+            except ValueError as exc:
+                return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.INVALID_TARGET, str(exc)))
+            except BaseException as exc:
+                return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.EXECUTION_FAILED, "portable JSON materialization failed", {"reason": type(exc).__name__}))
         return _failure(
             ConnectorError(
                 ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
