@@ -120,7 +120,11 @@ def decode(payload: object, *, mode: str) -> pl.DataFrame | None:
 
 
 def publish(path: Path, data: bytes) -> str:
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    directory_flag = getattr(os, "O_DIRECTORY", None)
+    nofollow_flag = getattr(os, "O_NOFOLLOW", None)
+    if directory_flag is None or nofollow_flag is None:
+        raise ValueError("portable JSON publication requires directory no-follow support on this platform")
+    flags = os.O_RDONLY | directory_flag | nofollow_flag
     directory = os.open(path.parent, flags)
     temporary = f".{path.name}.{secrets.token_hex(16)}"
     descriptor = -1

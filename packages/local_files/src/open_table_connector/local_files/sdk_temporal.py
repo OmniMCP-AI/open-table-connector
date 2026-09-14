@@ -457,8 +457,9 @@ class LocalFilesSdkConnectorMixin:
             try:
                 path, mode = destination_path(source.destination.uri)
                 data = encode(source.source, mode)
-                revision = publish(path, data)
+                revision = f"sha256:{hashlib.sha256(data).hexdigest()}"
                 receipts = (Receipt("physical", "table.materialize.create", self.identity.connector_id, "table.materialize.create/1.0", source.destination.uri, TableMode.BASE_MODE, {"revision": revision, "bytes": len(data)}),)
+                revision = publish(path, data)
                 binding = TableBinding(source.destination.uri, TableMode.BASE_MODE, source.source.schema, revision, self.identity.connector_id, source.profile, source.row_count, source.schema_fingerprint, source.content_fingerprint)
                 readback_result = self.read_table(binding)
                 receipts += readback_result.receipts

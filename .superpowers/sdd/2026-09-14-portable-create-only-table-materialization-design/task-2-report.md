@@ -88,3 +88,38 @@ with `PublicationError`. Committed failures return `FAILED/COMMITTED/FAILED`
 with `READBACK_MISMATCH`. Success and committed readback paths carry ordered
 mutation and read receipts. JSONL uses `otc.table-jsonl/v1`; the portable
 profile rejects non-microsecond UTC datetime units before mutation.
+
+## Fix round 2
+
+RED:
+
+```text
+./.venv/bin/pytest packages/local_files/tests/test_portable_json_materialization.py -q
+1 failed, 11 passed
+```
+
+The injected post-link directory-fsync failure proved the mutation receipt was
+created too late and therefore absent from the committed failure result.
+
+GREEN:
+
+```text
+./.venv/bin/pytest packages/local_files/tests/test_portable_json_materialization.py -q
+12 passed in 0.69s
+
+./.venv/bin/pytest packages/local_files/tests/test_json_codec.py packages/local_files/tests/test_json_connector.py packages/sdk/tests/test_portable_materialization.py packages/contract/tests/test_materialization_capabilities.py -q
+29 passed in 0.08s
+
+./.venv/bin/ruff check packages/local_files/src/open_table_connector/local_files/portable_json.py packages/local_files/src/open_table_connector/local_files/sdk_temporal.py packages/local_files/tests/test_portable_json_materialization.py
+All checks passed!
+
+git diff --check
+exit 0
+```
+
+The mutation receipt is now constructed from the deterministic byte hash before
+publication, so post-link failures retain it. A platform without both
+`O_DIRECTORY` and `O_NOFOLLOW` is rejected before publication. New coverage
+uses spawn-safe two-process `Client.materialize` creators, validates one winner
+and one `DESTINATION_EXISTS` loser, and checks a populated all-null column with
+a fresh file-URI readback.

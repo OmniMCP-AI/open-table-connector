@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from multiprocessing import get_context
 from pathlib import Path
 
 import open_table_connector.local_files.portable_json as portable_json
@@ -17,6 +18,14 @@ def _client() -> otc.Client:
 
 def _uri(scheme: str, path: Path) -> str:
     return path.as_uri().replace("file://", f"{scheme}://", 1)
+
+
+def _race_materialize(uri: str, queue) -> None:
+    try:
+        _client().materialize(pl.DataFrame({"id": [1]}), to=uri, profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="race")
+        queue.put("succeeded")
+    except otc.OTCError as exc:
+        queue.put(exc.result.error.code.value)
 
 
 @pytest.mark.parametrize(
@@ -109,6 +118,7 @@ def test_post_publication_failure_is_committed_and_retains_evidence(tmp_path: Pa
     assert raised.value.result.commit is otc.CommitState.COMMITTED
     assert raised.value.result.verification is otc.VerificationState.FAILED
     assert raised.value.result.error.code is otc.ErrorCode.READBACK_MISMATCH
+    assert [receipt.operation for receipt in raised.value.result.receipts] == ["table.materialize.create"]
 
 
 def test_prepublication_failure_leaves_no_destination(tmp_path: Path, monkeypatch) -> None:
@@ -121,8 +131,10 @@ def test_prepublication_failure_leaves_no_destination(tmp_path: Path, monkeypatc
 
 def test_file_json_destination_is_portable_base_mode(tmp_path: Path) -> None:
     path = tmp_path / "file.json"
-    result = _client().materialize(pl.DataFrame({"all_null": [None]}, schema={"all_null": pl.String}), to=path.as_uri(), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="file")
+    source = pl.DataFrame({"all_null": [None, None], "label": ["a", "b"]}, schema={"all_null": pl.String, "label": pl.String})
+    result = _client().materialize(source, to=path.as_uri(), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="file")
     assert result.require_value()._binding.mode is otc.TableMode.BASE_MODE
+    assert _client().open(path.as_uri()).require_value().read().require_value().equals(source)
 
 
 def test_portable_profile_rejects_nanosecond_datetime_before_publication(tmp_path: Path) -> None:
@@ -132,3 +144,17 @@ def test_portable_profile_rejects_nanosecond_datetime_before_publication(tmp_pat
         _client().materialize(source, to=_uri("json", path), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="ns")
     assert raised.value.result.error.code is otc.ErrorCode.INVALID_SCHEMA
     assert not path.exists()
+
+
+def test_two_process_creators_have_one_winner_and_one_create_only_loser(tmp_path: Path) -> None:
+    path = tmp_path / "race.json"
+    context = get_context("spawn")
+    queue = context.Queue()
+    processes = [context.Process(target=_race_materialize, args=(_uri("json", path), queue)) for _ in range(2)]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join(20)
+        assert process.exitcode == 0
+    assert sorted(queue.get(timeout=2) for _ in processes) == ["destination_exists", "succeeded"]
+    assert _client().open(_uri("json", path)).require_value().read().require_value().to_dicts() == [{"id": 1}]
