@@ -452,16 +452,22 @@ class LocalFilesSdkConnectorMixin:
         if isinstance(destination, DirectDestination) and urlsplit(destination.uri.value).path.lower().endswith(".xlsx"):
             return create_excel_table(self, source, destination)
         if isinstance(source, MaterializationRequest) and destination is None:
-            from .portable_json import destination_path, encode, publish
+            from .portable_json import PublicationError, destination_path, encode, publish
+            receipts = ()
             try:
                 path, mode = destination_path(source.destination.uri)
                 data = encode(source.source, mode)
                 revision = publish(path, data)
+                receipts = (Receipt("physical", "table.materialize.create", self.identity.connector_id, "table.materialize.create/1.0", source.destination.uri, TableMode.BASE_MODE, {"revision": revision, "bytes": len(data)}),)
                 binding = TableBinding(source.destination.uri, TableMode.BASE_MODE, source.source.schema, revision, self.identity.connector_id, source.profile, source.row_count, source.schema_fingerprint, source.content_fingerprint)
-                readback = self.read_table(binding).require_value().to_polars()
+                readback_result = self.read_table(binding)
+                receipts += readback_result.receipts
+                readback = readback_result.require_value().to_polars()
                 if not readback.equals(source.source):
-                    return OperationResult(None, Outcome.FAILED, CommitState.COMMITTED, VerificationState.FAILED, (), error=ErrorInfo(ErrorCode.READBACK_MISMATCH, "portable JSON readback differs from submitted table", {"revision": revision}))
-                return OperationResult(binding, Outcome.SUCCEEDED, CommitState.COMMITTED, VerificationState.PASSED, ())
+                    return OperationResult(None, Outcome.FAILED, CommitState.COMMITTED, VerificationState.FAILED, receipts, error=ErrorInfo(ErrorCode.READBACK_MISMATCH, "portable JSON readback differs from submitted table", {"revision": revision}))
+                return OperationResult(binding, Outcome.SUCCEEDED, CommitState.COMMITTED, VerificationState.PASSED, receipts)
+            except PublicationError as exc:
+                return OperationResult(None, Outcome.FAILED, CommitState.COMMITTED, VerificationState.FAILED, receipts, error=ErrorInfo(ErrorCode.READBACK_MISMATCH, "portable JSON publication completed but durability verification failed", {"revision": exc.revision}))
             except FileExistsError:
                 return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.DESTINATION_EXISTS, "portable JSON destination already exists"))
             except ValueError as exc:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import tempfile
+import secrets
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -16,6 +16,12 @@ from open_table_connector.contract import PROVIDER_JSON, PROVIDER_JSONL, SCHEME_
 from open_table_connector.sdk.materialization import PORTABLE_TABLE_PROFILE_V1
 
 SCHEMA_VERSION = "otc.table-json/v1"
+JSONL_SCHEMA_VERSION = "otc.table-jsonl/v1"
+
+
+class PublicationError(RuntimeError):
+    def __init__(self, revision: str) -> None:
+        self.revision = revision
 
 
 def destination_path(uri: TableURI) -> tuple[Path, str]:
@@ -63,7 +69,7 @@ def encode(frame: pl.DataFrame, mode: str) -> bytes:
     if mode == "json":
         payload = {"schemaVersion": SCHEMA_VERSION, "profile": PORTABLE_TABLE_PROFILE_V1, "schema": fields, "rows": rows}
         return (dump(payload) + "\n").encode("utf-8")
-    metadata = {"$otc": {"schemaVersion": SCHEMA_VERSION, "profile": PORTABLE_TABLE_PROFILE_V1, "schema": fields}}
+    metadata = {"$otc": {"schemaVersion": JSONL_SCHEMA_VERSION, "profile": PORTABLE_TABLE_PROFILE_V1, "schema": fields}}
     return (dump(metadata) + "\n" + "".join(dump(row) + "\n" for row in rows)).encode("utf-8")
 
 
@@ -101,7 +107,9 @@ def decode(payload: object, *, mode: str) -> pl.DataFrame | None:
         if not isinstance(payload, list) or not payload or not isinstance(payload[0], dict) or set(payload[0]) != {"$otc"}:
             return None
         metadata, rows = payload[0]["$otc"], payload[1:]
-    if not isinstance(metadata, dict) or metadata.get("profile") != PORTABLE_TABLE_PROFILE_V1 or not isinstance(metadata.get("schema"), list) or not isinstance(rows, list):
+    expected_version = SCHEMA_VERSION if mode == "json" else JSONL_SCHEMA_VERSION
+    required = {"schemaVersion", "profile", "schema", "rows"} if mode == "json" else {"schemaVersion", "profile", "schema"}
+    if not isinstance(metadata, dict) or set(metadata) != required or metadata.get("schemaVersion") != expected_version or metadata.get("profile") != PORTABLE_TABLE_PROFILE_V1 or not isinstance(metadata.get("schema"), list) or not isinstance(rows, list):
         raise ValueError("portable JSON envelope is invalid")
     fields = metadata["schema"]
     schema = {field["name"]: _dtype(field["type"]) for field in fields if isinstance(field, dict) and set(field) == {"name", "type"}}
@@ -112,26 +120,33 @@ def decode(payload: object, *, mode: str) -> pl.DataFrame | None:
 
 
 def publish(path: Path, data: bytes) -> str:
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    directory = os.open(path.parent, flags)
+    temporary = f".{path.name}.{secrets.token_hex(16)}"
+    descriptor = -1
+    linked = False
+    revision = f"sha256:{hashlib.sha256(data).hexdigest()}"
     try:
-        os.fchmod(descriptor, 0o600)
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=directory)
         with os.fdopen(descriptor, "wb") as stream:
+            descriptor = -1
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
         try:
-            os.link(temporary, path)
+            os.link(temporary, path.name, src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False)
+            linked = True
         except FileExistsError:
             raise
         finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
-        directory = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+            os.unlink(temporary, dir_fd=directory)
+        os.fsync(directory)
+    except BaseException as exc:
+        if linked:
+            raise PublicationError(revision) from exc
+        raise
     finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-    return f"sha256:{hashlib.sha256(data).hexdigest()}"
+        if descriptor >= 0:
+            os.close(descriptor)
+        os.close(directory)
+    return revision

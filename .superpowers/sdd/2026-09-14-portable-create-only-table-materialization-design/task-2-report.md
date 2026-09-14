@@ -60,3 +60,31 @@ exit 0
 ## Commit
 
 `52f45e3 feat: materialize portable JSON tables`
+
+## Fix round 1
+
+RED evidence:
+
+```text
+./.venv/bin/pytest packages/local_files/tests/test_portable_json_materialization.py -q
+2 failed, 8 passed
+```
+
+The new failures showed post-link directory fsync was incorrectly reported as
+`NOT_STARTED`, and `file:///...json` had no BASE routing.
+
+GREEN evidence:
+
+```text
+./.venv/bin/pytest packages/local_files/tests/test_portable_json_materialization.py packages/local_files/tests/test_json_codec.py packages/local_files/tests/test_json_connector.py packages/sdk/tests/test_portable_materialization.py -q
+38 passed in 0.08s
+git diff --check
+exit 0
+```
+
+Fixes: publication now opens the parent with `O_DIRECTORY|O_NOFOLLOW`, creates
+and links entries through that directory fd, and distinguishes post-link errors
+with `PublicationError`. Committed failures return `FAILED/COMMITTED/FAILED`
+with `READBACK_MISMATCH`. Success and committed readback paths carry ordered
+mutation and read receipts. JSONL uses `otc.table-jsonl/v1`; the portable
+profile rejects non-microsecond UTC datetime units before mutation.

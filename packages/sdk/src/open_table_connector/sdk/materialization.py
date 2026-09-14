@@ -51,7 +51,7 @@ def _validate_schema(frame: pl.DataFrame) -> None:
         rendered = str(dtype)
         allowed = rendered in {"String", "Boolean", "Int64", "Float64", "Date"}
         allowed = allowed or _DECIMAL.fullmatch(rendered) is not None
-        allowed = allowed or (rendered.startswith("Datetime(") and "time_zone='UTC'" in rendered)
+        allowed = allowed or (rendered.startswith("Datetime(") and "time_zone='UTC'" in rendered and "time_unit='us'" in rendered)
         if not allowed:
             raise ValueError(f"portable profile does not support dtype {rendered} for field {name}")
         if rendered == "Float64" and not frame.get_column(name).is_finite().fill_null(True).all():
