@@ -177,6 +177,11 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
                 {"capability_id": "table.materialize.create", "capability_version": "1.0"},
             ],
             "modes": ["sheet", "base"],
+            "materialization": [{
+                "capability": {"capability_id": "table.materialize.create", "capability_version": "1.0"},
+                "profiles": ["otc.portable-table/v1"],
+                "modes": ["base", "sheet"],
+            }],
         },
         {
             "connector_id": "google_sheets",
@@ -230,7 +235,7 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
     connector_ids = [record["connector_id"] for record in records]
     assert len(connector_ids) == len(set(connector_ids))
     for record in records:
-        assert set(record) == {"connector_id", "schemes", "capabilities", "modes"}
+        assert set(record) in ({"connector_id", "schemes", "capabilities", "modes"}, {"connector_id", "schemes", "capabilities", "modes", "materialization"})
         capability_ids = [item["capability_id"] for item in record["capabilities"]]
         assert len(capability_ids) == len(set(capability_ids))
         assert len(record["schemes"]) == len(set(record["schemes"]))

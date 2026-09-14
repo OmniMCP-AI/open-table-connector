@@ -66,12 +66,21 @@ complete only after its focused tests and the task review pass.
 
 Verification evidence (2026-09-14):
 
-- `uv run --all-packages pytest -q`: 1592 passed, 5 skipped, 8 warnings.
+- `uv run --all-packages pytest -q`: 1598 passed, 5 skipped, 2 warnings.
+- Focused portable JSON/JSONL, Excel, Maybe, and SDK regression suites:
+  62 passed; universal public-SDK portable materialization conformance: 2
+  passed; discovery/contract/CLI regression suites: 74 passed.
 - `uv run --all-packages pytest -q packages/cli/tests/test_pipeline.py specification/conformance/universal/test_cli_surface.py`: 80 passed.
 - Changed-file Ruff, `uv run --frozen ruff check scripts specification/conformance/universal/test_package_boundaries.py`, and `uv run --frozen mypy scripts`: passed.
 - `check_package_metadata.py`, `check_package_boundaries.py`,
   `check_canonical_literals.py`, `check_package_independence.py --build`,
-  schema parity, provider independence, and `git diff --check`: passed.
+  schema parity, provider independence, `git diff --check`, and
+  `scripts/smoke_wheels.py --build`: passed.
+- Final review fix pass covers durable local replay identity, committed
+  readback mismatch outcomes, real local public-SDK registrations, the exact
+  JSON/JSONL v1 wire contract, Maybe reconciliation evidence validation,
+  Excel receipt redaction, additive capability metadata, pre-mutation limits,
+  and centralized portable success postconditions.
 
 ## 1. Decision
 

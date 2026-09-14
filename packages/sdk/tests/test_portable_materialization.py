@@ -5,7 +5,7 @@ import math
 import open_table_connector.sdk as otc
 import polars as pl
 import pytest
-from open_table_connector.contract import MaterializationCapability, TableMode
+from open_table_connector.contract import MaterializationCapability, TableMode, TableURI
 
 
 def _advertise_portable_create(fake_connector, *modes: TableMode) -> None:
@@ -209,3 +209,24 @@ def test_portable_materialization_conformance_receipts_and_errors_are_secret_saf
         error=error,
     )
     assert "secret-value" not in repr(failed.to_wire())
+
+
+def test_portable_materialize_rejects_connector_success_with_bad_evidence(fake_connector) -> None:
+    _advertise_portable_create(fake_connector, TableMode.BASE)
+    def bad_create(request, destination):
+        del destination
+        return otc.OperationResult(
+            value=otc.TableBinding(
+                TableURI("fake://warehouse/portable"), otc.TableMode.BASE_MODE,
+                request.source.schema, "rev", "fake", request.profile, 999,
+                "bad-schema", "bad-content", otc.DirectTableAddress("fake://warehouse/portable"),
+            ), outcome=otc.Outcome.SUCCEEDED, commit=otc.CommitState.COMMITTED,
+            verification=otc.VerificationState.PASSED, receipts=(),
+        )
+    fake_connector.create_table = bad_create
+    with pytest.raises(otc.OTCError) as raised:
+        otc.Client(registry=otc.ConnectorRegistry([fake_connector])).materialize(
+            pl.DataFrame({"id": [1]}), to=otc.DirectDestination("fake://warehouse/portable"),
+            profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="postcondition",
+        )
+    assert raised.value.result.error.code is otc.ErrorCode.PROTOCOL_FAILURE

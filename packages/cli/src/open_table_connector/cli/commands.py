@@ -74,7 +74,9 @@ def _emit_list(
         if hasattr(adapter, "descriptor"):
             adapter = adapter.descriptor
         if hasattr(adapter, "identity") and hasattr(adapter, "schemes"):
-            manifest = None
+            manifest = getattr(getattr(adapter, "connector", None), "manifest", None)
+            if manifest is None and callable(getattr(adapter, "sdk_connector", None)):
+                manifest = getattr(adapter.sdk_connector(), "manifest", None)
             capabilities = tuple(getattr(adapter, "capabilities", ()))
             modes = tuple(getattr(adapter, "modes", ()))
             schemes = tuple(getattr(adapter, "schemes", ()))
@@ -88,12 +90,18 @@ def _emit_list(
             "capabilities": [_wire_item(item) for item in capabilities],
             "modes": [_wire_item(item) for item in modes],
         }
+        materialization = tuple(getattr(manifest, "materialization", getattr(adapter, "materialization", ())))
+        if materialization:
+            payload["materialization"] = [_wire_item(item) for item in materialization]
         payloads.append(payload)
+    headers = ("connector_id", "schemes", "capabilities", "modes")
+    if any("materialization" in payload for payload in payloads):
+        headers += ("materialization",)
     emit_records(
         payloads,
         output_format,
         out,
-        headers=("connector_id", "schemes", "capabilities", "modes"),
+        headers=headers,
     )
 
 

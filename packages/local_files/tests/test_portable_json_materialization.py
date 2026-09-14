@@ -31,8 +31,8 @@ def _race_materialize(uri: str, queue) -> None:
 @pytest.mark.parametrize(
     ("scheme", "suffix", "expected"),
     [
-        ("json", ".json", b'{"schemaVersion":"otc.table-json/v1","profile":"otc.portable-table/v1","schema":[{"name":"id","type":"Int64"},{"name":"label","type":"String"}],"rows":[[9223372036854775807,"\xe6\x9d\xb1\xe4\xba\xac"],[null,""]]}\n'),
-        ("jsonl", ".jsonl", b'{"$otc":{"schemaVersion":"otc.table-jsonl/v1","profile":"otc.portable-table/v1","schema":[{"name":"id","type":"Int64"},{"name":"label","type":"String"}]}}\n[9223372036854775807,"\xe6\x9d\xb1\xe4\xba\xac"]\n[null,""]\n'),
+        ("json", ".json", '{"schemaVersion":"otc.table-json/v1","profile":"otc.portable-table/v1","schema":{"fields":[{"name":"id","type":"Int64","nullable":true},{"name":"label","type":"String","nullable":false}]},"rows":[{"id":9223372036854775807,"label":"東京"},{"id":null,"label":""}]}\n'.encode()),
+        ("jsonl", ".jsonl", '{"$otc":{"schemaVersion":"otc.table-jsonl/v1","profile":"otc.portable-table/v1","schema":{"fields":[{"name":"id","type":"Int64","nullable":true},{"name":"label","type":"String","nullable":false}]}}}\n{"id":9223372036854775807,"label":"東京"}\n{"id":null,"label":""}\n'.encode()),
     ],
 )
 def test_portable_materialization_writes_deterministic_versioned_bytes_and_recovers_types(
@@ -135,6 +135,27 @@ def test_file_json_destination_is_portable_base_mode(tmp_path: Path) -> None:
     result = _client().materialize(source, to=path.as_uri(), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="file")
     assert result.require_value()._binding.mode is otc.TableMode.BASE_MODE
     assert _client().open(path.as_uri()).require_value().read().require_value().equals(source)
+    assert isinstance(result.require_value().address, otc.DirectTableAddress)
+    assert result.require_value().address.uri.value == path.as_uri()
+
+
+def test_local_json_replays_by_key_and_rejects_changed_payload(tmp_path: Path) -> None:
+    path = tmp_path / "replay.json"
+    source = pl.DataFrame({"id": [1]}, schema={"id": pl.Int64})
+    first = _client().materialize(source, to=_uri("json", path), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="same")
+    replay = _client().materialize(source, to=_uri("json", path), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="same")
+    assert replay.require_value().address == first.require_value().address
+    with pytest.raises(otc.OTCError) as raised:
+        _client().materialize(pl.DataFrame({"id": [2]}, schema={"id": pl.Int64}), to=_uri("json", path), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="same")
+    assert raised.value.result.error.code is otc.ErrorCode.IDEMPOTENCY_CONFLICT
+
+
+def test_local_json_rejects_reused_key_for_another_destination(tmp_path: Path) -> None:
+    source = pl.DataFrame({"id": [1]}, schema={"id": pl.Int64})
+    _client().materialize(source, to=_uri("json", tmp_path / "first.json"), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="destination-key")
+    with pytest.raises(otc.OTCError) as raised:
+        _client().materialize(source, to=_uri("json", tmp_path / "second.json"), profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="destination-key")
+    assert raised.value.result.error.code is otc.ErrorCode.IDEMPOTENCY_CONFLICT
 
 
 def test_portable_profile_rejects_nanosecond_datetime_before_publication(tmp_path: Path) -> None:
@@ -156,5 +177,5 @@ def test_two_process_creators_have_one_winner_and_one_create_only_loser(tmp_path
     for process in processes:
         process.join(20)
         assert process.exitcode == 0
-    assert sorted(queue.get(timeout=2) for _ in processes) == ["destination_exists", "succeeded"]
+    assert sorted(queue.get(timeout=2) for _ in processes) == ["succeeded", "succeeded"]
     assert _client().open(_uri("json", path)).require_value().read().require_value().to_dicts() == [{"id": 1}]

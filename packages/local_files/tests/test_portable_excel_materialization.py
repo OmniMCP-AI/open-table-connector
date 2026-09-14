@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import polars as pl
 import pytest
+import open_table_connector.sdk as otc
 from open_table_connector.local_files import LocalFilesConnector
 from open_table_connector.sdk import (
     PORTABLE_TABLE_PROFILE_V1,
@@ -20,12 +21,12 @@ def _client():
     return Client(registry=ConnectorRegistry([LocalFilesConnector()]))
 
 
-def _portable(client, frame, destination):
+def _portable(client, frame, destination, *, key=None):
     return client.materialize(
         frame,
         to=destination,
         profile=PORTABLE_TABLE_PROFILE_V1,
-        idempotency_key="excel-portable-test",
+        idempotency_key=key or f"excel-portable-test:{destination}",
     )
 
 
@@ -202,3 +203,27 @@ def test_portable_excel_preserves_workbook_commit_evidence(tmp_path, monkeypatch
         "table.read",
     ]
     assert [warning.code for warning in result.warnings] == ["injected"]
+
+
+def test_portable_excel_replays_by_key_and_redacts_provider_snapshots(tmp_path):
+    source = pl.DataFrame({"secret": ["unique-submit-secret"]})
+    destination = f"file://{tmp_path / 'replay.xlsx'}#sheet=Base"
+    first = _portable(_client(), source, destination)
+    replay = _portable(_client(), source, destination)
+    assert replay.require_value().address == first.require_value().address
+    assert "unique-submit-secret" not in repr(tuple(receipt.to_wire() for receipt in replay.receipts))
+
+
+def test_portable_excel_maps_stable_provider_conflict_to_stale_revision(tmp_path, monkeypatch):
+    from open_table_connector.contract import ConnectorError, ConnectorErrorCode
+    from open_table_connector.spreadsheets._session import SpreadsheetSession
+
+    def conflict(self, **kwargs):
+        del self, kwargs
+        raise ConnectorError(ConnectorErrorCode.CONFLICT, "revision changed", {"reason": "revision_changed"})
+
+    monkeypatch.setattr(SpreadsheetSession, "write", conflict)
+    with pytest.raises(OTCError) as raised:
+        _portable(_client(), pl.DataFrame({"id": [1]}), f"file://{tmp_path / 'stale.xlsx'}#sheet=Base")
+    assert raised.value.result.error.code is ErrorCode.STALE_REVISION
+    assert raised.value.result.commit is otc.CommitState.NOT_COMMITTED

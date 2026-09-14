@@ -240,6 +240,28 @@ def test_public_reconciliation_uses_dedicated_provider_schema_without_name_looku
     )
 
 
+def test_reconciliation_rejects_contradictory_provider_evidence() -> None:
+    process = RecordedNativeProcess(mode="timeout")
+    client = _client(process)
+    with pytest.raises(otc.OTCError) as raised:
+        _materialize(process)
+    reference = raised.value.result.error.reconciliation
+    original = process.run
+
+    def conflicting(argv, **kwargs):
+        payload = original(argv, **kwargs)
+        if tuple(argv[:3]) == ("mbs", "db-table", "reconcile"):
+            payload["result"]["provider_revision"] = "rev-other"
+            payload["result"]["affected_rows"] = 999
+        return payload
+
+    process.run = conflicting
+    with pytest.raises(otc.OTCError) as mismatch:
+        client.reconcile_materialization(reference, destination=otc.BaseModeDestination(_URI, "Orders"))
+    assert mismatch.value.result.error.code is otc.ErrorCode.READBACK_MISMATCH
+    assert mismatch.value.result.commit is otc.CommitState.COMMITTED
+
+
 @pytest.mark.parametrize("mode", ["transport-error", "invalid-response"])
 def test_post_dispatch_failure_is_uncertain_and_reconcilable(mode) -> None:
     with pytest.raises(otc.OTCError) as raised:

@@ -1067,7 +1067,7 @@ class FakeSdkConnector:
                     outcome=otc.Outcome.SUCCEEDED,
                     commit=otc.CommitState.COMMITTED,
                     verification=otc.VerificationState.PASSED,
-                    receipts=(make_receipt("table.create.replay", uri=destination_uri),),
+                    receipts=(make_receipt("table.create.replay", uri=destination_uri), make_receipt("table.read", uri=destination_uri)),
                 )
         if destination_uri in self.existing_destinations:
             return otc.OperationResult(
@@ -1088,6 +1088,11 @@ class FakeSdkConnector:
                 schema=self.frame.schema if not isinstance(source, pl.DataFrame) else source.schema,
                 observed_revision="rev-created",
                 connector_id=self.identity.connector_id,
+                profile=request.profile if request is not None else None,
+                row_count=request.row_count if request is not None else None,
+                schema_fingerprint=request.schema_fingerprint if request is not None else None,
+                content_fingerprint=request.content_fingerprint if request is not None else None,
+                address=otc.DirectTableAddress(uri) if request is not None else None,
             )
         if request is not None:
             self.frame = source.clone()
@@ -1102,7 +1107,7 @@ class FakeSdkConnector:
             outcome=otc.Outcome.SUCCEEDED,
             commit=otc.CommitState.COMMITTED,
             verification=otc.VerificationState.PASSED,
-            receipts=(make_receipt("table.create", uri=uri),),
+            receipts=(make_receipt("table.create", uri=uri), make_receipt("table.read", uri=uri)),
         )
 
     def close(self) -> None:

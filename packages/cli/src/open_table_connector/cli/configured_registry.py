@@ -274,6 +274,7 @@ class ConfiguredConnectorRegistry:
                 hosts=descriptor.hosts,
                 capabilities=descriptor.capabilities,
                 modes=descriptor.modes,
+                materialization=descriptor.materialization,
                 local=descriptor.local,
                 handles_paths=descriptor.handles_paths,
             ),
@@ -302,6 +303,7 @@ class ConfiguredConnectorRegistry:
                 hosts=tuple(getattr(adapter, "hosts", ())),
                 capabilities=tuple(getattr(adapter, "capabilities", ())),
                 modes=tuple(getattr(adapter, "modes", ())),
+                materialization=tuple(getattr(adapter, "materialization", getattr(getattr(adapter, "connector", None), "manifest", None).materialization if getattr(getattr(adapter, "connector", None), "manifest", None) is not None else ())),
                 local=bool(getattr(adapter, "local", False)),
                 handles_paths=bool(getattr(adapter, "handles_paths", False)),
             )
@@ -322,6 +324,7 @@ class ConfiguredConnectorRegistry:
                 getattr(adapter, "hosts", ()),
                 capabilities=getattr(adapter, "capabilities", ()),
                 modes=getattr(adapter, "modes", ()),
+                materialization=getattr(adapter, "materialization", ()),
                 local=getattr(adapter, "local", False),
                 handles_paths=getattr(adapter, "handles_paths", False),
             )

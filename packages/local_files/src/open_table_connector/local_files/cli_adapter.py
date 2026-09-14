@@ -664,6 +664,7 @@ def local_files_cli_plugin() -> PluginDescriptor:
         lambda context: _context_factory(LocalFilesCliAdapter, LocalFilesConnector, context),
         capabilities=LocalFilesCliAdapter.capabilities,
         modes=LocalFilesCliAdapter.modes,
+        materialization=tuple(LocalFilesConnector.manifest.materialization),
         local=True,
         handles_paths=True,
     )

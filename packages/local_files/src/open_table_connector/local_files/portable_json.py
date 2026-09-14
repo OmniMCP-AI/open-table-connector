@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import secrets
+from contextlib import contextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -22,6 +23,18 @@ JSONL_SCHEMA_VERSION = "otc.table-jsonl/v1"
 class PublicationError(RuntimeError):
     def __init__(self, revision: str) -> None:
         self.revision = revision
+
+
+class ResourceLimitError(ValueError):
+    """The portable payload exceeded a pre-publication bound."""
+
+
+class IdempotencyConflict(ValueError):
+    """A durable replay key was reused for another request."""
+
+
+MAX_ROWS = 1_000_000
+MAX_BYTES = 128 * 1024 * 1024
 
 
 def destination_path(uri: TableURI) -> tuple[Path, str]:
@@ -42,8 +55,17 @@ def destination_path(uri: TableURI) -> tuple[Path, str]:
     return path, mode
 
 
-def _schema(frame: pl.DataFrame) -> list[dict[str, str]]:
-    return [{"name": name, "type": str(dtype)} for name, dtype in frame.schema.items()]
+def _schema(frame: pl.DataFrame) -> dict[str, list[dict[str, object]]]:
+    return {
+        "fields": [
+            {
+                "name": name,
+                "type": str(dtype),
+                "nullable": frame.get_column(name).null_count() > 0,
+            }
+            for name, dtype in frame.schema.items()
+        ]
+    }
 
 
 def _value(value: object, dtype: pl.DataType) -> object:
@@ -62,15 +84,28 @@ def _value(value: object, dtype: pl.DataType) -> object:
 
 
 def encode(frame: pl.DataFrame, mode: str) -> bytes:
-    fields = _schema(frame)
-    rows = [[_value(value, dtype) for value, dtype in zip(row, frame.dtypes, strict=True)] for row in frame.iter_rows()]
+    if frame.height > MAX_ROWS:
+        raise ResourceLimitError("portable JSON materialization exceeds the row limit")
+    schema = _schema(frame)
+    names = [field["name"] for field in schema["fields"]]
+    rows = [
+        {
+            name: _value(value, dtype)
+            for name, value, dtype in zip(names, row, frame.dtypes, strict=True)
+        }
+        for row in frame.iter_rows()
+    ]
     def dump(value: object) -> str:
         return json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
     if mode == PROVIDER_JSON:
-        payload = {"schemaVersion": SCHEMA_VERSION, "profile": PORTABLE_TABLE_PROFILE_V1, "schema": fields, "rows": rows}
-        return (dump(payload) + "\n").encode("utf-8")
-    metadata = {"$otc": {"schemaVersion": JSONL_SCHEMA_VERSION, "profile": PORTABLE_TABLE_PROFILE_V1, "schema": fields}}
-    return (dump(metadata) + "\n" + "".join(dump(row) + "\n" for row in rows)).encode("utf-8")
+        payload = {"schemaVersion": SCHEMA_VERSION, "profile": PORTABLE_TABLE_PROFILE_V1, "schema": schema, "rows": rows}
+        data = (dump(payload) + "\n").encode("utf-8")
+    else:
+        metadata = {"$otc": {"schemaVersion": JSONL_SCHEMA_VERSION, "profile": PORTABLE_TABLE_PROFILE_V1, "schema": schema}}
+        data = (dump(metadata) + "\n" + "".join(dump(row) + "\n" for row in rows)).encode("utf-8")
+    if len(data) > MAX_BYTES:
+        raise ResourceLimitError("portable JSON materialization exceeds the encoded byte limit")
+    return data
 
 
 def _dtype(name: str) -> pl.DataType:
@@ -109,14 +144,134 @@ def decode(payload: object, *, mode: str) -> pl.DataFrame | None:
         metadata, rows = payload[0]["$otc"], payload[1:]
     expected_version = SCHEMA_VERSION if mode == PROVIDER_JSON else JSONL_SCHEMA_VERSION
     required = {"schemaVersion", "profile", "schema", "rows"} if mode == PROVIDER_JSON else {"schemaVersion", "profile", "schema"}
-    if not isinstance(metadata, dict) or set(metadata) != required or metadata.get("schemaVersion") != expected_version or metadata.get("profile") != PORTABLE_TABLE_PROFILE_V1 or not isinstance(metadata.get("schema"), list) or not isinstance(rows, list):
+    schema_payload = metadata.get("schema") if isinstance(metadata, dict) else None
+    if not isinstance(metadata, dict) or set(metadata) != required or metadata.get("schemaVersion") != expected_version or metadata.get("profile") != PORTABLE_TABLE_PROFILE_V1 or not isinstance(schema_payload, dict) or set(schema_payload) != {"fields"} or not isinstance(schema_payload["fields"], list) or not isinstance(rows, list):
         raise ValueError("portable JSON envelope is invalid")
-    fields = metadata["schema"]
-    schema = {field["name"]: _dtype(field["type"]) for field in fields if isinstance(field, dict) and set(field) == {"name", "type"}}
-    if len(schema) != len(fields) or any(not isinstance(row, list) or len(row) != len(schema) for row in rows):
+    fields = schema_payload["fields"]
+    schema = {
+        field["name"]: _dtype(field["type"])
+        for field in fields
+        if isinstance(field, dict) and set(field) == {"name", "type", "nullable"} and isinstance(field["name"], str) and isinstance(field["type"], str) and isinstance(field["nullable"], bool)
+    }
+    if len(schema) != len(fields) or any(not isinstance(row, dict) or set(row) != set(schema) for row in rows):
         raise ValueError("portable JSON rows do not match schema")
     names = list(schema)
-    return pl.DataFrame([{name: _parsed(value, schema[name]) for name, value in zip(names, row, strict=True)} for row in rows], schema=schema, orient="row")
+    return pl.DataFrame([{name: _parsed(row[name], schema[name]) for name in names} for row in rows], schema=schema)
+
+
+@contextmanager
+def replay_lock(path: Path):
+    """Serialize replay lookup/publication for one canonical destination."""
+    import fcntl
+
+    lock_path = path.with_name(path.name + ".otc-lock")
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+
+def replay_path(path: Path, identity: str | None = None) -> Path:
+    suffix = ".otc-replay.json" if identity is None else f".otc-replay-{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:16]}.json"
+    return path.with_name(path.name + suffix)
+
+
+def replay_index_path(path: Path) -> Path:
+    return path.parent / ".otc-portable-replay-index.json"
+
+
+@contextmanager
+def replay_transaction(path: Path):
+    with replay_lock(path), replay_lock(replay_index_path(path)):
+        yield
+
+
+def _replay_index_key(connector_id: str, idempotency_key: str) -> str:
+    return hashlib.sha256(f"{connector_id}\0{idempotency_key}".encode()).hexdigest()
+
+
+def load_replay_index(path: Path, connector_id: str, idempotency_key: str) -> dict[str, object] | None:
+    try:
+        payload = json.loads(replay_index_path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("portable replay index is invalid") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("portable replay index is invalid")
+    record = payload.get(_replay_index_key(connector_id, idempotency_key))
+    if record is None:
+        return None
+    if not isinstance(record, dict):
+        raise ValueError("portable replay index is invalid")
+    return record
+
+
+def store_replay_index(path: Path, connector_id: str, record: dict[str, object]) -> None:
+    index = replay_index_path(path)
+    try:
+        payload = json.loads(index.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        payload = {}
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("portable replay index is invalid") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("portable replay index is invalid")
+    key = record.get("idempotency_key")
+    if not isinstance(key, str):
+        raise ValueError("portable replay record is invalid")
+    payload[_replay_index_key(connector_id, key)] = record
+    temporary = index.with_name(f".{index.name}.{secrets.token_hex(8)}")
+    data = (json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    try:
+        with temporary.open("xb") as stream:
+            os.chmod(temporary, 0o600)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, index)
+        directory = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def load_replay(path: Path, identity: str | None = None) -> dict[str, object] | None:
+    try:
+        payload = json.loads(replay_path(path, identity).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("portable JSON replay record is invalid") from exc
+    if not isinstance(payload, dict) or set(payload) != {"destination", "profile", "idempotency_key", "schema_fingerprint", "content_fingerprint", "revision", "row_count", "bytes"}:
+        raise ValueError("portable JSON replay record is invalid")
+    return payload
+
+
+def store_replay(path: Path, record: dict[str, object], identity: str | None = None) -> None:
+    destination = replay_path(path, identity)
+    temporary = destination.with_name(f".{destination.name}.{secrets.token_hex(8)}")
+    data = (json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    try:
+        with temporary.open("xb") as stream:
+            os.chmod(temporary, 0o600)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+        directory = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def publish(path: Path, data: bytes) -> str:

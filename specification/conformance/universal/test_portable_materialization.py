@@ -15,21 +15,23 @@ def test_portable_materialization_case_replays_and_reads_from_a_fresh_client(tmp
     for case in cases:
         first_client = case.make_client()
         fresh_client = case.make_client()
+        replay_key = f"universal-materialization-1-{case.name}"
 
         first = first_client.materialize(
             case.source,
             to=case.destination,
             profile=otc.PORTABLE_TABLE_PROFILE_V1,
-            idempotency_key="universal-materialization-1",
+            idempotency_key=replay_key,
         )
         replay = first_client.materialize(
             case.source,
             to=case.destination,
             profile=otc.PORTABLE_TABLE_PROFILE_V1,
-            idempotency_key="universal-materialization-1",
+            idempotency_key=replay_key,
         )
-        readback = fresh_client.open(first.require_value().uri).require_value().read()
-        process_readback = case.read_in_fresh_process(first.require_value().uri)
+        address = first.require_value().address or first.require_value().uri
+        readback = fresh_client.open(address).require_value().read()
+        process_readback = case.read_in_fresh_process(address)
 
         assert replay.require_value().uri == first.require_value().uri
         assert readback.require_value().equals(case.source)
@@ -40,7 +42,7 @@ def test_portable_materialization_case_replays_and_reads_from_a_fresh_client(tmp
                 case.changed_source,
                 to=case.destination,
                 profile=otc.PORTABLE_TABLE_PROFILE_V1,
-                idempotency_key="universal-materialization-1",
+                idempotency_key=replay_key,
             )
         assert raised.value.result.error is not None
         assert raised.value.result.error.code is otc.ErrorCode.IDEMPOTENCY_CONFLICT

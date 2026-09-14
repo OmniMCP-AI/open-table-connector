@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlsplit
 
 import polars as pl
-from open_table_connector.contract import SCHEME_FILE, ConnectorError
+from open_table_connector.contract import SCHEME_FILE, ConnectorError, ConnectorErrorCode
 from open_table_connector.sdk._excel_table import table_address, table_matrix
 from open_table_connector.sdk.materialization import MaterializationRequest
 from open_table_connector.sdk.model import (
@@ -53,6 +53,11 @@ def _column_name(index):
 
 
 def _workbook_evidence(written, connector, uri):
+    def safe_details(details):
+        if not isinstance(details, dict):
+            return {}
+        return {key: details[key] for key in ("status", "content_hash", "bytes", "cells", "sheets", "revision") if key in details}
+
     receipts = tuple(
         Receipt(
             "workbook-provider",
@@ -60,7 +65,7 @@ def _workbook_evidence(written, connector, uri):
             connector.identity.connector_id,
             safe_target=uri,
             mode="sheet-mode",
-            details=item.get("details", {}),
+            details=safe_details(item.get("details", {})),
         )
         for item in written.get("receipts", ())
     )
@@ -262,6 +267,18 @@ def _typed_frame(path, record, schema):
                     .cast(dtype)
                     .alias(name)
                 )
+            elif dtype == pl.Date:
+                expressions.append(pl.col(name).str.to_date(strict=True).alias(name))
+            elif dtype.base_type() == pl.Datetime:
+                expressions.append(
+                    pl.col(name)
+                    .str.to_datetime(
+                        time_unit=dtype.time_unit,
+                        time_zone=dtype.time_zone,
+                        strict=True,
+                    )
+                    .alias(name)
+                )
             else:
                 expressions.append(pl.col(name).cast(dtype, strict=True).alias(name))
         return frame.select(expressions)
@@ -283,6 +300,7 @@ def open_portable_excel(address):
     frame = _typed_frame(path, record, schema)
     canonical = SheetModeTableAddress(path.as_uri(), record["table_id"])
     revision = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+    content_fingerprint = MaterializationRequest(frame, DirectDestination(path.as_uri()), "otc.portable-table/v1", "readback").content_fingerprint
     return TableBinding(
         path.as_uri(),
         "sheet-mode",
@@ -292,18 +310,60 @@ def open_portable_excel(address):
         "otc.portable-table/v1",
         frame.height,
         record["schema_fingerprint"],
-        None,
+        content_fingerprint,
         canonical,
     ), frame
 
 
 def create_portable_excel_table(connector, request: MaterializationRequest):
+    from .portable_json import replay_index_path, replay_lock
+
+    path, worksheet, uri = _destination(request.destination)
+    with replay_lock(path), replay_lock(replay_index_path(path)):
+        return _create_portable_excel_table_locked(connector, request, path, worksheet, uri)
+
+
+def _create_portable_excel_table_locked(connector, request, path, worksheet, uri):
+    from .portable_json import (
+        IdempotencyConflict,
+        load_replay,
+        load_replay_index,
+        store_replay,
+        store_replay_index,
+    )
+
     written = None
     mutation = ()
     commit_receipts = ()
     warnings = ()
     try:
-        path, worksheet, uri = _destination(request.destination)
+        canonical_worksheet = worksheet.casefold()
+        replay = {
+            "destination": f"{uri}#sheet={canonical_worksheet}",
+            "profile": request.profile,
+            "idempotency_key": request.idempotency_key,
+            "schema_fingerprint": request.schema_fingerprint,
+            "content_fingerprint": request.content_fingerprint,
+            "revision": "",
+            "row_count": request.row_count,
+            "bytes": 0,
+        }
+        replay_identity = f"{uri}#sheet={canonical_worksheet}"
+        indexed = load_replay_index(path, connector.identity.connector_id, request.idempotency_key)
+        if indexed is not None and indexed.get("destination") != replay["destination"]:
+            raise IdempotencyConflict("portable Excel idempotency key conflicts with another destination")
+        previous = load_replay(path, replay_identity)
+        if previous is not None:
+            if previous.get("idempotency_key") == request.idempotency_key and any(
+                previous.get(key) != value for key, value in replay.items() if key not in {"revision", "bytes"}
+            ):
+                raise IdempotencyConflict("portable Excel idempotency key conflicts with a different request")
+            if previous.get("idempotency_key") == request.idempotency_key:
+                binding, observed = open_portable_excel(f"{uri}#sheet={worksheet}")
+                mutation = Receipt("physical", "table.materialize.create", connector.identity.connector_id, "table.materialize.create/1.0", uri, "sheet-mode", {"revision": previous["revision"], "bytes": previous["bytes"], "replay": True})
+                read = Receipt("physical", "table.read", connector.identity.connector_id, "table.read/1.0", uri, "sheet-mode", {"revision": binding.observed_revision})
+                return OperationResult(binding, Outcome.SUCCEEDED, CommitState.COMMITTED, VerificationState.PASSED, (mutation, read))
+            raise FileExistsError(path)
         table_id = str(uuid.uuid4())
         provider = LocalSpreadsheetProvider()
         session = SpreadsheetSession(
@@ -384,9 +444,20 @@ def create_portable_excel_table(connector, request: MaterializationRequest):
                 error=ErrorInfo(
                     ErrorCode.READBACK_MISMATCH,
                     "portable Excel readback differs from submitted table",
-                    {"expected": str(request.source), "observed": str(observed)},
+                    {
+                        "expected_schema_fingerprint": request.schema_fingerprint,
+                        "observed_schema_fingerprint": MaterializationRequest(observed, DirectDestination("file:///placeholder.xlsx"), request.profile, "readback").schema_fingerprint,
+                        "expected_content_fingerprint": request.content_fingerprint,
+                        "observed_content_fingerprint": MaterializationRequest(observed, DirectDestination("file:///placeholder.xlsx"), request.profile, "readback").content_fingerprint,
+                        "expected_rows": request.row_count,
+                        "observed_rows": observed.height,
+                    },
                 ),
             )
+        replay["revision"] = binding.observed_revision or ""
+        replay["bytes"] = path.stat().st_size
+        store_replay(path, replay, replay_identity)
+        store_replay_index(path, connector.identity.connector_id, replay)
         return OperationResult(
             binding,
             Outcome.SUCCEEDED,
@@ -395,6 +466,10 @@ def create_portable_excel_table(connector, request: MaterializationRequest):
             (*commit_receipts, *mutation, read),
             warnings=warnings,
         )
+    except IdempotencyConflict as exc:
+        return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.IDEMPOTENCY_CONFLICT, str(exc)))
+    except FileExistsError:
+        return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.DESTINATION_EXISTS, "Excel destination already exists"))
     except ConnectorError as exc:
         if written is not None:
             return OperationResult(
@@ -410,11 +485,11 @@ def create_portable_excel_table(connector, request: MaterializationRequest):
                     {"cause": type(exc).__name__},
                 ),
             )
-        code = (
-            ErrorCode.STALE_REVISION
-            if exc.code.value == "conflict" and "stale" in exc.message.lower()
-            else ErrorCode.EXECUTION_FAILED
-        )
+        if exc.code is ConnectorErrorCode.CONFLICT and exc.safe_details.get("reason") in {"stale_revision", "revision_changed"}:
+            return OperationResult(None, Outcome.REJECTED, CommitState.NOT_COMMITTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.STALE_REVISION, "workbook revision changed before commit", {"reason": "revision_changed"}))
+        if exc.code is ConnectorErrorCode.RESOURCE_LIMIT_EXCEEDED:
+            return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.RESOURCE_LIMIT, "portable Excel materialization exceeds provider limits"))
+        code = ErrorCode.EXECUTION_FAILED
         return OperationResult(
             None,
             Outcome.REJECTED,

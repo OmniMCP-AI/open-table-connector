@@ -475,28 +475,72 @@ class LocalFilesSdkConnectorMixin:
         if isinstance(destination, DirectDestination) and urlsplit(destination.uri.value).path.lower().endswith(".xlsx"):
             return create_excel_table(self, source, destination)
         if isinstance(source, MaterializationRequest) and destination is None:
-            from .portable_json import PublicationError, destination_path, encode, publish
+            from .portable_json import (
+                IdempotencyConflict,
+                PublicationError,
+                ResourceLimitError,
+                destination_path,
+                encode,
+                load_replay,
+                load_replay_index,
+                publish,
+                replay_transaction,
+                store_replay,
+                store_replay_index,
+            )
             receipts = ()
             try:
                 path, mode = destination_path(source.destination.uri)
                 data = encode(source.source, mode)
                 revision = f"sha256:{hashlib.sha256(data).hexdigest()}"
-                receipts = (Receipt("physical", "table.materialize.create", self.identity.connector_id, "table.materialize.create/1.0", source.destination.uri, TableMode.BASE_MODE, {"revision": revision, "bytes": len(data)}),)
-                revision = publish(path, data)
-                binding = TableBinding(source.destination.uri, TableMode.BASE_MODE, source.source.schema, revision, self.identity.connector_id, source.profile, source.row_count, source.schema_fingerprint, source.content_fingerprint)
-                readback_result = self.read_table(binding)
-                receipts += readback_result.receipts
-                readback = readback_result.require_value().to_polars()
-                if not readback.equals(source.source):
-                    return OperationResult(None, Outcome.FAILED, CommitState.COMMITTED, VerificationState.FAILED, receipts, error=ErrorInfo(ErrorCode.READBACK_MISMATCH, "portable JSON readback differs from submitted table", {"revision": revision}))
-                return OperationResult(binding, Outcome.SUCCEEDED, CommitState.COMMITTED, VerificationState.PASSED, receipts)
+                record = {
+                    "destination": source.destination.uri.value,
+                    "profile": source.profile,
+                    "idempotency_key": source.idempotency_key,
+                    "schema_fingerprint": source.schema_fingerprint,
+                    "content_fingerprint": source.content_fingerprint,
+                    "revision": revision,
+                    "row_count": source.row_count,
+                    "bytes": len(data),
+                }
+                with replay_transaction(path):
+                    indexed = load_replay_index(path, self.identity.connector_id, source.idempotency_key)
+                    if indexed is not None and indexed.get("destination") != record["destination"]:
+                        raise IdempotencyConflict("portable JSON idempotency key conflicts with another destination")
+                    previous = load_replay(path)
+                    if previous is not None:
+                        if previous.get("idempotency_key") != source.idempotency_key:
+                            raise FileExistsError(path)
+                        if any(previous.get(key) != value for key, value in record.items() if key not in {"revision", "bytes"}):
+                            raise IdempotencyConflict("portable JSON idempotency key conflicts with a different request")
+                        revision = str(previous["revision"])
+                        receipts = (Receipt("physical", "table.materialize.create", self.identity.connector_id, "table.materialize.create/1.0", source.destination.uri, TableMode.BASE_MODE, {"revision": revision, "bytes": previous["bytes"], "replay": True}),)
+                    else:
+                        receipts = (Receipt("physical", "table.materialize.create", self.identity.connector_id, "table.materialize.create/1.0", source.destination.uri, TableMode.BASE_MODE, {"revision": revision, "bytes": len(data)}),)
+                        revision = publish(path, data)
+                        record["revision"] = revision
+                        store_replay(path, record)
+                        store_replay_index(path, self.identity.connector_id, record)
+                    binding = TableBinding(source.destination.uri, TableMode.BASE_MODE, source.source.schema, revision, self.identity.connector_id, source.profile, source.row_count, source.schema_fingerprint, source.content_fingerprint, DirectTableAddress(source.destination.uri))
+                    readback_result = self.read_table(binding)
+                    receipts += readback_result.receipts
+                    readback = readback_result.require_value().to_polars()
+                    if not readback.equals(source.source):
+                        return OperationResult(None, Outcome.FAILED, CommitState.COMMITTED, VerificationState.FAILED, receipts, error=ErrorInfo(ErrorCode.READBACK_MISMATCH, "portable JSON readback differs from submitted table", {"revision": revision}))
+                    return OperationResult(binding, Outcome.SUCCEEDED, CommitState.COMMITTED, VerificationState.PASSED, receipts)
             except PublicationError as exc:
                 return OperationResult(None, Outcome.FAILED, CommitState.COMMITTED, VerificationState.FAILED, receipts, error=ErrorInfo(ErrorCode.READBACK_MISMATCH, "portable JSON publication completed but durability verification failed", {"revision": exc.revision}))
+            except ResourceLimitError as exc:
+                return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.RESOURCE_LIMIT, str(exc)))
+            except IdempotencyConflict as exc:
+                return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.IDEMPOTENCY_CONFLICT, str(exc)))
             except FileExistsError:
                 return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.DESTINATION_EXISTS, "portable JSON destination already exists"))
             except ValueError as exc:
                 return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.INVALID_TARGET, str(exc)))
             except BaseException as exc:
+                if path.exists() and receipts:
+                    return OperationResult(None, Outcome.FAILED, CommitState.COMMITTED, VerificationState.FAILED, receipts, error=ErrorInfo(ErrorCode.READBACK_MISMATCH, "portable JSON commit completed but readback failed", {"reason": type(exc).__name__}))
                 return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.EXECUTION_FAILED, "portable JSON materialization failed", {"reason": type(exc).__name__}))
         return _failure(
             ConnectorError(

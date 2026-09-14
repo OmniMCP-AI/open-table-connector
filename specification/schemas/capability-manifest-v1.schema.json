@@ -4,7 +4,7 @@
   "title": "Connector capability manifest v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["connector", "capabilities", "modes", "uri_schemes", "materialization"],
+  "required": ["connector", "capabilities", "modes", "uri_schemes"],
   "properties": {
     "connector": {
       "type": "object",

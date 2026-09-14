@@ -27,16 +27,17 @@ from .connector import ArrowTableCarrier, _destination_uri
 from .credentials import CredentialResolver, EnvironmentCredentialResolver
 from .materialization import (
     MATERIALIZE_CREATE_CAPABILITY,
-    PORTABLE_TABLE_PROFILE_V1,
     MaterializationRequest,
 )
 from .model import (
     BaseModeDestination,
+    BaseModeTableAddress,
     DirectDestination,
     DirectTableAddress,
     ExistingTableAddress,
     SchemaPolicy,
     SheetModeDestination,
+    SheetModeTableAddress,
     SheetRangeSource,
     TableDestination,
 )
@@ -209,6 +210,9 @@ class Client:
                 )
             except (TypeError, ValueError) as exc:
                 code = (
+                    ErrorCode.UNSUPPORTED_CAPABILITY
+                    if "unsupported materialization profile" in str(exc)
+                    else
                     ErrorCode.INVALID_SCHEMA
                     if "profile rejects" in str(exc) or "dtype" in str(exc)
                     else ErrorCode.INVALID_CONFIGURATION
@@ -235,13 +239,35 @@ class Client:
             receipts = (*source_result.receipts, *receipts)
         binding = delivered.require_value()
         if request is not None:
-            binding = replace(
-                binding,
-                profile=PORTABLE_TABLE_PROFILE_V1,
-                row_count=request.row_count,
-                schema_fingerprint=request.schema_fingerprint,
-                content_fingerprint=request.content_fingerprint,
+            expected_address = (
+                SheetModeTableAddress
+                if isinstance(destination, DirectDestination) and _materialization_mode(destination, connector) == "sheet"
+                else DirectTableAddress
+                if isinstance(destination, DirectDestination)
+                else BaseModeTableAddress
+                if isinstance(destination, BaseModeDestination)
+                else SheetModeTableAddress
             )
+            if (
+                delivered.continuation is not None
+                or delivered.outcome is not Outcome.SUCCEEDED
+                or delivered.commit is not CommitState.COMMITTED
+                or delivered.verification is not VerificationState.PASSED
+                or binding.profile != request.profile
+                or binding.row_count != request.row_count
+                or binding.schema != request.source.schema
+                or binding.schema_fingerprint != request.schema_fingerprint
+                or binding.content_fingerprint != request.content_fingerprint
+                or not binding.observed_revision
+                or binding.address is None
+                or (expected_address is not None and not isinstance(binding.address, expected_address))
+                or len(delivered.receipts) < 2
+                or not delivered.receipts[-1].operation.startswith("table.read")
+            ):
+                raise _failure(
+                    "connector returned incomplete portable materialization evidence",
+                    ErrorCode.PROTOCOL_FAILURE,
+                )
         return replace(
             delivered,
             value=self._wrap_binding(binding),
