@@ -21,13 +21,13 @@ complete only after its focused tests and the task review pass.
 
 ### Task 1 — Contract, portable profile, and shared conformance
 
-- [ ] Add the `otc.portable-table/v1` logical profile, validation, schema and
+- [x] Add the `otc.portable-table/v1` logical profile, validation, schema and
       content fingerprints, capability identity, structured materialization
       request/result data, and the outcome/error states required by Sections
       5, 6, and 10.
-- [ ] Extend `Client.materialize` and connector dispatch with profile and
+- [x] Extend `Client.materialize` and connector dispatch with profile and
       idempotency-key validation while preserving legacy unprofiled calls.
-- [ ] Add shared public-interface conformance cases for the profile,
+- [x] Add shared public-interface conformance cases for the profile,
       capability discovery, fresh readback, idempotency, and safe receipts.
 
 ### Task 2 — Portable local JSON and JSONL materialization
