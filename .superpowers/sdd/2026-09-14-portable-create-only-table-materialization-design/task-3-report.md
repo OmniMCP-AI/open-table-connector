@@ -62,3 +62,36 @@ exit 0
 - Polars currently emits deprecation warnings for String-to-Date/Datetime casts
   in the independent typed recovery test; these do not affect the test result
   but should be updated to explicit string parsing before Polars 2.0.
+
+## Fix round 1
+
+- `Table.address` now exposes the validated public `ExistingTableAddress | None`
+  held by `TableBinding`; legacy bindings retain `None`.
+- Portable Excel metadata now includes adapter magic/kind/version, canonical
+  workbook grid identity, exact table/worksheet identity, and a recomputed
+  schema fingerprint.  Missing, duplicate, malformed, stale, or mismatched
+  records are rejected.
+- Fixed column coordinates beyond `Z`, strict Boolean lexical recovery, and
+  flattened committed mismatch receipts into mutation then read order.
+- Added public-address fresh-client recovery, `AA`-width materialization, and
+  Boolean tampering coverage, plus an exact ordered mutation/read receipt
+  assertion for a committed readback mismatch.
+
+### Fix-round TDD and verification
+
+RED:
+
+```text
+./.venv/bin/pytest packages/local_files/tests/test_portable_excel_materialization.py -q
+4 failed
+```
+
+The expected failures showed the missing public `Table.address` and invalid
+single-character-only Excel column conversion.
+
+GREEN:
+
+```text
+./.venv/bin/pytest packages/local_files/tests/test_portable_excel_materialization.py packages/local_files/tests/test_excel_table_materialize.py packages/sdk/tests/test_model.py packages/sdk/tests/test_portable_materialization.py packages/contract/tests/test_materialization_capabilities.py -q
+38 passed, 7 warnings
+```

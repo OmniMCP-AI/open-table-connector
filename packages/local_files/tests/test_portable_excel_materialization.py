@@ -59,7 +59,7 @@ def test_portable_excel_uses_structured_destination_and_recovers_exact_types(tmp
 
     result = _portable(_client(), source, destination)
 
-    address = result.require_value()._binding.address
+    address = result.require_value().address
     assert isinstance(address, SheetModeTableAddress)
     assert address.grid.value == path.as_uri()
     assert address.table_id
@@ -73,11 +73,25 @@ def test_portable_excel_all_null_and_zero_rows_require_durable_metadata(tmp_path
         {"empty": [None, None]}, schema={"empty": pl.Decimal(precision=8, scale=3)}
     )
     result = _portable(_client(), source, f"file://{path}#sheet=Base")
-    assert _client().open(result.require_value()._binding.address).require_value().read().require_value().equals(source)
+    assert (
+        _client()
+        .open(result.require_value().address)
+        .require_value()
+        .read()
+        .require_value()
+        .equals(source)
+    )
 
     zero = pl.DataFrame(schema={"id": pl.Int64, "when": pl.Datetime("us", "UTC")})
     _portable(_client(), zero, f"file://{path}#sheet=Zero")
-    assert _client().open(f"file://{path}#sheet=Zero").require_value().read().require_value().equals(zero)
+    assert (
+        _client()
+        .open(f"file://{path}#sheet=Zero")
+        .require_value()
+        .read()
+        .require_value()
+        .equals(zero)
+    )
 
 
 def test_portable_excel_rejects_casefold_conflict_and_preserves_unrelated_sheet(tmp_path):
@@ -110,10 +124,12 @@ def test_portable_excel_rejects_casefold_conflict_and_preserves_unrelated_sheet(
 def test_portable_excel_missing_or_tampered_metadata_never_infers_schema(tmp_path):
     path = tmp_path / "tampered.xlsx"
     result = _portable(_client(), pl.DataFrame({"id": [1]}), f"file://{path}#sheet=Base")
-    address = result.require_value()._binding.address
+    address = result.require_value().address
     book = load_workbook(path)
     try:
-        metadata = next(sheet for sheet in book.worksheets if sheet.title.startswith("_otc_materialization_"))
+        metadata = next(
+            sheet for sheet in book.worksheets if sheet.title.startswith("_otc_materialization_")
+        )
         metadata["A1"] = "tampered"
         book.save(path)
     finally:
@@ -121,3 +137,42 @@ def test_portable_excel_missing_or_tampered_metadata_never_infers_schema(tmp_pat
     with pytest.raises(OTCError) as caught:
         _client().open(address)
     assert caught.value.result.error.code is ErrorCode.INVALID_SCHEMA
+
+
+def test_portable_excel_uses_excel_columns_beyond_z_and_rejects_bad_boolean(tmp_path):
+    path = tmp_path / "wide.xlsx"
+    source = pl.DataFrame({**{f"c{index}": [index] for index in range(28)}, "flag": [True]})
+    result = _portable(_client(), source, f"file://{path}#sheet=Wide")
+    assert result.require_value().read().require_value().equals(source)
+    address = result.require_value().address
+    book = load_workbook(path)
+    try:
+        book["Wide"]["AC2"] = "truthy"
+        book.save(path)
+    finally:
+        book.close()
+    with pytest.raises(OTCError) as caught:
+        _client().open(address)
+    assert caught.value.result.error.code is ErrorCode.INVALID_SCHEMA
+
+
+def test_portable_excel_committed_mismatch_receipts_are_flat_and_ordered(tmp_path, monkeypatch):
+    import open_table_connector.local_files.sdk_excel_table as excel
+
+    original = excel.open_portable_excel
+
+    def mismatch(address):
+        binding, frame = original(address)
+        return binding, frame.head(0)
+
+    monkeypatch.setattr(excel, "open_portable_excel", mismatch)
+    with pytest.raises(OTCError) as caught:
+        _portable(
+            _client(), pl.DataFrame({"id": [1]}), f"file://{tmp_path / 'receipt.xlsx'}#sheet=Base"
+        )
+    result = caught.value.result
+    assert result.error.code is ErrorCode.READBACK_MISMATCH
+    assert [receipt.operation for receipt in result.receipts] == [
+        "table.materialize.create",
+        "table.read",
+    ]
