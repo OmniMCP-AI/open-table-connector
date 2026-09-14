@@ -49,9 +49,9 @@ complete only after its focused tests and the task review pass.
 
 ### Task 4 — Maybe native Base create and reconciliation
 
-- [ ] Add the provider-native `mbs db-table create` process contract with
+- [x] Add the provider-native `mbs db-table create` process contract with
       stable table IDs, typed schema/rows, idempotency, and reconciliation.
-- [ ] Implement the Maybe adapter gate, canonical container validation,
+- [x] Implement the Maybe adapter gate, canonical container validation,
       stable-ID binding/readback, unknown/partial outcomes, and recorded
       conformance coverage without append or name-based emulation.
 
