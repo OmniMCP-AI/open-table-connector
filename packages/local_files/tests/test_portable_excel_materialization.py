@@ -173,6 +173,32 @@ def test_portable_excel_committed_mismatch_receipts_are_flat_and_ordered(tmp_pat
     result = caught.value.result
     assert result.error.code is ErrorCode.READBACK_MISMATCH
     assert [receipt.operation for receipt in result.receipts] == [
+        "workbook.write",
         "table.materialize.create",
         "table.read",
     ]
+
+
+def test_portable_excel_preserves_workbook_commit_evidence(tmp_path, monkeypatch):
+    from open_table_connector.spreadsheets._session import SpreadsheetSession
+
+    original = SpreadsheetSession.write
+
+    def write_with_evidence(self, **kwargs):
+        result = dict(original(self, **kwargs))
+        result["receipts"] = (
+            {"operation": "workbook.provider.commit", "details": {"injected": True}},
+        )
+        result["warnings"] = ({"code": "injected", "message": "provider warning"},)
+        return result
+
+    monkeypatch.setattr(SpreadsheetSession, "write", write_with_evidence)
+    result = _portable(
+        _client(), pl.DataFrame({"id": [1]}), f"file://{tmp_path / 'evidence.xlsx'}#sheet=Base"
+    )
+    assert [receipt.operation for receipt in result.receipts] == [
+        "workbook.provider.commit",
+        "table.materialize.create",
+        "table.read",
+    ]
+    assert [warning.code for warning in result.warnings] == ["injected"]

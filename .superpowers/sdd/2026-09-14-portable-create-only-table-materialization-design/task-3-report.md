@@ -95,3 +95,24 @@ GREEN:
 ./.venv/bin/pytest packages/local_files/tests/test_portable_excel_materialization.py packages/local_files/tests/test_excel_table_materialize.py packages/sdk/tests/test_model.py packages/sdk/tests/test_portable_materialization.py packages/contract/tests/test_materialization_capabilities.py -q
 38 passed, 7 warnings
 ```
+
+## Fix round 2
+
+- Portable Excel now translates and retains `SpreadsheetSession.write()`
+  provider receipts and warnings.  Results order provider commit evidence,
+  portable mutation receipt, then independent readback receipt; committed
+  readback failures retain the same commit/mutation evidence and warnings.
+- The lexical Excel materialization path was not changed.
+
+### Fix-round verification
+
+```text
+./.venv/bin/pytest packages/local_files/tests/test_portable_excel_materialization.py packages/local_files/tests/test_excel_table_materialize.py packages/sdk/tests/test_model.py packages/sdk/tests/test_portable_materialization.py packages/contract/tests/test_materialization_capabilities.py -q
+39 passed, 7 warnings in 0.74s
+
+./.venv/bin/ruff check packages/local_files/src/open_table_connector/local_files/sdk_excel_table.py packages/local_files/tests/test_portable_excel_materialization.py
+All checks passed!
+
+git diff --check
+exit 0
+```

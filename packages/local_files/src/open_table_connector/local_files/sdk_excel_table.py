@@ -27,6 +27,7 @@ from open_table_connector.sdk.result import (
     ErrorCode,
     ErrorInfo,
     OperationResult,
+    OperationWarning,
     OTCError,
     Outcome,
     Receipt,
@@ -49,6 +50,27 @@ def _column_name(index):
         index, remainder = divmod(index - 1, 26)
         name = chr(65 + remainder) + name
     return name
+
+
+def _workbook_evidence(written, connector, uri):
+    receipts = tuple(
+        Receipt(
+            "workbook-provider",
+            item.get("operation", "workbook.write"),
+            connector.identity.connector_id,
+            safe_target=uri,
+            mode="sheet-mode",
+            details=item.get("details", {}),
+        )
+        for item in written.get("receipts", ())
+    )
+    warnings = tuple(
+        item
+        if isinstance(item, OperationWarning)
+        else OperationWarning(item["code"], item["message"], item.get("safe_details", {}))
+        for item in written.get("warnings", ())
+    )
+    return receipts, warnings
 
 
 def _destination(destination):
@@ -278,6 +300,8 @@ def open_portable_excel(address):
 def create_portable_excel_table(connector, request: MaterializationRequest):
     written = None
     mutation = ()
+    commit_receipts = ()
+    warnings = ()
     try:
         path, worksheet, uri = _destination(request.destination)
         table_id = str(uuid.uuid4())
@@ -337,6 +361,7 @@ def create_portable_excel_table(connector, request: MaterializationRequest):
                 {"revision": written["binding"]["revision"]},
             ),
         )
+        commit_receipts, warnings = _workbook_evidence(written, connector, uri)
         address = SheetModeTableAddress(uri, table_id)
         binding, observed = open_portable_excel(address)
         read = Receipt(
@@ -354,7 +379,8 @@ def create_portable_excel_table(connector, request: MaterializationRequest):
                 Outcome.FAILED,
                 CommitState.COMMITTED,
                 VerificationState.FAILED,
-                (*mutation, read),
+                (*commit_receipts, *mutation, read),
+                warnings=warnings,
                 error=ErrorInfo(
                     ErrorCode.READBACK_MISMATCH,
                     "portable Excel readback differs from submitted table",
@@ -366,7 +392,8 @@ def create_portable_excel_table(connector, request: MaterializationRequest):
             Outcome.SUCCEEDED,
             CommitState.COMMITTED,
             VerificationState.PASSED,
-            (*mutation, read),
+            (*commit_receipts, *mutation, read),
+            warnings=warnings,
         )
     except ConnectorError as exc:
         if written is not None:
@@ -375,7 +402,8 @@ def create_portable_excel_table(connector, request: MaterializationRequest):
                 Outcome.FAILED,
                 CommitState.COMMITTED,
                 VerificationState.FAILED,
-                mutation,
+                (*commit_receipts, *mutation),
+                warnings=warnings,
                 error=ErrorInfo(
                     ErrorCode.READBACK_MISMATCH,
                     "portable Excel commit completed but readback failed",
@@ -402,7 +430,8 @@ def create_portable_excel_table(connector, request: MaterializationRequest):
                 Outcome.FAILED,
                 CommitState.COMMITTED,
                 VerificationState.FAILED,
-                mutation,
+                (*commit_receipts, *mutation),
+                warnings=warnings,
                 error=ErrorInfo(
                     ErrorCode.READBACK_MISMATCH,
                     "portable Excel commit completed but readback failed",
