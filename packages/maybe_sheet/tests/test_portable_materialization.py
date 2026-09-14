@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import copy
 import json
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import open_table_connector.sdk as otc
@@ -35,6 +37,13 @@ class RecordedNativeProcess:
         self.last_schema: dict | None = None
         self.last_rows: dict | None = None
 
+    def _read(self):
+        result = copy.deepcopy(_FIXTURE["read"])
+        if self.last_schema is not None:
+            result["result"]["schema"] = self.last_schema
+            result["result"]["rows"] = self.last_rows["rows"]
+        return result
+
     def run(self, argv, *, credentials=None, stdin=None, timeout=None):
         del credentials, stdin, timeout
         argv = tuple(argv)
@@ -48,6 +57,10 @@ class RecordedNativeProcess:
                 from open_table_connector.contract import ConnectorError, ConnectorErrorCode
 
                 raise ConnectorError(ConnectorErrorCode.TIMEOUT, "lost response", {})
+            if self.mode == "transport-error":
+                from open_table_connector.contract import ConnectorError, ConnectorErrorCode
+
+                raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, "transport lost", {})
             key = argv[argv.index("--idempotency-key") + 1]
             schema = json.loads(Path(argv[argv.index("--schema-in") + 1]).read_text())
             rows = json.loads(Path(argv[argv.index("--frame-in") + 1]).read_text())
@@ -56,24 +69,39 @@ class RecordedNativeProcess:
             previous = self.creates.get(key)
             if previous is not None:
                 if previous[0] != json.dumps(payload, sort_keys=True):
-                    return {"error": {"code": "idempotency_conflict"}}
+                    return {"error": {"code": "idempotency_conflict", "pre_mutation": True}}
                 return copy.deepcopy(_FIXTURE["create"])
             self.creates[key] = (json.dumps(payload, sort_keys=True), payload)
             if self.mode == "duplicate-name":
-                return {"error": {"code": "duplicate_name"}}
+                return {"error": {"code": "duplicate_name", "pre_mutation": True}}
             if self.mode == "partial":
                 return {"error": {"code": "partial_effect", "receipt_id": "vendor-partial"}}
-            return copy.deepcopy(_FIXTURE["create"])
+            if self.mode == "provider-unsupported":
+                return {"error": {"code": "unsupported_schema", "pre_mutation": True}}
+            if self.mode == "provider-limit":
+                return {"error": {"code": "resource_limit", "pre_mutation": True}}
+            if self.mode == "invalid-response":
+                return {"schema_version": "mbs.db-table-create-result/v1", "result": {}}
+            result = copy.deepcopy(_FIXTURE["create"])
+            result["result"]["affected_rows"] = len(rows["rows"])
+            result["result"]["idempotency_key"] = key
+            return result
         if argv[:3] == ("mbs", "db-table", "read"):
             assert argv[argv.index("--table-id") + 1] == "tbl-orders"
-            result = copy.deepcopy(_FIXTURE["read"])
+            result = self._read()
             if self.mode == "mismatch":
                 result["result"]["rows"] = [[2]]
             if self.mode == "revision-mismatch":
                 result["result"]["source_revision"] = "rev-2"
+            if self.mode == "wrong-id":
+                result["result"]["table_id"] = "tbl-other"
+            if self.mode == "malformed-read":
+                result["result"]["schema"] = {"fields": [{"name": "id"}]}
+            if self.mode == "malformed-rows":
+                result["result"]["rows"] = [[]]
             return result
         if argv[:3] == ("mbs", "db-table", "reconcile"):
-            return copy.deepcopy(_FIXTURE["create"])
+            return copy.deepcopy(_FIXTURE["reconcile"])
         raise AssertionError(argv)
 
 
@@ -111,6 +139,7 @@ def test_native_create_uses_canonical_uri_typed_files_and_stable_id_readback() -
     assert process.calls[1][-2:] == ("--idempotency-key", "maybe-create-1")
     assert process.last_schema == {"fields": [{"name": "id", "type": "Int64"}]}
     assert process.last_rows == {"rows": [[1]]}
+    assert all("append" not in call and "insert" not in call for call in process.calls)
     assert [receipt.operation for receipt in result.receipts] == [
         "table.materialize.create",
         "table.read",
@@ -142,6 +171,9 @@ def test_native_capability_is_not_advertised_without_all_provider_proofs() -> No
         ("partial", otc.ErrorCode.PARTIAL_EFFECT),
         ("mismatch", otc.ErrorCode.READBACK_MISMATCH),
         ("revision-mismatch", otc.ErrorCode.READBACK_MISMATCH),
+        ("wrong-id", otc.ErrorCode.READBACK_MISMATCH),
+        ("malformed-read", otc.ErrorCode.READBACK_MISMATCH),
+        ("malformed-rows", otc.ErrorCode.READBACK_MISMATCH),
     ],
 )
 def test_native_create_preserves_provider_failure_state(mode, expected) -> None:
@@ -151,7 +183,13 @@ def test_native_create_preserves_provider_failure_state(mode, expected) -> None:
     if mode == "partial":
         assert raised.value.result.outcome is otc.Outcome.PARTIAL
         assert raised.value.result.commit is otc.CommitState.PARTIAL
-    if mode in {"mismatch", "revision-mismatch"}:
+    if mode in {
+        "mismatch",
+        "revision-mismatch",
+        "wrong-id",
+        "malformed-read",
+        "malformed-rows",
+    }:
         assert raised.value.result.commit is otc.CommitState.COMMITTED
         assert [receipt.operation for receipt in raised.value.result.receipts] == [
             "table.materialize.create",
@@ -181,14 +219,91 @@ def test_timeout_requires_reconciliation_with_the_same_key() -> None:
     assert result.error.reconciliation.idempotency_key == "maybe-create-1"
 
 
-def test_reconciliation_uses_provider_key_without_name_lookup() -> None:
-    process = RecordedNativeProcess()
-    connector = _client(process)._registry.connector_for(_URI)
-    result = connector.reconcile_materialization(otc.BaseModeDestination(_URI, "Orders"), "maybe-create-1")
+def test_public_reconciliation_uses_dedicated_provider_schema_without_name_lookup() -> None:
+    process = RecordedNativeProcess(mode="timeout")
+    client = _client(process)
+    with pytest.raises(otc.OTCError) as raised:
+        client.materialize(
+            pl.DataFrame({"id": [1]}),
+            to=otc.BaseModeDestination(_URI, "Orders"),
+            profile=otc.PORTABLE_TABLE_PROFILE_V1,
+            idempotency_key="maybe-create-1",
+        )
+    result = client.reconcile_materialization(
+        raised.value.result.error.reconciliation,
+        destination=otc.BaseModeDestination(_URI, "Orders"),
+    )
     assert result.require_value().address == otc.BaseModeTableAddress(_URI, "tbl-orders")
     assert process.calls[-2] == (
         "mbs", "db-table", "reconcile", "--uri", _URI, "--idempotency-key", "maybe-create-1"
     )
+
+
+@pytest.mark.parametrize("mode", ["transport-error", "invalid-response"])
+def test_post_dispatch_failure_is_uncertain_and_reconcilable(mode) -> None:
+    with pytest.raises(otc.OTCError) as raised:
+        _materialize(RecordedNativeProcess(mode=mode))
+    result = raised.value.result
+    assert (result.outcome, result.commit, result.verification) == (
+        otc.Outcome.UNKNOWN,
+        otc.CommitState.UNKNOWN,
+        otc.VerificationState.UNAVAILABLE,
+    )
+    assert result.error.code is otc.ErrorCode.UNCERTAIN_MUTATION
+    assert result.error.reconciliation.idempotency_key == "maybe-create-1"
+
+
+@pytest.mark.parametrize(
+    ("mode", "code"),
+    [
+        ("provider-unsupported", otc.ErrorCode.INVALID_SCHEMA),
+        ("provider-limit", otc.ErrorCode.RESOURCE_LIMIT),
+    ],
+)
+def test_provider_pre_effect_rejections_do_not_read_or_mutate(mode, code) -> None:
+    process = RecordedNativeProcess(mode=mode)
+    with pytest.raises(otc.OTCError) as raised:
+        _materialize(process)
+    assert raised.value.result.error.code is code
+    assert raised.value.result.commit is otc.CommitState.NOT_STARTED
+    assert not any(call[:3] == ("mbs", "db-table", "read") for call in process.calls)
+
+
+def test_native_create_round_trips_every_portable_provider_type() -> None:
+    source = pl.DataFrame(
+        {
+            "text": ["東京", "", None],
+            "integer": [-(2**63), 2**63 - 1, None],
+            "float": [1.25, -0.0, None],
+            "decimal": [Decimal("123.40"), Decimal("-0.01"), None],
+            "day": [date(2026, 9, 14), date(1999, 12, 31), None],
+            "when": [
+                datetime(2026, 9, 14, 1, 2, 3, 456789, UTC),
+                datetime(1999, 12, 31, 23, 59, 59, 0, UTC),
+                None,
+            ],
+        },
+        schema={
+            "text": pl.String,
+            "integer": pl.Int64,
+            "float": pl.Float64,
+            "decimal": pl.Decimal(precision=10, scale=2),
+            "day": pl.Date,
+            "when": pl.Datetime("us", "UTC"),
+        },
+    )
+    assert _materialize(RecordedNativeProcess(), source).require_value().read().require_value().equals(
+        source
+    )
+
+
+def test_native_create_round_trips_zero_rows_and_all_null_columns() -> None:
+    zero = pl.DataFrame(schema={"id": pl.Int64, "empty": pl.String})
+    all_null = pl.DataFrame(
+        {"empty": [None, None]}, schema={"empty": pl.Decimal(precision=8, scale=3)}
+    )
+    assert _materialize(RecordedNativeProcess(), zero).require_value().read().require_value().equals(zero)
+    assert _materialize(RecordedNativeProcess(), all_null).require_value().read().require_value().equals(all_null)
 
 
 @pytest.mark.parametrize(

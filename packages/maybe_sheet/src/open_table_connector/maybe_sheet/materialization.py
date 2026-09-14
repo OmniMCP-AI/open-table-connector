@@ -44,7 +44,7 @@ from open_table_connector.sdk.result import (
 )
 from open_table_connector.sdk.table import TableBinding
 
-from .connector import MaybeSheetReadRequest, ProcessClient
+from .connector import ProcessClient
 from .identity import CONNECTOR_IDENTITY
 
 _CAPABILITIES = frozenset(
@@ -159,6 +159,11 @@ def _provider_error(payload: Mapping[str, Any]) -> str | None:
     return code if isinstance(code, str) else None
 
 
+def _provider_pre_effect(payload: Mapping[str, Any]) -> bool:
+    error = payload.get("error")
+    return isinstance(error, Mapping) and error.get("pre_mutation") is True
+
+
 def _create_result(payload: Mapping[str, Any], *, document_id: str, key: str, row_count: int) -> dict[str, Any]:
     if payload.get("schema_version") != "mbs.db-table-create-result/v1":
         raise ValueError("Maybe create response has an unsupported schema version")
@@ -181,6 +186,80 @@ def _create_result(payload: Mapping[str, Any], *, document_id: str, key: str, ro
     ):
         raise ValueError("Maybe create response does not match the request")
     return dict(result)
+
+
+def _reconcile_result(
+    payload: Mapping[str, Any], *, document_id: str, key: str
+) -> dict[str, Any]:
+    if payload.get("schema_version") != "mbs.db-table-reconcile-result/v1":
+        raise ValueError("Maybe reconcile response has an unsupported schema version")
+    result = _result(payload)
+    required = {
+        "document_id",
+        "table_id",
+        "provider_revision",
+        "affected_rows",
+        "idempotency_key",
+        "receipt_id",
+    }
+    if set(result) != required or result.get("document_id") != document_id or result.get("idempotency_key") != key:
+        raise ValueError("Maybe reconcile response does not match the reference")
+    if not isinstance(result.get("affected_rows"), int) or result["affected_rows"] < 0:
+        raise ValueError("Maybe reconcile response has an invalid affected row count")
+    if not all(isinstance(result[name], str) and result[name].strip() for name in required - {"affected_rows"}):
+        raise ValueError("Maybe reconcile response fields are invalid")
+    return dict(result)
+
+
+def _read_result(payload: Mapping[str, Any], address: BaseModeTableAddress) -> tuple[pl.DataFrame, str, str | None]:
+    if payload.get("schema_version") != "mbs.db-table-read-result/v1":
+        raise ValueError("Maybe stable-ID read response has an unsupported schema version")
+    result = _result(payload)
+    required = {
+        "document_id",
+        "table_id",
+        "provider_revision",
+        "source_revision",
+        "schema",
+        "rows",
+        "receipt_id",
+    }
+    document_id = urlsplit(address.container.value).path.rsplit("/", 1)[-1]
+    if set(result) != required or result.get("document_id") != document_id or result.get("table_id") != address.table_id:
+        raise ValueError("Maybe stable-ID read identity does not match the requested table")
+    revision = result.get("provider_revision")
+    if not isinstance(revision, str) or not revision.strip() or result.get("source_revision") != revision:
+        raise ValueError("Maybe stable-ID read revision is invalid")
+    schema = result.get("schema")
+    rows = result.get("rows")
+    if not isinstance(schema, Mapping) or set(schema) != {"fields"} or not isinstance(schema["fields"], list) or not isinstance(rows, list):
+        raise ValueError("Maybe stable-ID read typed carrier is malformed")
+    fields = schema["fields"]
+    if not fields or not all(isinstance(field, Mapping) and set(field) == {"name", "type"} for field in fields):
+        raise ValueError("Maybe stable-ID read schema fields are malformed")
+    if not all(isinstance(field["name"], str) and field["name"].strip() and isinstance(field["type"], str) for field in fields):
+        raise ValueError("Maybe stable-ID read schema field values are malformed")
+    if len({field["name"] for field in fields}) != len(fields) or not all(isinstance(row, list) and len(row) == len(fields) for row in rows):
+        raise ValueError("Maybe stable-ID read rows are malformed")
+    try:
+        from open_table_connector.sdk.model import _dtype_from_wire
+
+        frame = pl.DataFrame(
+            {
+                field["name"]: pl.Series(
+                    field["name"],
+                    [row[index] for row in rows],
+                    dtype=_dtype_from_wire(field["type"]),
+                )
+                for index, field in enumerate(fields)
+            }
+        )
+    except Exception as exc:
+        raise ValueError("Maybe stable-ID typed values are invalid") from exc
+    receipt_id = result.get("receipt_id")
+    if not isinstance(receipt_id, str) or not receipt_id.strip():
+        raise ValueError("Maybe stable-ID read receipt is invalid")
+    return frame, revision, receipt_id
 
 
 def _receipt(operation: str, uri: TableURI, *, details: Mapping[str, Any]) -> Receipt:
@@ -250,11 +329,20 @@ class MaybeSheetSdkConnector:
         )
 
     def _read_by_id(self, address: BaseModeTableAddress) -> tuple[TableBinding, pl.DataFrame, Receipt]:
-        result = self.adapter.connector.read_arrow(
-            MaybeSheetReadRequest(address.container, ContractTableMode.BASE, address.table_id, target_is_id=True)
+        payload = self.adapter.connector._run_process(
+            (
+                "mbs",
+                "db-table",
+                "read",
+                "--uri",
+                address.container.value,
+                "--table-id",
+                address.table_id,
+            ),
+            credentials=self.adapter.credentials,
+            timeout=self.adapter.timeout_seconds,
         )
-        frame = pl.from_arrow(result.table)
-        revision = result.receipt.source_revision
+        frame, revision, vendor_receipt_id = _read_result(payload, address)
         binding = TableBinding(
             address.container,
             TableMode.BASE_MODE,
@@ -273,7 +361,7 @@ class MaybeSheetSdkConnector:
             details={
                 "table_id": address.table_id,
                 "provider_revision": revision,
-                "vendor_receipt_id": result.receipt.vendor_receipt_ref,
+                "vendor_receipt_id": vendor_receipt_id,
             },
         )
 
@@ -336,17 +424,19 @@ class MaybeSheetSdkConnector:
                     credentials=self.adapter.credentials,
                     timeout=self.adapter.timeout_seconds,
                 )
-        except ConnectorError as exc:
-            if exc.code is ConnectorErrorCode.TIMEOUT:
-                return OperationResult(None, Outcome.UNKNOWN, CommitState.UNKNOWN, VerificationState.UNAVAILABLE, (), error=ErrorInfo(ErrorCode.UNCERTAIN_MUTATION, "Maybe create response was lost; reconcile with the same idempotency key", reconciliation=reconciliation))
-            return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.EXECUTION_FAILED, exc.message, dict(exc.safe_details)))
+        except ConnectorError:
+            return OperationResult(None, Outcome.UNKNOWN, CommitState.UNKNOWN, VerificationState.UNAVAILABLE, (), error=ErrorInfo(ErrorCode.UNCERTAIN_MUTATION, "Maybe create response was lost; reconcile with the same idempotency key", reconciliation=reconciliation))
         except Exception as exc:
             return OperationResult(None, Outcome.UNKNOWN, CommitState.UNKNOWN, VerificationState.UNAVAILABLE, (), error=ErrorInfo(ErrorCode.UNCERTAIN_MUTATION, "Maybe create response is unavailable; reconcile with the same idempotency key", {"reason": type(exc).__name__}, reconciliation))
         code = _provider_error(payload)
-        if code == "duplicate_name":
+        if code == "duplicate_name" and _provider_pre_effect(payload):
             return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.DESTINATION_EXISTS, "Maybe table name already exists"))
-        if code == "idempotency_conflict":
+        if code == "idempotency_conflict" and _provider_pre_effect(payload):
             return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.IDEMPOTENCY_CONFLICT, "Maybe idempotency key is bound to a different request"))
+        if code == "unsupported_schema" and _provider_pre_effect(payload):
+            return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.INVALID_SCHEMA, "Maybe provider rejected the typed schema before creating a table"))
+        if code == "resource_limit" and _provider_pre_effect(payload):
+            return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(ErrorCode.RESOURCE_LIMIT, "Maybe provider rejected the request before creating a table"))
         if code == "partial_effect":
             error = payload.get("error")
             receipt_id = error.get("receipt_id") if isinstance(error, Mapping) else None
@@ -379,15 +469,24 @@ class MaybeSheetSdkConnector:
                 return OperationResult(None, Outcome.FAILED, CommitState.COMMITTED, VerificationState.FAILED, (mutation, read), error=ErrorInfo(ErrorCode.READBACK_MISMATCH, "Maybe native readback differs from submitted table", {"table_id": created["table_id"]}))
             return OperationResult(binding, Outcome.SUCCEEDED, CommitState.COMMITTED, VerificationState.PASSED, (mutation, read))
         except Exception as exc:
-            return OperationResult(None, Outcome.FAILED, CommitState.COMMITTED, VerificationState.FAILED, (mutation,), error=ErrorInfo(ErrorCode.READBACK_MISMATCH, "Maybe create committed but stable-ID readback failed", {"reason": type(exc).__name__}))
+            read = _receipt(
+                "table.read",
+                uri,
+                details={"table_id": address.table_id, "readback": "invalid"},
+            )
+            return OperationResult(None, Outcome.FAILED, CommitState.COMMITTED, VerificationState.FAILED, (mutation, read), error=ErrorInfo(ErrorCode.READBACK_MISMATCH, "Maybe create committed but stable-ID readback failed", {"reason": type(exc).__name__}))
 
-    def reconcile_materialization(self, destination: BaseModeDestination, idempotency_key: str) -> OperationResult[TableBinding]:
+    def reconcile_materialization(
+        self, destination: BaseModeDestination, reference: ReconciliationReference
+    ) -> OperationResult[TableBinding]:
         if not self._native_supported():
             return self._unsupported()
         try:
+            if reference.connector_id not in {None, self.identity.connector_id} or not reference.idempotency_key:
+                raise ValueError("reconciliation reference does not belong to MaybeSheet")
             uri, document_id = _canonical_destination(destination)
-            payload = self.adapter.connector._run_process(("mbs", "db-table", "reconcile", "--uri", uri.value, "--idempotency-key", idempotency_key), credentials=self.adapter.credentials, timeout=self.adapter.timeout_seconds)
-            created = _create_result(payload, document_id=document_id, key=idempotency_key, row_count=int(_result(payload).get("affected_rows", 0)))
+            payload = self.adapter.connector._run_process(("mbs", "db-table", "reconcile", "--uri", uri.value, "--idempotency-key", reference.idempotency_key), credentials=self.adapter.credentials, timeout=self.adapter.timeout_seconds)
+            created = _reconcile_result(payload, document_id=document_id, key=reference.idempotency_key)
             binding, _, read = self._read_by_id(BaseModeTableAddress(uri, created["table_id"]))
             return OperationResult(binding, Outcome.SUCCEEDED, CommitState.COMMITTED, VerificationState.PASSED, (read,))
         except Exception as exc:

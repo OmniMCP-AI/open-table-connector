@@ -42,6 +42,7 @@ from .result import (
     OperationResult,
     OTCError,
     Outcome,
+    ReconciliationReference,
     VerificationState,
 )
 from .sql import NativeSql, PolarsPlanMapper, SqlResourceLimitError, execution_receipt
@@ -239,6 +240,29 @@ class Client:
             value=self._wrap_binding(binding),
             receipts=receipts,
         )
+
+    def reconcile_materialization(
+        self,
+        reference: ReconciliationReference,
+        *,
+        destination: BaseModeDestination,
+    ):
+        """Reconcile an uncertain portable Base creation using its original key."""
+
+        self._assert_open()
+        if not isinstance(reference, ReconciliationReference):
+            raise TypeError("reference must be a ReconciliationReference")
+        if not isinstance(destination, BaseModeDestination):
+            raise TypeError("destination must be a BaseModeDestination")
+        connector = self._registry.connector_for(destination.container.value)
+        reconcile = getattr(connector, "reconcile_materialization", None)
+        if not callable(reconcile):
+            raise _failure(
+                "connector does not support portable materialization reconciliation",
+                ErrorCode.UNSUPPORTED_CAPABILITY,
+            )
+        delivered = self._deliver(reconcile(destination, reference))
+        return replace(delivered, value=self._wrap_binding(delivered.require_value()))
 
     def collect(self, source: object) -> OperationResult[pl.DataFrame]:
         self._assert_open()
