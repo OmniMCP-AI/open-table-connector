@@ -57,12 +57,21 @@ complete only after its focused tests and the task review pass.
 
 ### Task 5 — Full verification and release evidence
 
-- [ ] Run the complete workspace verification and the shared/local/Excel/
+- [x] Run the complete workspace verification and the shared/local/Excel/
       Maybe conformance suites, fixing regressions without weakening the
       create-only contract.
-- [ ] Record the exact verified commands and evidence needed for OTC to be
+- [x] Record the exact verified commands and evidence needed for OTC to be
       pinned by downstreams; leave only this checklist's completed boxes and
       the final commit/PR metadata to be filled in during delivery.
+
+Verification evidence (2026-09-14):
+
+- `uv run --all-packages pytest -q`: 1592 passed, 5 skipped, 8 warnings.
+- `uv run --all-packages pytest -q packages/cli/tests/test_pipeline.py specification/conformance/universal/test_cli_surface.py`: 80 passed.
+- Changed-file Ruff, `uv run --frozen ruff check scripts specification/conformance/universal/test_package_boundaries.py`, and `uv run --frozen mypy scripts`: passed.
+- `check_package_metadata.py`, `check_package_boundaries.py`,
+  `check_canonical_literals.py`, `check_package_independence.py --build`,
+  schema parity, provider independence, and `git diff --check`: passed.
 
 ## 1. Decision
 
