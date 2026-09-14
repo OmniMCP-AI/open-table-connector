@@ -8,6 +8,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
+import open_table_connector.maybe_sheet.materialization as maybe_materialization
 import open_table_connector.sdk as otc
 import polars as pl
 import pytest
@@ -273,6 +274,7 @@ def test_native_create_round_trips_every_portable_provider_type() -> None:
     source = pl.DataFrame(
         {
             "text": ["東京", "", None],
+            "flag": [True, False, None],
             "integer": [-(2**63), 2**63 - 1, None],
             "float": [1.25, -0.0, None],
             "decimal": [Decimal("123.40"), Decimal("-0.01"), None],
@@ -285,6 +287,7 @@ def test_native_create_round_trips_every_portable_provider_type() -> None:
         },
         schema={
             "text": pl.String,
+            "flag": pl.Boolean,
             "integer": pl.Int64,
             "float": pl.Float64,
             "decimal": pl.Decimal(precision=10, scale=2),
@@ -292,9 +295,25 @@ def test_native_create_round_trips_every_portable_provider_type() -> None:
             "when": pl.Datetime("us", "UTC"),
         },
     )
-    assert _materialize(RecordedNativeProcess(), source).require_value().read().require_value().equals(
-        source
-    )
+    process = RecordedNativeProcess()
+    materialized = _materialize(process, source)
+    assert materialized.require_value().read().require_value().equals(source)
+    assert _client(process).open(materialized.require_value().address).require_value().read().require_value().equals(source)
+
+
+@pytest.mark.parametrize(("limit", "value"), [("_MAX_ROWS", 0), ("_MAX_BYTES", 1)])
+def test_native_create_rejects_local_resource_limits_before_process_create(
+    monkeypatch, limit, value
+) -> None:
+    process = RecordedNativeProcess()
+    monkeypatch.setattr(maybe_materialization, limit, value)
+
+    with pytest.raises(otc.OTCError) as raised:
+        _materialize(process)
+
+    assert raised.value.result.error.code is otc.ErrorCode.RESOURCE_LIMIT
+    assert raised.value.result.commit is otc.CommitState.NOT_STARTED
+    assert not any(call[:3] == ("mbs", "db-table", "create") for call in process.calls)
 
 
 def test_native_create_round_trips_zero_rows_and_all_null_columns() -> None:
