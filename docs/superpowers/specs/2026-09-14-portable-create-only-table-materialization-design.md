@@ -78,6 +78,9 @@ Verification evidence (2026-09-14):
   `check_canonical_literals.py`, `check_package_independence.py --build`,
   schema parity, provider independence, `git diff --check`, and
   `scripts/smoke_wheels.py --build`: passed.
+- PostgreSQL live lifecycle evidence: the test passed against a temporary local
+  PostgreSQL 16 database, and GitHub Actions `postgres-live` passed against
+  PostgreSQL 17 with `psycopg2-binary 2.9.12` installed.
 - Final targeted review pass covers committed SDK postcondition evidence,
   Maybe reconciliation identity/fingerprints and read-failure mapping,
   JSON/JSONL nullability, destination-scoped replay recovery, additive
