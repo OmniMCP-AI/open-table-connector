@@ -40,11 +40,11 @@ complete only after its focused tests and the task review pass.
 
 ### Task 3 — Portable Excel worksheet materialization
 
-- [ ] Align Excel creation with the portable profile, durable adapter-owned
+- [x] Align Excel creation with the portable profile, durable adapter-owned
       schema metadata, structured sheet destinations/addresses, revision
       comparison, and typed independent readback while preserving unrelated
       workbook content.
-- [ ] Add the required conflict, stale-revision, metadata, typed-value, and
+- [x] Add the required conflict, stale-revision, metadata, typed-value, and
       committed-readback-failure tests.
 
 ### Task 4 — Maybe native Base create and reconciliation
