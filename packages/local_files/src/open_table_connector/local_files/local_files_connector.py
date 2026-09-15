@@ -100,10 +100,8 @@ class LocalFilesConnector(
         *CAPABILITY_MANIFEST.capabilities,
         *(CapabilityIdentity.parse(item) for item in ALL_CAPABILITIES),
     )
-    # This object also implements the SDK connector surface. Keep its public
-    # mode declaration in the SDK vocabulary; the legacy manifest remains the
-    # source for CLI descriptor metadata.
-    modes = (SdkTableMode.SHEET_MODE,)
+    materialization = CAPABILITY_MANIFEST.materialization
+    modes = (SdkTableMode.BASE_MODE, SdkTableMode.SHEET_MODE)
     local = True
     handles_paths = True
 
@@ -248,6 +246,12 @@ class LocalFilesConnector(
                 else None
             ),
         )
+
+    def spreadsheet_provider(self):
+        """Return the neutral workbook provider; SDK owns resource views."""
+        from .spreadsheet_workbook import LocalSpreadsheetProvider
+
+        return LocalSpreadsheetProvider()
 
     def formula_extension_for(self):
         from open_table_connector.formulas import CompositeFormulaConnectorExtension

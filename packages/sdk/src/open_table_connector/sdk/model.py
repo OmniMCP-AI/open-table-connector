@@ -306,28 +306,34 @@ class SheetModeDestination:
     grid: TableURI | str
     anchor: str
     header: bool
+    worksheet: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "grid", _normalize_uri(self.grid, "grid"))
         object.__setattr__(self, "anchor", _required_text(self.anchor, "anchor"))
         if not isinstance(self.header, bool):
             raise TypeError("header must be a bool")
+        if self.worksheet is not None:
+            object.__setattr__(self, "worksheet", _required_text(self.worksheet, "worksheet"))
 
     def to_wire(self) -> dict[str, Any]:
         return {
             "kind": "sheet-mode-destination",
             "grid": self.grid.to_wire(),
+            "worksheet": self.worksheet,
             "anchor": self.anchor,
             "header": self.header,
         }
 
     @classmethod
     def from_wire(cls, payload: Mapping[str, Any]) -> SheetModeDestination:
-        _closed_wire(payload, {"kind", "grid", "anchor", "header"}, "SheetModeDestination")
+        if set(payload) not in ({"kind", "grid", "anchor", "header"}, {"kind", "grid", "worksheet", "anchor", "header"}):
+            raise ValueError("SheetModeDestination wire keys mismatch")
         if payload["kind"] != "sheet-mode-destination":
             raise ValueError("SheetModeDestination kind must be sheet-mode-destination")
         return cls(
             grid=TableURI.from_wire(payload["grid"]),
+            worksheet=payload.get("worksheet"),
             anchor=payload["anchor"],
             header=payload["header"],
         )

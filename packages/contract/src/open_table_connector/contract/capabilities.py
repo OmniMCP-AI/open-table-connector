@@ -8,6 +8,7 @@ from enum import StrEnum
 from typing import Any
 
 from .identity import CapabilityIdentity, ConnectorIdentity
+from .names import CAPABILITY_TABLE_MATERIALIZE_CREATE, PORTABLE_TABLE_PROFILE_V1
 
 
 class TableMode(StrEnum):
@@ -24,11 +25,13 @@ class MaterializationCapability:
     modes: tuple[TableMode, ...]
 
     def __post_init__(self) -> None:
-        if self.capability != CapabilityIdentity("table.materialize.create", "1.0"):
+        if self.capability != CapabilityIdentity(CAPABILITY_TABLE_MATERIALIZE_CREATE, "1.0"):
             raise ValueError("materialization capability must be table.materialize.create/1.0")
         profiles = tuple(str(profile).strip() for profile in self.profiles)
-        if profiles != ("otc.portable-table/v1",):
-            raise ValueError("materialization profiles must be exactly otc.portable-table/v1")
+        if not profiles or any(not profile for profile in profiles) or len(set(profiles)) != len(profiles):
+            raise ValueError("materialization profiles must be non-empty and unique")
+        if PORTABLE_TABLE_PROFILE_V1 not in profiles:
+            raise ValueError("materialization capability must include the portable profile")
         modes = tuple(self.modes)
         if not modes or any(not isinstance(mode, TableMode) for mode in modes):
             raise ValueError("materialization capability requires valid table modes")
@@ -84,6 +87,8 @@ class CapabilityManifest:
             raise ValueError("materialization entries must be MaterializationCapability values")
         if any(item.capability not in capabilities for item in materialization):
             raise ValueError("materialization capability must also be advertised in capabilities")
+        if CapabilityIdentity(CAPABILITY_TABLE_MATERIALIZE_CREATE, "1.0") in capabilities and not materialization:
+            raise ValueError("create capability requires materialization metadata")
         object.__setattr__(self, "materialization", materialization)
 
     def to_wire(self) -> dict[str, Any]:
@@ -97,8 +102,8 @@ class CapabilityManifest:
 
     @classmethod
     def from_wire(cls, payload: Mapping[str, Any]) -> CapabilityManifest:
-        required = {"connector", "capabilities", "modes", "uri_schemes", "materialization"}
-        if set(payload) != required:
+        required = {"connector", "capabilities", "modes", "uri_schemes"}
+        if set(payload) not in (required, required | {"materialization"}):
             raise ValueError("CapabilityManifest wire object has unexpected keys")
         return cls(
             connector=ConnectorIdentity.from_wire(payload["connector"]),
@@ -109,5 +114,5 @@ class CapabilityManifest:
             uri_schemes=tuple(payload["uri_schemes"]),
             materialization=tuple(
                 MaterializationCapability.from_wire(item) for item in payload["materialization"]
-            ),
+            ) if "materialization" in payload else (),
         )

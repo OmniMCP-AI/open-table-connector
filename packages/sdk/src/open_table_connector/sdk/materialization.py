@@ -11,14 +11,14 @@ from datetime import date, datetime
 from decimal import Decimal
 
 import polars as pl
+from open_table_connector.contract import CAPABILITY_TABLE_MATERIALIZE_CREATE, CapabilityIdentity
 from open_table_connector.contract import (
-    CAPABILITY_TABLE_MATERIALIZE_CREATE,
-    CapabilityIdentity,
+    PORTABLE_TABLE_PROFILE_V1 as CONTRACT_PORTABLE_TABLE_PROFILE_V1,
 )
 
 from .model import TableDestination
 
-PORTABLE_TABLE_PROFILE_V1 = "otc.portable-table/v1"
+PORTABLE_TABLE_PROFILE_V1 = CONTRACT_PORTABLE_TABLE_PROFILE_V1
 MATERIALIZE_CREATE_CAPABILITY = CapabilityIdentity(CAPABILITY_TABLE_MATERIALIZE_CREATE, "1.0")
 _DECIMAL = re.compile(r"^Decimal\(precision=(\d+), scale=(\d+)\)$")
 
@@ -51,7 +51,7 @@ def _validate_schema(frame: pl.DataFrame) -> None:
         rendered = str(dtype)
         allowed = rendered in {"String", "Boolean", "Int64", "Float64", "Date"}
         allowed = allowed or _DECIMAL.fullmatch(rendered) is not None
-        allowed = allowed or (rendered.startswith("Datetime(") and "time_zone='UTC'" in rendered)
+        allowed = allowed or (rendered.startswith("Datetime(") and "time_zone='UTC'" in rendered and "time_unit='us'" in rendered)
         if not allowed:
             raise ValueError(f"portable profile does not support dtype {rendered} for field {name}")
         if rendered == "Float64" and not frame.get_column(name).is_finite().fill_null(True).all():

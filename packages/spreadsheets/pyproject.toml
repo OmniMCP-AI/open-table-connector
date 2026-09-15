@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "open-table-connector-spreadsheets"
+version = "0.1.0"
+description = "Provider-neutral spreadsheet operation contracts"
+requires-python = ">=3.11,<3.15"
+license = { text = "Apache-2.0" }
+readme = "README.md"
+dependencies = ["open-table-connector-contract>=0.1,<0.2"]
+
+[tool.uv.sources]
+open-table-connector-contract = { workspace = true }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["open_table_connector.spreadsheets*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+"open_table_connector.spreadsheets" = ["py.typed"]

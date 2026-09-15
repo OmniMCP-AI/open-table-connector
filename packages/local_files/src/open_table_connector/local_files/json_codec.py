@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
-from decimal import Decimal
 import json
 import math
-from typing import Mapping
+from collections.abc import Mapping
+from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pyarrow as pa
+from open_table_connector.contract import (
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
+    ConnectorError,
+    ConnectorErrorCode,
+)
 
-from open_table_connector.contract import ConnectorError, ConnectorErrorCode
+from .portable_json import decode as decode_portable
 
 
 class _DuplicateKey(ValueError):
@@ -76,6 +82,12 @@ def parse_json_table(text: str, *, source: str) -> pa.Table:
     if not isinstance(text, str):
         raise TypeError("text must be a string")
     payload = _loads(text, source=source)
+    try:
+        portable = decode_portable(payload, mode=PROVIDER_JSON)
+    except ValueError as exc:
+        raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, str(exc), {"source": source}) from None
+    if portable is not None:
+        return portable.to_arrow()
     if not isinstance(payload, list):
         raise ConnectorError(
             ConnectorErrorCode.EXECUTION_FAILED,
@@ -97,19 +109,32 @@ def parse_json_table(text: str, *, source: str) -> pa.Table:
 def parse_jsonl_table(text: str, *, source: str) -> pa.Table:
     if not isinstance(text, str):
         raise TypeError("text must be a string")
-    rows: list[Mapping[str, object]] = []
+    rows: list[object] = []
     for line_number, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
             continue
         item = _loads(line, source=source, line=line_number)
-        if not isinstance(item, Mapping):
+        if not isinstance(item, (Mapping, list)):
             raise ConnectorError(
                 ConnectorErrorCode.EXECUTION_FAILED,
                 "JSONL rows must be objects",
                 {"source": source, "line": line_number},
             )
         rows.append(item)
-    return _rows_to_table(rows, source=source)
+    try:
+        portable = decode_portable(rows, mode=PROVIDER_JSONL)
+    except ValueError as exc:
+        raise ConnectorError(ConnectorErrorCode.EXECUTION_FAILED, str(exc), {"source": source}) from None
+    if portable is not None:
+        return portable.to_arrow()
+    if any(not isinstance(row, Mapping) for row in rows):
+        line = next(index for index, row in enumerate(rows, start=1) if not isinstance(row, Mapping))
+        raise ConnectorError(
+            ConnectorErrorCode.EXECUTION_FAILED,
+            "JSONL rows must be objects",
+            {"source": source, "line": line},
+        )
+    return _rows_to_table(rows, source=source)  # type: ignore[arg-type]
 
 
 def _rows_to_table(rows: list[Mapping[str, object]], *, source: str) -> pa.Table:

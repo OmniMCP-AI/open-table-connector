@@ -7,11 +7,16 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from textwrap import dedent
 
 from open_table_connector.contract import PACKAGE_NAMESPACE
 
 _PUBLIC_IMPORTS = {
     "open-table-connector-contract": f"{PACKAGE_NAMESPACE}.contract",
+    "open-table-connector-sdk": f"{PACKAGE_NAMESPACE}.sdk",
+    "open-table-connector-formulas": f"{PACKAGE_NAMESPACE}.formulas",
+    "open-table-connector-spreadsheets": f"{PACKAGE_NAMESPACE}.spreadsheets",
     "open-table-connector-timeseries": f"{PACKAGE_NAMESPACE}.timeseries",
     "open-table-connector-local-files": f"{PACKAGE_NAMESPACE}.local_files",
     "open-table-connector-sqlite": f"{PACKAGE_NAMESPACE}.sqlite",
@@ -58,12 +63,14 @@ def _cli_provider_matrix_check(wheels: tuple[Path, ...]) -> list[str]:
             "open-table-connector",
             "open-table-connector-contract",
             "open-table-connector-timeseries",
+            "open-table-connector-sdk",
+            "open-table-connector-formulas",
+            "open-table-connector-spreadsheets",
+            "open-table-connector-process",
             selected,
         }
         paths = [
-            str(wheel)
-            for wheel in wheels
-            if _wheel_distribution(wheel) in allowed_distributions
+            str(wheel) for wheel in wheels if _wheel_distribution(wheel) in allowed_distributions
         ]
         blocked = {
             module
@@ -138,6 +145,96 @@ def _uninstall_check(wheels: tuple[Path, ...], removed: str) -> str | None:
     return None
 
 
+def _installed_local_artifact_check(wheels: tuple[Path, ...]) -> str | None:
+    """Use a fresh environment, without editable paths or remote provider wheels."""
+    required = {
+        "open-table-connector-contract",
+        "open-table-connector-timeseries",
+        "open-table-connector-formulas",
+        "open-table-connector-spreadsheets",
+        "open-table-connector-sdk",
+        "open-table-connector-local-files",
+    }
+    selected = {
+        _wheel_distribution(wheel): wheel
+        for wheel in wheels
+        if _wheel_distribution(wheel) in required
+    }
+    missing = required - set(selected)
+    if missing:
+        return "clean local artifact install: missing wheels " + ", ".join(sorted(missing))
+    code = dedent("""
+        import importlib.util
+        import io
+        import json
+        import sys
+        from pathlib import Path
+        from PIL import Image
+        from open_table_connector.local_files import LocalFilesConnector
+        from open_table_connector.sdk import Client, ConnectorRegistry, OperationResult
+        from open_table_connector.spreadsheets import ImageSpec
+
+        for module in ('google_sheets', 'maybe_sheet', 'feishu_bitable', 'postgres', 'sqlite'):
+            assert importlib.util.find_spec('open_table_connector.' + module) is None, module
+        destination = Path(sys.argv[1]) / 'installed-artifact.xlsx'
+        image_bytes = io.BytesIO()
+        Image.new('RGB', (4, 3), 'blue').save(image_bytes, format='PNG')
+        with Client(registry=ConnectorRegistry([LocalFilesConnector()])) as client:
+            book = client.workbook.create(destination.as_uri())
+            sheet = book.worksheet.create('Report')
+            sheet.range('A1:B1').write([['literal', '']])
+            sheet.image(ImageSpec('image/png', image_bytes.getvalue(), 'A3'), width=40, height=30)
+            committed = book.write()
+            assert committed.commit.value == 'committed'
+            assert committed.verification.value == 'passed'
+            assert book.verify().verification.value == 'passed'
+            wire = json.loads(json.dumps(committed.to_wire()))
+            assert OperationResult.from_wire(wire).to_wire() == wire
+            expected = wire['receipts'][0]['details']['expected']
+            reopened = client.workbook(destination.as_uri(), profile='literal-artifact/1.0')
+            assert reopened.verify(expected=expected).verification.value == 'passed'
+            assert reopened.worksheet('Report').range('A1:B1').read().require_value() == [['literal', '']]
+        assert not any(name.startswith(('open_table_connector.google_sheets',
+                                        'open_table_connector.maybe_sheet')) for name in sys.modules)
+    """)
+    with TemporaryDirectory(prefix="otc-installed-wheels-") as directory:
+        environment = Path(directory) / "venv"
+        result = subprocess.run(
+            ["uv", "venv", "--python", sys.executable, str(environment)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            return "clean local artifact environment: " + result.stderr.strip()
+        python = environment / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+        result = subprocess.run(
+            [
+                "uv",
+                "pip",
+                "install",
+                "--python",
+                str(python),
+                *(str(selected[name].resolve()) for name in sorted(selected)),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            return "clean local artifact installation: " + result.stderr.strip()
+        result = subprocess.run(
+            [str(python), "-I", "-c", code, directory],
+            cwd=directory,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            return "clean installed local image roundtrip: " + result.stderr.strip()
+    return None
+
+
 def check_independence(root: Path, dist: Path, *, build: bool = False) -> list[str]:
     if build:
         subprocess.run(
@@ -157,10 +254,7 @@ def check_independence(root: Path, dist: Path, *, build: bool = False) -> list[s
             continue
         try:
             with zipfile.ZipFile(wheel) as archive:
-                if not any(
-                    name.startswith("open_table_connector/")
-                    for name in archive.namelist()
-                ):
+                if not any(name.startswith("open_table_connector/") for name in archive.namelist()):
                     errors.append(f"{wheel.name}: no open_table_connector package payload")
         except (OSError, zipfile.BadZipFile) as exc:
             errors.append(f"{wheel.name}: unreadable wheel ({exc})")
@@ -174,6 +268,9 @@ def check_independence(root: Path, dist: Path, *, build: bool = False) -> list[s
             if error:
                 errors.append(error)
     errors.extend(_cli_provider_matrix_check(wheels))
+    artifact_error = _installed_local_artifact_check(wheels)
+    if artifact_error:
+        errors.append(artifact_error)
     return errors
 
 

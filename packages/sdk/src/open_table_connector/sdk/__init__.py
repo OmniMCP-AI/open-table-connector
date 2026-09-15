@@ -113,6 +113,7 @@ from .temporal import (
     TemporalTableDescriptor,
     TimeSeriesView,
 )
+from .workbook import WorkbookAccess
 
 __all__ = [
     "AbortDisposition",
@@ -217,6 +218,7 @@ __all__ = [
     "TableTransaction",
     "TimeSeriesView",
     "VerificationState",
+    "WorkbookAccess",
     "WorksheetRef",
     "A1Rectangle",
     "CalculationState",

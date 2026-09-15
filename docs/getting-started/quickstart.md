@@ -28,8 +28,8 @@ and credential-safe receipt facts.
 otc read --from csv://$(pwd)/orders.csv --output-format table
 ```
 
-Use `csv://`, `excel://`, or `md://` when you want an explicit local format.
-Use a bare path or `file://` when local format probing is desired.
+Use `csv://` or `md://` when you want an explicit local format.
+Use a bare path or `file://` for local format probing, including Excel files.
 
 ## 4. Convert it
 

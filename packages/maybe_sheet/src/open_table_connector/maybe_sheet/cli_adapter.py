@@ -12,6 +12,7 @@ from open_table_connector.contract import (
     CREDENTIAL_ACCESS_TOKEN,
     HOST_MAYBE,
     IF_EXISTS_APPEND,
+    OPTION_LIVE_MATERIALIZATION_EVIDENCE,
     OPTION_TIMEOUT_SECONDS,
     PROVIDER_MAYBE_SHEET,
     SCHEME_HTTPS,
@@ -62,6 +63,7 @@ class MaybeSheetCliAdapter(
     connector: MaybeSheetConnector
     credentials: dict[str, str]
     timeout_seconds: float = 120.0
+    live_materialization_evidence: bool = False
 
     identity = CONNECTOR_IDENTITY
     schemes = (SCHEME_HTTPS,)
@@ -106,13 +108,13 @@ class MaybeSheetCliAdapter(
                 {"endpoint": endpoint.raw},
             )
         uri = endpoint.uri
+        parsed = urlsplit(uri.value)
         if uri.scheme != SCHEME_HTTPS:
             raise ConnectorError(
                 ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
                 "MaybeSheet requires an HTTPS URL",
                 {"scheme": uri.scheme},
             )
-        parsed = urlsplit(uri.value)
         if parsed.fragment:
             raise ConnectorError(
                 ConnectorErrorCode.INVALID_URI,
@@ -157,7 +159,9 @@ class MaybeSheetCliAdapter(
                 {"scheme": uri.scheme},
             )
         parsed = urlsplit(uri.value)
-        if parsed.query or parsed.fragment:
+        if (
+            parsed.path.strip("/") or parsed.query or parsed.fragment
+        ):
             raise ConnectorError(
                 ConnectorErrorCode.INVALID_URI,
                 "MaybeSheet base table URL cannot contain a query or fragment",
@@ -232,6 +236,11 @@ class MaybeSheetCliAdapter(
         )
         return self.connector.write(request, credentials=self._credentials_for_options(options))
 
+    def spreadsheet_provider(self):
+        from .spreadsheet import MaybeSpreadsheetProvider
+
+        return MaybeSpreadsheetProvider(self.connector, self.credentials, self.timeout_seconds)
+
     def formula_extension_for(self) -> CompositeFormulaConnectorExtension:
         return CompositeFormulaConnectorExtension(
             grid=MaybeSheetGridFormulaExtension(
@@ -246,18 +255,30 @@ class MaybeSheetCliAdapter(
             ),
         )
 
+    def sdk_connector(self):
+        """Expose native Base creation only when the process proves its contract."""
+        from .materialization import MaybeSheetSdkConnector
+
+        return MaybeSheetSdkConnector(self, live_evidence=self.live_materialization_evidence)
+
 
 def _factory(context: ProviderFactoryContext) -> MaybeSheetCliAdapter:
     allowed = {SETTING_BINARY}
     if set(context.config.environment) - allowed:
         raise ValueError("MaybeSheet environment contains an unknown setting")
-    if set(context.config.options) - {OPTION_TIMEOUT_SECONDS}:
+    if set(context.config.options) - {
+        OPTION_TIMEOUT_SECONDS,
+        OPTION_LIVE_MATERIALIZATION_EVIDENCE,
+    }:
         raise ValueError("MaybeSheet options contain an unknown setting")
     if set(context.credentials) - {CREDENTIAL_ACCESS_TOKEN}:
         raise ValueError("MaybeSheet credentials contain an unknown field")
     timeout = context.config.options.get(OPTION_TIMEOUT_SECONDS, 120)
     if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
         raise ValueError("MaybeSheet timeout must be positive")
+    live_evidence = context.config.options.get(OPTION_LIVE_MATERIALIZATION_EVIDENCE, False)
+    if not isinstance(live_evidence, bool):
+        raise ValueError("MaybeSheet live materialization evidence must be a bool")
     process = context.transports.get(PROVIDER_MAYBE_SHEET)
     if process is None:
         binary = context.environment.get(SETTING_BINARY, "mbs")
@@ -266,7 +287,7 @@ def _factory(context: ProviderFactoryContext) -> MaybeSheetCliAdapter:
             timeout_seconds=float(timeout),
         )
     return MaybeSheetCliAdapter(
-        MaybeSheetConnector(process), dict(context.credentials), float(timeout)
+        MaybeSheetConnector(process), dict(context.credentials), float(timeout), live_evidence
     )
 
 
@@ -279,6 +300,7 @@ def maybe_sheet_cli_plugin() -> PluginDescriptor:
         (HOST_MAYBE,),
         capabilities=MaybeSheetCliAdapter.capabilities,
         modes=MaybeSheetCliAdapter.modes,
+        runtime_metadata=True,
     )
 
 

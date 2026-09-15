@@ -10,28 +10,36 @@ from multiprocessing import get_context
 from pathlib import Path
 from time import monotonic_ns
 from typing import TYPE_CHECKING, Any, overload
+from urllib.parse import urlsplit
 
 import polars as pl
-from open_table_connector.contract import PluginDescriptor, TableURI, parse_adapter_endpoint
+from open_table_connector.contract import (
+    PROVIDER_JSON,
+    PROVIDER_JSONL,
+    SCHEME_FILE,
+    PluginDescriptor,
+    TableURI,
+    parse_adapter_endpoint,
+)
 
 from .config import ClientConfig, load_client_config
 from .connector import ArrowTableCarrier, _destination_uri
 from .credentials import CredentialResolver, EnvironmentCredentialResolver
 from .materialization import (
     MATERIALIZE_CREATE_CAPABILITY,
-    PORTABLE_TABLE_PROFILE_V1,
     MaterializationRequest,
 )
 from .model import (
     BaseModeDestination,
+    BaseModeTableAddress,
     DirectDestination,
     DirectTableAddress,
     ExistingTableAddress,
     SchemaPolicy,
     SheetModeDestination,
+    SheetModeTableAddress,
     SheetRangeSource,
     TableDestination,
-    TableMode,
 )
 from .query import Query, QueryLane, SqlResourceLimits
 from .registry import ConnectorRegistry, discover_descriptors, with_default_credential_bindings
@@ -42,6 +50,7 @@ from .result import (
     OperationResult,
     OTCError,
     Outcome,
+    ReconciliationReference,
     VerificationState,
 )
 from .sql import NativeSql, PolarsPlanMapper, SqlResourceLimitError, execution_receipt
@@ -67,15 +76,44 @@ def _failure(message: str, code: ErrorCode, **details: object) -> OTCError:
     return OTCError(message, result)
 
 
+def _preserved_materialization_failure(
+    delivered: OperationResult[Any],
+    *,
+    receipts: tuple,
+    code: ErrorCode,
+    message: str,
+) -> OTCError:
+    """Convert invalid success evidence without erasing a known commit."""
+
+    reconciliation = None if delivered.error is None else delivered.error.reconciliation
+    result = OperationResult[None](
+        value=None,
+        outcome=Outcome.FAILED,
+        commit=delivered.commit,
+        verification=VerificationState.FAILED,
+        receipts=receipts,
+        warnings=delivered.warnings,
+        error=ErrorInfo(code=code, message=message, reconciliation=reconciliation),
+    )
+    return OTCError(message, result)
+
+
 def _materialization_mode(destination: TableDestination, connector: object) -> str | None:
     if isinstance(destination, BaseModeDestination):
         return "base"
     if isinstance(destination, SheetModeDestination):
         return "sheet"
+    if isinstance(destination, DirectDestination):
+        scheme = urlsplit(destination.uri.value).scheme
+        if scheme in {PROVIDER_JSON, PROVIDER_JSONL} or (scheme == SCHEME_FILE and urlsplit(destination.uri.value).path.lower().endswith((".json", ".jsonl"))):
+            return "base"
+        if scheme == SCHEME_FILE and urlsplit(destination.uri.value).path.lower().endswith(".xlsx") and urlsplit(destination.uri.value).fragment:
+            return "sheet"
     connector_modes = tuple(getattr(connector, "modes", ()))
     if len(connector_modes) != 1:
         return None
-    return "base" if connector_modes[0] is TableMode.BASE_MODE else "sheet"
+    mode = getattr(connector_modes[0], "value", connector_modes[0])
+    return "base" if mode in {"base", "base-mode"} else "sheet"
 
 
 def _polars_query_worker(
@@ -108,6 +146,9 @@ class Client:
         self._client_id = str(uuid.uuid4())
         self._range_owner_token = object()
         self._formula_owner_token = object()
+        from .workbook import WorkbookAccess
+
+        self._workbook_access = WorkbookAccess(self)
 
     @classmethod
     def from_config(
@@ -191,6 +232,9 @@ class Client:
                 )
             except (TypeError, ValueError) as exc:
                 code = (
+                    ErrorCode.UNSUPPORTED_CAPABILITY
+                    if "unsupported materialization profile" in str(exc)
+                    else
                     ErrorCode.INVALID_SCHEMA
                     if "profile rejects" in str(exc) or "dtype" in str(exc)
                     else ErrorCode.INVALID_CONFIGURATION
@@ -215,20 +259,75 @@ class Client:
         receipts = delivered.receipts
         if source_result is not None:
             receipts = (*source_result.receipts, *receipts)
-        binding = delivered.require_value()
+        if (
+            request is not None
+            and delivered.outcome is Outcome.SUCCEEDED
+            and delivered.commit is CommitState.COMMITTED
+        ):
+            binding = delivered.value
+        else:
+            binding = delivered.require_value()
         if request is not None:
-            binding = replace(
-                binding,
-                profile=PORTABLE_TABLE_PROFILE_V1,
-                row_count=request.row_count,
-                schema_fingerprint=request.schema_fingerprint,
-                content_fingerprint=request.content_fingerprint,
+            expected_address = (
+                SheetModeTableAddress
+                if isinstance(destination, DirectDestination) and _materialization_mode(destination, connector) == "sheet"
+                else DirectTableAddress
+                if isinstance(destination, DirectDestination)
+                else BaseModeTableAddress
+                if isinstance(destination, BaseModeDestination)
+                else SheetModeTableAddress
             )
+            if (
+                delivered.continuation is not None
+                or delivered.outcome is not Outcome.SUCCEEDED
+                or delivered.commit is not CommitState.COMMITTED
+                or delivered.verification is not VerificationState.PASSED
+                or not isinstance(binding, TableBinding)
+                or binding.profile != request.profile
+                or binding.row_count != request.row_count
+                or binding.schema != request.source.schema
+                or binding.schema_fingerprint != request.schema_fingerprint
+                or binding.content_fingerprint != request.content_fingerprint
+                or not binding.observed_revision
+                or binding.address is None
+                or (expected_address is not None and not isinstance(binding.address, expected_address))
+                or len(delivered.receipts) < 2
+                or not delivered.receipts[-1].operation.startswith("table.read")
+            ):
+                raise _preserved_materialization_failure(
+                    delivered,
+                    receipts=receipts,
+                    code=ErrorCode.PROTOCOL_FAILURE,
+                    message="connector returned incomplete portable materialization evidence",
+                )
         return replace(
             delivered,
             value=self._wrap_binding(binding),
             receipts=receipts,
         )
+
+    def reconcile_materialization(
+        self,
+        reference: ReconciliationReference,
+        *,
+        destination: BaseModeDestination,
+    ):
+        """Reconcile an uncertain portable Base creation using its original key."""
+
+        self._assert_open()
+        if not isinstance(reference, ReconciliationReference):
+            raise TypeError("reference must be a ReconciliationReference")
+        if not isinstance(destination, BaseModeDestination):
+            raise TypeError("destination must be a BaseModeDestination")
+        connector = self._registry.connector_for(destination.container.value)
+        reconcile = getattr(connector, "reconcile_materialization", None)
+        if not callable(reconcile):
+            raise _failure(
+                "connector does not support portable materialization reconciliation",
+                ErrorCode.UNSUPPORTED_CAPABILITY,
+            )
+        delivered = self._deliver(reconcile(destination, reference))
+        return replace(delivered, value=self._wrap_binding(delivered.require_value()))
 
     def collect(self, source: object) -> OperationResult[pl.DataFrame]:
         self._assert_open()
@@ -412,6 +511,13 @@ class Client:
 
         return bind_formulas(self, target)
 
+    @property
+    def workbook(self):
+        """Return the unified workbook operation entry point."""
+
+        self._assert_open()
+        return self._workbook_access
+
     def close(self) -> None:
         if self._closed:
             return
@@ -437,6 +543,11 @@ class Client:
             address = DirectTableAddress(target)
             return address, address
         if isinstance(target, str):
+            parsed = urlsplit(target)
+            if parsed.scheme == SCHEME_FILE and parsed.fragment:
+                # Registry validates worksheet selectors before routing.
+                address = DirectTableAddress(TableURI(target))
+                return address, address
             endpoint = parse_adapter_endpoint(target)
             if endpoint.path is not None or endpoint.is_stdio:
                 return target, target
@@ -447,6 +558,13 @@ class Client:
     def _assert_open(self) -> None:
         if self._closed:
             raise _failure("client is closed", ErrorCode.CLIENT_CLOSED)
+
+    def _unsupported_workbook(self, uri: str, code: ErrorCode) -> OTCError:
+        return _failure(
+            "connector does not support unified workbook operations",
+            code,
+            target=uri,
+        )
 
     def _assert_owned(self, table: Table) -> None:
         if getattr(table, "_owner_client_id", None) != self._client_id:

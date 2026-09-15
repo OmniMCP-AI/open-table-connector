@@ -62,7 +62,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv sync --all-packages --group dev
+      - run: uv sync --all-packages --all-extras --group dev
+      - name: Verify PostgreSQL test driver
+        run: uv run --frozen python -c "import psycopg2; print(psycopg2.__version__)"
       - name: Run PostgreSQL lifecycle tests
         env:
           OTC_TEST_POSTGRES_DSN: postgresql://otc:otc@localhost:5432/otc

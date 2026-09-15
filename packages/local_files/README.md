@@ -5,11 +5,15 @@ CSV, JSON, JSONL, and Excel local-file connectors and managed snapshots.
 Install with `pip install open-table-connector-local-files`; import
 `open_table_connector.local_files`.
 
-## Local Excel grid formulas
+## Direct Excel grid formulas
 
-The local-files adapter supports bounded sheet-mode formula read and
+Excel workbooks use standard local file targets such as
+`file:///absolute/path/model.xlsx`. The unified Spreadsheet interface and the
+existing Formula view resolve that target to the same local adapter.
+
+The direct `excel` provider supports bounded sheet-mode formula read and
 top-left copy-fill set for existing `.xlsx` workbooks in the `excel-a1`
-dialect. Use the public `file://` target:
+dialect:
 
 ```python
 import open_table_connector.otc as otc
@@ -33,11 +37,25 @@ formula text after the write. It exposes exactly `formula.grid.read/1.0` and
 Excel has no `formula.grid.values.read/1.0` and no
 `formula.grid.recalculate/1.0`: openpyxl preserves formula text and can set
 workbook calculation-on-open flags, but it does not execute Excel’s calculation
-engine or persist calculated-value caches. `file://` itself does not require a
-separate calculation engine; a publisher that needs exact calculated values
-must provide one until this adapter gains trusted local value readback.
-Managed temporal Excel remains formula-rejecting.
+engine. Managed temporal Excel remains formula-rejecting.
 
 Ordinary Table writes remain value-only. The ordinary Excel writer forces
 formula-prefixed strings to text; use an explicit Formula view and
 `FormulaExpression` when formula activation is intended.
+
+The Formula view also accepts a string and infers the bound Excel dialect:
+`grid.set("D2", "=B2+$C$1")`. This is formula intent; a Table write containing
+the same string remains literal. Table writes create or replace a whole
+workbook, so use Spreadsheet range operations for in-place edits that preserve
+existing formulas and layout.
+
+## Unified workbook sessions
+
+`client.workbook.create("file:///absolute/path/report.xlsx")` creates an
+exclusive `literal-artifact/1.0` session. Select sheets with
+`book.worksheet.create("Report")`, write literal ranges with
+`sheet.range("A1:B2").write(...)`, and finish with `book.write()` or
+`book.verify()`. `client.workbook(uri)` opens an existing workbook for edits;
+its `write()` uses a verified temporary replacement. Formula cells are only
+created through `sheet.formulas().set(...)` and are rejected by the literal
+artifact verifier, while formula evaluation remains provider-owned.

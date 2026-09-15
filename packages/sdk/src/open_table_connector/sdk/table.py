@@ -9,7 +9,14 @@ from typing import TYPE_CHECKING, Any
 import polars as pl
 from open_table_connector.contract import TableURI
 
-from .model import TableMode
+from .model import (
+    BaseModeTableAddress,
+    DatabaseTableAddress,
+    DirectTableAddress,
+    ExistingTableAddress,
+    SheetModeTableAddress,
+    TableMode,
+)
 from .result import CommitState, OperationResult, OTCError, Outcome, VerificationState
 
 if TYPE_CHECKING:
@@ -53,8 +60,16 @@ class TableBinding:
     row_count: int | None = None
     schema_fingerprint: str | None = None
     content_fingerprint: str | None = None
+    address: ExistingTableAddress | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.uri, TableURI):
+            object.__setattr__(self, "uri", TableURI(self.uri))
+        if self.address is not None and not isinstance(
+            self.address,
+            (DirectTableAddress, DatabaseTableAddress, BaseModeTableAddress, SheetModeTableAddress),
+        ):
+            raise TypeError("address must be an ExistingTableAddress or None")
         object.__setattr__(self, "mode", TableMode.from_wire(str(self.mode)))
         if not isinstance(self.schema, pl.Schema):
             object.__setattr__(self, "schema", pl.Schema(self.schema))
@@ -134,9 +149,7 @@ class TableTransaction:
         self._table._client._assert_open()
         if where is None:
             raise ValueError("where is required")
-        self._commands.append(
-            ("delete", where, None if parameters is None else dict(parameters))
-        )
+        self._commands.append(("delete", where, None if parameters is None else dict(parameters)))
         return self
 
     def commit(self):
@@ -213,6 +226,10 @@ class Table:
     @property
     def uri(self) -> TableURI:
         return self._binding.uri
+
+    @property
+    def address(self) -> ExistingTableAddress | None:
+        return self._binding.address
 
     @property
     def mode(self) -> TableMode:

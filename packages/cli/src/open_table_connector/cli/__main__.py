@@ -142,6 +142,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     import_parser = subparsers.add_parser("import", help="import a table into a connector")
     _add_options(import_parser, require_from=True, require_to=True)
+    from .spreadsheet_commands import add_parser
+
+    add_parser(subparsers)
     return parser
 
 

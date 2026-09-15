@@ -2,7 +2,7 @@
 package = false
 
 [tool.uv.workspace]
-members = ["packages/contract", "packages/conformance", "packages/timeseries", "packages/formulas", "packages/process", "packages/local_files", "packages/postgres", "packages/sqlite", "packages/dbt", "packages/maybe_sheet", "packages/google_sheets", "packages/feishu_bitable", "packages/sdk", "packages/cli"]
+members = ["packages/contract", "packages/conformance", "packages/timeseries", "packages/formulas", "packages/process", "packages/local_files", "packages/postgres", "packages/sqlite", "packages/dbt", "packages/maybe_sheet", "packages/google_sheets", "packages/feishu_bitable", "packages/spreadsheets", "packages/sdk", "packages/cli"]
 
 [dependency-groups]
 dev = ["pytest>=9,<10", "ruff>=0.12,<1", "mypy>=1.17,<2"]
@@ -15,6 +15,7 @@ lint.ignore = ["E501"]
 exclude = ["dist", "build"]
 
 [tool.mypy]
+mypy_path = "packages/contract/src"
 python_version = "3.11"
 check_untyped_defs = true
 no_implicit_optional = true
@@ -28,3 +29,7 @@ polars = ">=1,<2"
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
 pythonpath = ["."]
+
+[[tool.mypy.overrides]]
+module = ["pyarrow", "pyarrow.*"]
+ignore_missing_imports = true

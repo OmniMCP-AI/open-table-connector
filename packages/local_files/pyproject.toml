@@ -14,7 +14,9 @@ dependencies = [
   "open-table-connector-formulas>=0.1,<0.2",
   "open-table-connector-sdk>=0.1,<0.2",
   "open-table-connector-timeseries>=0.1,<0.2",
+  "open-table-connector-spreadsheets>=0.1,<0.2",
   "openpyxl>=3.1,<4",
+  "pillow>=10,<12",
   "polars>=1,<2",
   "pyarrow>=14,<24",
 ]
@@ -38,6 +40,7 @@ open-table-connector-contract = { workspace = true }
 open-table-connector-formulas = { workspace = true }
 open-table-connector-sdk = { workspace = true }
 open-table-connector-timeseries = { workspace = true }
+open-table-connector-spreadsheets = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]

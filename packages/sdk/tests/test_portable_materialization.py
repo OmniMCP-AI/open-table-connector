@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 
 import open_table_connector.sdk as otc
 import polars as pl
@@ -209,3 +210,27 @@ def test_portable_materialization_conformance_receipts_and_errors_are_secret_saf
         error=error,
     )
     assert "secret-value" not in repr(failed.to_wire())
+
+
+def test_portable_materialize_rejects_connector_success_with_bad_evidence(fake_connector) -> None:
+    _advertise_portable_create(fake_connector, TableMode.BASE)
+    def bad_create(request, destination):
+        delivered = fake_connector.__class__.create_table(fake_connector, request, destination)
+        return replace(
+            delivered,
+            value=replace(delivered.require_value(), row_count=999),
+            warnings=(otc.OperationWarning("provider-warning", "safe warning"),),
+        )
+    fake_connector.create_table = bad_create
+    with pytest.raises(otc.OTCError) as raised:
+        otc.Client(registry=otc.ConnectorRegistry([fake_connector])).materialize(
+            pl.DataFrame({"id": [1]}), to=otc.DirectDestination("fake://warehouse/portable"),
+            profile=otc.PORTABLE_TABLE_PROFILE_V1, idempotency_key="postcondition",
+        )
+    result = raised.value.result
+    assert result.error.code is otc.ErrorCode.PROTOCOL_FAILURE
+    assert result.outcome is otc.Outcome.FAILED
+    assert result.commit is otc.CommitState.COMMITTED
+    assert result.verification is otc.VerificationState.FAILED
+    assert [receipt.operation for receipt in result.receipts] == ["table.create", "table.read"]
+    assert result.warnings[0].code == "provider-warning"

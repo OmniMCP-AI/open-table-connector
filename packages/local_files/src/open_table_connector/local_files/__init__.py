@@ -29,6 +29,7 @@ from .markdown_reader import is_markdown_payload, read_markdown_arrow, write_mar
 from .probe import LocalFormat, detect_format
 from .resolver import LocalURIResolver, ResolvedLocalTable
 from .sdk_temporal import LocalFilesSdkTemporalExtension
+from .spreadsheet_workbook import LocalSpreadsheetProvider
 from .temporal_csv import CsvManagedTemporalStore, CsvTemporalExecutor
 from .temporal_excel import ExcelManagedTemporalStore, ExcelTemporalExecutor
 from .temporal_json import JsonManagedTemporalStore, JsonTemporalExecutor
@@ -62,6 +63,7 @@ __all__ = [
     "LocalURIResolver",
     "ResolvedLocalTable",
     "LocalFilesConnector",
+    "LocalSpreadsheetProvider",
     "LocalReadOptions",
     "LocalTableReadRequest",
     "LocalFilesSdkTemporalExtension",

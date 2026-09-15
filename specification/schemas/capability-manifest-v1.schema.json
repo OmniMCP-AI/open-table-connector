@@ -73,5 +73,46 @@
         }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["materialization"],
+        "properties": {"materialization": {"minItems": 1}}
+      },
+      "then": {
+        "properties": {
+          "materialization": {
+            "contains": {
+              "properties": {
+                "profiles": {
+                  "contains": {"const": "otc.portable-table/v1"},
+                  "minContains": 1
+                }
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "contains": {
+              "properties": {
+                "capability_id": {"const": "table.materialize.create"}
+              }
+            },
+            "minContains": 1
+          }
+        }
+      },
+      "then": {
+        "required": ["materialization"],
+        "properties": {"materialization": {"minItems": 1}}
+      }
+    }
+  ]
 }

@@ -144,8 +144,31 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
                 {"capability_id": "table.inspect", "capability_version": "1.0"},
                 {"capability_id": "table.read.arrow", "capability_version": "1.0"},
                 {"capability_id": "table.read.polars", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.workbook.inspect", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.workbook.write", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.workbook.verify", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.worksheet.list", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.worksheet.create", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.worksheet.rename", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.worksheet.delete", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.worksheet.move", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.range.read", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.range.write", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.range.clear", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.range.sort", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.range.style", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.range.format", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.range.merge", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.range.unmerge", "capability_version": "1.0"},
+                {"capability_id": "spreadsheet.formula.set", "capability_version": "1.0"},
+                {"capability_id": "table.materialize.create", "capability_version": "1.0"},
             ],
-            "modes": ["sheet"],
+            "modes": ["sheet", "base"],
+            "materialization": [{
+                "capability": {"capability_id": "table.materialize.create", "capability_version": "1.0"},
+                "profiles": ["otc.portable-table/v1"],
+                "modes": ["base", "sheet"],
+            }],
         },
         {
             "connector_id": "google_sheets",
@@ -199,7 +222,7 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
     connector_ids = [record["connector_id"] for record in records]
     assert len(connector_ids) == len(set(connector_ids))
     for record in records:
-        assert set(record) == {"connector_id", "schemes", "capabilities", "modes"}
+        assert set(record) in ({"connector_id", "schemes", "capabilities", "modes"}, {"connector_id", "schemes", "capabilities", "modes", "materialization"})
         capability_ids = [item["capability_id"] for item in record["capabilities"]]
         assert len(capability_ids) == len(set(capability_ids))
         assert len(record["schemes"]) == len(set(record["schemes"]))

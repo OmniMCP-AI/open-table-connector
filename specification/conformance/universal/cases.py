@@ -199,9 +199,7 @@ class ConnectorCase:
             raise ValueError(f"{self.name} identity does not match connector identity")
         manifest = getattr(self.connector, "manifest", None)
         if manifest is not None:
-            expected_capabilities = frozenset(
-                item.capability_id for item in manifest.capabilities
-            )
+            expected_capabilities = frozenset(item.capability_id for item in manifest.capabilities)
             if expected_capabilities != self.capabilities:
                 raise ValueError(f"{self.name} capabilities do not match manifest")
             if frozenset(manifest.modes) != self.modes:
@@ -292,19 +290,25 @@ def _csv_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
             "table.inspect",
             expected_mode=TableMode.SHEET,
             make_request=make_inspect_request,
-            inspect=lambda resource_limits: connector.inspect(make_inspect_request(resource_limits)),
+            inspect=lambda resource_limits: connector.inspect(
+                make_inspect_request(resource_limits)
+            ),
         ),
         "table.read.arrow": _binding(
             "table.read.arrow",
             expected_mode=TableMode.SHEET,
             make_request=make_read_request,
-            read_arrow=lambda resource_limits: connector.read_arrow(make_read_request(resource_limits)),
+            read_arrow=lambda resource_limits: connector.read_arrow(
+                make_read_request(resource_limits)
+            ),
         ),
         "table.read.polars": _binding(
             "table.read.polars",
             expected_mode=TableMode.SHEET,
             make_request=make_read_request,
-            read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
+            read_polars=lambda resource_limits: connector.read_polars(
+                make_read_request(resource_limits)
+            ),
         ),
     }
 
@@ -346,19 +350,25 @@ def _excel_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
             "table.inspect",
             expected_mode=TableMode.SHEET,
             make_request=make_inspect_request,
-            inspect=lambda resource_limits: connector.inspect(make_inspect_request(resource_limits)),
+            inspect=lambda resource_limits: connector.inspect(
+                make_inspect_request(resource_limits)
+            ),
         ),
         "table.read.arrow": _binding(
             "table.read.arrow",
             expected_mode=TableMode.SHEET,
             make_request=make_read_request,
-            read_arrow=lambda resource_limits: connector.read_arrow(make_read_request(resource_limits)),
+            read_arrow=lambda resource_limits: connector.read_arrow(
+                make_read_request(resource_limits)
+            ),
         ),
         "table.read.polars": _binding(
             "table.read.polars",
             expected_mode=TableMode.SHEET,
             make_request=make_read_request,
-            read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
+            read_polars=lambda resource_limits: connector.read_polars(
+                make_read_request(resource_limits)
+            ),
         ),
     }
 
@@ -400,19 +410,25 @@ def _markdown_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
             "table.inspect",
             expected_mode=TableMode.SHEET,
             make_request=make_inspect_request,
-            inspect=lambda resource_limits: connector.inspect(make_inspect_request(resource_limits)),
+            inspect=lambda resource_limits: connector.inspect(
+                make_inspect_request(resource_limits)
+            ),
         ),
         "table.read.arrow": _binding(
             "table.read.arrow",
             expected_mode=TableMode.SHEET,
             make_request=make_read_request,
-            read_arrow=lambda resource_limits: connector.read_arrow(make_read_request(resource_limits)),
+            read_arrow=lambda resource_limits: connector.read_arrow(
+                make_read_request(resource_limits)
+            ),
         ),
         "table.read.polars": _binding(
             "table.read.polars",
             expected_mode=TableMode.SHEET,
             make_request=make_read_request,
-            read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
+            read_polars=lambda resource_limits: connector.read_polars(
+                make_read_request(resource_limits)
+            ),
         ),
     }
 
@@ -435,6 +451,59 @@ def _markdown_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
     )
 
 
+def _invoke_local_spreadsheet(operation: str):
+    """Exercise the advertised workbook verb against an isolated real XLSX."""
+    from open_table_connector.sdk import Client, ConnectorRegistry
+
+    with (
+        TemporaryDirectory(prefix="otc-workbook-conformance-") as directory,
+        Client(registry=ConnectorRegistry([LocalFilesConnector()])) as client,
+    ):
+        book = client.workbook.create(
+            (Path(directory) / "book.xlsx").as_uri(), profile="general/1.0"
+        )
+        sheet = book.worksheet.create("Data")
+        book.worksheet.create("Other")
+        sheet.range("A1:B2").write([["b", "2"], ["a", "1"]])
+        if operation == "worksheet.create":
+            book.worksheet.create("Created")
+        elif operation == "worksheet.rename":
+            sheet.rename("Renamed")
+        elif operation == "worksheet.delete":
+            book.worksheet("Other").delete()
+        elif operation == "worksheet.move":
+            sheet.move(1)
+        elif operation == "range.write":
+            sheet.range("A1").write("updated")
+        elif operation == "range.clear":
+            sheet.range("A1").clear()
+        elif operation == "range.sort":
+            sheet.range("A1:B2").sort()
+        elif operation == "range.style":
+            sheet.range("A1").style(bold=True)
+        elif operation == "range.format":
+            sheet.range("A1").format("text")
+        elif operation == "range.merge":
+            sheet.range("D1:E1").merge()
+        elif operation == "range.unmerge":
+            sheet.range("D1:E1").merge()
+            sheet.range("D1:E1").unmerge()
+        elif operation == "formula.set":
+            sheet.formulas().set("C1", "=1+2")
+        result = book.write()
+        assert result.commit.value == "committed"
+        assert result.verification.value == "passed"
+        if operation == "workbook.inspect":
+            return book.inspect()
+        if operation == "workbook.verify":
+            return book.verify()
+        if operation == "worksheet.list":
+            return book.worksheet.list()
+        if operation == "range.read":
+            return sheet.range("A1:B2").read()
+        return result
+
+
 def _local_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
     connector = LocalFilesConnector()
     table_uri = TableURI(bundle.csv_path.as_uri())
@@ -445,6 +514,23 @@ def _local_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
     def make_inspect_request(resource_limits: ResourceLimits) -> InspectRequest:
         return InspectRequest(table_uri, resource_limits)
 
+    def invoke_materialize() -> object:
+        from open_table_connector.sdk import (
+            PORTABLE_TABLE_PROFILE_V1,
+            DirectDestination,
+            MaterializationRequest,
+        )
+
+        source = pl.from_arrow(connector.read_arrow(make_read_request(ResourceLimits())).table)
+        with TemporaryDirectory(dir=bundle.csv_path.parent) as directory:
+            request = MaterializationRequest(
+                source=source,
+                destination=DirectDestination((Path(directory) / "table.json").as_uri()),
+                profile=PORTABLE_TABLE_PROFILE_V1,
+                idempotency_key="universal-local-files-materialization",
+            )
+            return connector.create_table(request, None)
+
     capability_bindings = {
         "uri.resolve": _binding(
             "uri.resolve",
@@ -454,21 +540,41 @@ def _local_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
             "table.read.arrow",
             expected_mode=TableMode.SHEET,
             make_request=make_read_request,
-            read_arrow=lambda resource_limits: connector.read_arrow(make_read_request(resource_limits)),
+            read_arrow=lambda resource_limits: connector.read_arrow(
+                make_read_request(resource_limits)
+            ),
         ),
         "table.read.polars": _binding(
             "table.read.polars",
             expected_mode=TableMode.SHEET,
             make_request=make_read_request,
-            read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
+            read_polars=lambda resource_limits: connector.read_polars(
+                make_read_request(resource_limits)
+            ),
         ),
         "table.inspect": _binding(
             "table.inspect",
             expected_mode=TableMode.SHEET,
             make_request=make_inspect_request,
-            inspect=lambda resource_limits: connector.inspect(make_inspect_request(resource_limits)),
+            inspect=lambda resource_limits: connector.inspect(
+                make_inspect_request(resource_limits)
+            ),
         ),
     }
+
+    for identity in connector.manifest.capabilities:
+        if identity.capability_id.startswith("spreadsheet."):
+            operation = identity.capability_id.removeprefix("spreadsheet.")
+            capability_bindings[identity.capability_id] = _binding(
+                identity,
+                expected_mode=TableMode.SHEET,
+                invoke=lambda operation=operation: _invoke_local_spreadsheet(operation),
+            )
+        elif identity.capability_id == "table.materialize.create":
+            capability_bindings[identity.capability_id] = _binding(
+                identity,
+                invoke=invoke_materialize,
+            )
 
     return ConnectorCase(
         name="local_files",
@@ -581,7 +687,9 @@ def _google_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
             "table.inspect",
             expected_mode=TableMode.SHEET,
             make_request=make_inspect_request,
-            inspect=lambda resource_limits: connector.inspect(make_inspect_request(resource_limits)),
+            inspect=lambda resource_limits: connector.inspect(
+                make_inspect_request(resource_limits)
+            ),
         ),
         "table.write": _binding(
             "table.write",
@@ -755,7 +863,9 @@ def _feishu_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
             "table.inspect",
             expected_mode=TableMode.BASE,
             make_request=make_inspect_request,
-            inspect=lambda resource_limits: connector.inspect(make_inspect_request(resource_limits)),
+            inspect=lambda resource_limits: connector.inspect(
+                make_inspect_request(resource_limits)
+            ),
         ),
         "table.write": _binding(
             "table.write",
@@ -895,27 +1005,39 @@ def _maybe_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
             BASE_READ_CAPABILITY,
             expected_mode=TableMode.BASE,
             make_request=make_base_read_request,
-            read_arrow=lambda resource_limits: connector.read_arrow(make_base_read_request(resource_limits)),
-            read_polars=lambda resource_limits: connector.read_polars(make_base_read_request(resource_limits)),
+            read_arrow=lambda resource_limits: connector.read_arrow(
+                make_base_read_request(resource_limits)
+            ),
+            read_polars=lambda resource_limits: connector.read_polars(
+                make_base_read_request(resource_limits)
+            ),
         ),
         "base.inspect": _binding(
             BASE_INSPECT_CAPABILITY,
             expected_mode=TableMode.BASE,
             make_request=make_base_read_request,
-            inspect=lambda resource_limits: connector.inspect(make_base_read_request(resource_limits)),
+            inspect=lambda resource_limits: connector.inspect(
+                make_base_read_request(resource_limits)
+            ),
         ),
         "sheet.read": _binding(
             SHEET_READ_CAPABILITY,
             expected_mode=TableMode.SHEET,
             make_request=make_sheet_read_request,
-            read_arrow=lambda resource_limits: connector.read_arrow(make_sheet_read_request(resource_limits)),
-            read_polars=lambda resource_limits: connector.read_polars(make_sheet_read_request(resource_limits)),
+            read_arrow=lambda resource_limits: connector.read_arrow(
+                make_sheet_read_request(resource_limits)
+            ),
+            read_polars=lambda resource_limits: connector.read_polars(
+                make_sheet_read_request(resource_limits)
+            ),
         ),
         "sheet.inspect": _binding(
             SHEET_INSPECT_CAPABILITY,
             expected_mode=TableMode.SHEET,
             make_request=make_sheet_read_request,
-            inspect=lambda resource_limits: connector.inspect(make_sheet_read_request(resource_limits)),
+            inspect=lambda resource_limits: connector.inspect(
+                make_sheet_read_request(resource_limits)
+            ),
         ),
         "table.write": _binding(
             MAYBE_TABLE_WRITE_CAPABILITY,
@@ -1027,19 +1149,25 @@ def _sqlite_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
             SQLITE_READ_ARROW_CAPABILITY,
             expected_mode=TableMode.BASE,
             make_request=make_read_request,
-            read_arrow=lambda resource_limits: connector.read_arrow(make_read_request(resource_limits)),
+            read_arrow=lambda resource_limits: connector.read_arrow(
+                make_read_request(resource_limits)
+            ),
         ),
         "table.read.polars": _binding(
             SQLITE_READ_POLARS_CAPABILITY,
             expected_mode=TableMode.BASE,
             make_request=make_read_request,
-            read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
+            read_polars=lambda resource_limits: connector.read_polars(
+                make_read_request(resource_limits)
+            ),
         ),
         "table.inspect": _binding(
             SQLITE_INSPECT_CAPABILITY,
             expected_mode=TableMode.BASE,
             make_request=make_inspect_request,
-            inspect=lambda resource_limits: connector.inspect(make_inspect_request(resource_limits)),
+            inspect=lambda resource_limits: connector.inspect(
+                make_inspect_request(resource_limits)
+            ),
         ),
         "table.execute": _binding(
             SQLITE_EXECUTE_CAPABILITY,
@@ -1115,19 +1243,25 @@ def _postgres_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
             POSTGRES_READ_ARROW_CAPABILITY,
             expected_mode=TableMode.BASE,
             make_request=make_read_request,
-            read_arrow=lambda resource_limits: connector.read_arrow(make_read_request(resource_limits)),
+            read_arrow=lambda resource_limits: connector.read_arrow(
+                make_read_request(resource_limits)
+            ),
         ),
         "table.read.polars": _binding(
             POSTGRES_READ_POLARS_CAPABILITY,
             expected_mode=TableMode.BASE,
             make_request=make_read_request,
-            read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
+            read_polars=lambda resource_limits: connector.read_polars(
+                make_read_request(resource_limits)
+            ),
         ),
         "table.inspect": _binding(
             POSTGRES_INSPECT_CAPABILITY,
             expected_mode=TableMode.BASE,
             make_request=make_inspect_request,
-            inspect=lambda resource_limits: connector.inspect(make_inspect_request(resource_limits)),
+            inspect=lambda resource_limits: connector.inspect(
+                make_inspect_request(resource_limits)
+            ),
         ),
         "table.execute": _binding(
             POSTGRES_EXECUTE_CAPABILITY,
@@ -1205,7 +1339,9 @@ def _dbt_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
         ),
         "dbt.cancel": _binding(
             DBT_CANCEL_CAPABILITY,
-            invoke=lambda: connector.cancel(_dbt_compile_operation(connector, bundle.dbt_project_dir)),
+            invoke=lambda: connector.cancel(
+                _dbt_compile_operation(connector, bundle.dbt_project_dir)
+            ),
         ),
         "dbt.artifact.read": _binding(
             DBT_ARTIFACT_READ_CAPABILITY,

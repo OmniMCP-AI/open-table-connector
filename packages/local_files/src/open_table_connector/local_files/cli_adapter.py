@@ -286,10 +286,7 @@ def _read_markdown_table(text: str, source: Endpoint) -> pa.Table:
 
 def _rows_to_table(rows: list[dict[str, object | None]], columns: Iterable[str]) -> pa.Table:
     ordered_columns = list(columns)
-    data = {
-        name: [row.get(name) for row in rows]
-        for name in ordered_columns
-    }
+    data = {name: [row.get(name) for row in rows] for name in ordered_columns}
     return pa.table(data)
 
 
@@ -511,13 +508,16 @@ class LocalFilesCliAdapter(_LocalCliAdapter):
     identity = ConnectorIdentity(PROVIDER_LOCAL_FILES, "0.1.0", "1.0")
     schemes = (SCHEME_FILE, PROVIDER_JSON, PROVIDER_JSONL)
     hosts: tuple[str, ...] = ()
-    modes = (TableMode.SHEET,)
-    capabilities = (
-        CapabilityIdentity("uri.resolve", "1.0"),
-        CapabilityIdentity("table.inspect", "1.0"),
-        _LOCAL_READ_CAPABILITY,
-        CapabilityIdentity("table.read.polars", "1.0"),
-    )
+    modes = tuple(LocalFilesConnector.manifest.modes)
+
+    def sdk_connector(self):
+        """Expose the native table SDK while retaining the CLI adapter contract."""
+        return self.connector
+
+    def spreadsheet_provider(self):
+        return self.connector.spreadsheet_provider()
+
+    capabilities = tuple(LocalFilesConnector.manifest.capabilities)
 
     def formula_extension_for(self):
         from open_table_connector.formulas import CompositeFormulaConnectorExtension
@@ -552,9 +552,7 @@ class LocalFilesCliAdapter(_LocalCliAdapter):
         table = _limited_table(read_local(endpoint, self._format(endpoint, options)), options)
         return ArrowReadResult(
             table,
-            _local_receipt(
-                endpoint, table, _LOCAL_READ_CAPABILITY, connector=self.identity
-            ),
+            _local_receipt(endpoint, table, _LOCAL_READ_CAPABILITY, connector=self.identity),
         )
 
     def inspect(self, endpoint: Endpoint, options: AdapterOptions) -> TableInspection:
@@ -624,6 +622,7 @@ def local_files_cli_plugin() -> PluginDescriptor:
         lambda context: _context_factory(LocalFilesCliAdapter, LocalFilesConnector, context),
         capabilities=LocalFilesCliAdapter.capabilities,
         modes=LocalFilesCliAdapter.modes,
+        materialization=tuple(LocalFilesConnector.manifest.materialization),
         local=True,
         handles_paths=True,
     )

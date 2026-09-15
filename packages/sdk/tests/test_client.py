@@ -43,6 +43,19 @@ class MaybeProcess:
     def run(self, argv, *, credentials=None, stdin=None, timeout=None):
         del timeout
         self.calls.append((tuple(argv), dict(credentials or {}), stdin))
+        if "--table-id" in argv:
+            return {
+                "schema_version": "mbs.db-table-read-result/v1",
+                "result": {
+                    "document_id": "doc",
+                    "table_id": argv[argv.index("--table-id") + 1],
+                    "provider_revision": "rev-1",
+                    "source_revision": "rev-1",
+                    "schema": {"fields": [{"name": "order_id", "type": "String"}]},
+                    "rows": [["1"]],
+                    "receipt_id": "receipt-1",
+                },
+            }
         return {"rows": [{"order_id": "1"}], "source_revision": "rev-1"}
 
 
@@ -142,8 +155,8 @@ def test_client_materialize_collects_table_sources_and_orders_receipts(fake_conn
 
     assert result.require_value().uri.value == "fake://warehouse/materialized"
     assert [receipt.operation for receipt in result.receipts[-2:]] == [
-        "table.read",
         "table.create",
+        "table.read",
     ]
     assert all(
         call[0] != "create_table" or call[1] == "fake://warehouse/materialized"

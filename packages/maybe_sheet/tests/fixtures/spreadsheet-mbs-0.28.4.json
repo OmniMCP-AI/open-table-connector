@@ -1,0 +1,103 @@
+{
+  "worksheet.list": {
+    "contract_version": "1.0",
+    "ok": true,
+    "operation": "worksheet.list",
+    "target": {
+      "kind": "workbook",
+      "engine": null,
+      "doc_id": "fixture-document",
+      "gid": null,
+      "worksheet_name": null,
+      "table_id": null,
+      "table_name": null,
+      "uri": "https://www.maybe.ai/docs/spreadsheets/d/fixture-document"
+    },
+    "warnings": [],
+    "request_id": null,
+    "result": {
+      "spreadsheet_id": "fixture-document",
+      "spreadsheet_url": "https://www.maybe.ai/docs/spreadsheets/d/fixture-document",
+      "spreadsheet_title": "OTC fixture",
+      "document_id": "fixture-document",
+      "engine": "sheet",
+      "worksheet_count": 1,
+      "total_worksheets": 1,
+      "worksheets": [
+        {
+          "title": "Report",
+          "name": "Report",
+          "worksheet_name": "Report",
+          "sheet_name": "Report",
+          "gid": 0,
+          "sheet_id": 0,
+          "index": 0,
+          "worksheet_url": "https://www.maybe.ai/docs/spreadsheets/d/fixture-document?gid=0",
+          "data_engine": "sheet",
+          "style_engine": "sheet",
+          "sql_engine": "sheet",
+          "formula_engine": "sheet",
+          "source": {
+            "document_id": "fixture-document",
+            "gid": 0,
+            "engine": "sheet",
+            "logical_gid": 0,
+            "logical_name": "Report"
+          },
+          "source_info": {
+            "document_id": "fixture-document",
+            "gid": 0,
+            "engine": "sheet",
+            "logical_gid": 0,
+            "logical_name": "Report"
+          }
+        }
+      ],
+      "message": "Found 1 worksheets",
+      "source_info": {
+        "document_id": "fixture-document",
+        "engine": "sheet",
+        "operation": "list_worksheets",
+        "registry_used": true,
+        "dimension_source": "registry_only"
+      }
+    },
+    "verification": null,
+    "trace": null
+  },
+  "worksheet.create": {
+    "contract_version": "1.0",
+    "ok": true,
+    "operation": "worksheet.create",
+    "target": {
+      "kind": "workbook",
+      "engine": null,
+      "doc_id": "fixture-document",
+      "gid": null,
+      "worksheet_name": null,
+      "table_id": null,
+      "table_name": null,
+      "uri": "https://www.maybe.ai/docs/spreadsheets/d/fixture-document"
+    },
+    "warnings": [],
+    "request_id": null,
+    "result": {
+      "spreadsheet_url": "https://www.maybe.ai/docs/spreadsheets/d/fixture-document?gid=1",
+      "spreadsheet_id": "fixture-document",
+      "worksheet": "New",
+      "range": "New!A1",
+      "updated_cells": 0,
+      "shape": "(0, 0)",
+      "message": "Created new worksheet 'New' with 0 rows and 0 columns",
+      "engine": "sheet",
+      "source_info": {
+        "engine": "sheet",
+        "observed_engine": "sheet",
+        "operation": "write_new_worksheet",
+        "registry_updated": true
+      }
+    },
+    "verification": null,
+    "trace": null
+  }
+}
