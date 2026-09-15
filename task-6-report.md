@@ -10,7 +10,7 @@ Scope:
 Changes:
 - Added SDK regression coverage proving `Client.from_config(...)` works with an empty config plus default provider environment variables for Google Sheets, Feishu Bitable, and MaybeSheet.
 - Moved CLI-style default credential synthesis into the SDK registry path so descriptor-backed clients get the same behavior even when no explicit resolver is supplied.
-- Tightened `TableURI` validation so local-style schemes such as `csv://` and `excel://` can no longer smuggle credential-bearing query or fragment parameters.
+- Tightened `TableURI` validation so local-style schemes such as `csv://` can no longer smuggle credential-bearing query or fragment parameters.
 - Hardened both urllib transports to map `URLError(TimeoutError(...))` to `ConnectorErrorCode.TIMEOUT` while preserving `RESOURCE_LIMIT_EXCEEDED` for oversized responses and the existing secret-safe generic fallback for unexpected transport failures.
 
 Verification:

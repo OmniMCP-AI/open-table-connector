@@ -140,7 +140,7 @@ def provider_semantic_case(request, semantic_case, tmp_path):
         )
     elif provider == "excel":
         path = value_workbook(tmp_path / "ticks.xlsx")
-        target = TableURI(f"excel://{path.as_posix()}#sheet=Ticks")
+        target = TableURI(f"{path.as_uri()}#sheet=Ticks")
         executor = ExcelTemporalExecutor(descriptor(), worksheet="Ticks")
     else:
         target = TableURI("https://www.maybe.ai/docs/spreadsheets/d/document")

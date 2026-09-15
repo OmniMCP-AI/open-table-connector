@@ -661,9 +661,10 @@ requests, but do not invoke its existing immediate file/network writer while
 queueing. On write, translate the normalized formula operations into the same
 storage transaction as value edits. Explicit provider recalculation is a separate
 persisted operation requiring a clean session and an advertised capability.
-No adapter computes formula values locally or presents old caches as recalculated
-results. Maybe supports its tested recalculation scopes; Google and local Excel
-must not advertise explicit recalculation without a validated engine/transport.
+Adapters must not present old caches as recalculated results. Maybe supports its
+tested recalculation scopes; direct local Excel uses the validated Excelize
+engine for calculated-value reads and explicit recalculation, while ordinary
+Excel Table reads remain cache-based.
 
 ### 13.2 Minimum general manipulation contract
 

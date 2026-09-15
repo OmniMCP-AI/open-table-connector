@@ -312,7 +312,7 @@ git commit -m "feat: implement Maybe grid formulas"
 
 Build a workbook with formulas, formula-looking strings, constants, blanks, styles, comments, data validation, defined names, an external link, hidden sheets, worksheet order, print settings, and workbook properties. Formula read opens independent bytes with `data_only=False`, returns only cells with `cell.data_type == "f"`, and preserves exact expression text.
 
-Test direct `excel://...#sheet=Model` binding by worksheet name. A `WorksheetRef` must agree with a URI fragment when both exist. Reject `.xls`, `.xlsm`, CSV renamed to `.xlsx`, managed Excel schemes, missing/ambiguous sheets, and symlink targets before mutation.
+Test direct `file://...#sheet=Model` binding by worksheet name. A `WorksheetRef` must agree with a URI fragment when both exist. Reject `.xls`, `.xlsm`, CSV renamed to `.xlsx`, managed Excel schemes, missing/ambiguous sheets, and symlink targets before mutation.
 
 - [ ] **Step 2: Run focused tests and verify red**
 

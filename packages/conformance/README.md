@@ -22,5 +22,6 @@ provider packages must opt in only after their adapter passes the focused
 conformance suite.
 
 Google Sheets, Maybe Sheet, and direct Excel descriptors advertise only their
-proven grid identities. Field identities remain disabled until their provider
-adapters pass the focused field conformance gate.
+proven grid identities. Direct Excel calculated-value and recalculation claims
+are backed by the Excelize calculation path. Field identities remain disabled
+until their provider adapters pass the focused field conformance gate.

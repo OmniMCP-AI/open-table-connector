@@ -19,7 +19,7 @@ name the concrete table formats.
 - Preserve the existing `local_files` identity as a compatibility facade.
 - Preserve `file://` URIs and bare local paths through format autodetection.
 - Add explicit URI schemes for direct format selection:
-  `csv://`, `excel://`, and `md://`.
+  `csv://` and `md://`.
 - Keep format-specific behavior behind small, testable connector interfaces.
 - Keep neutral connector code independent of the CLI package.
 - Preserve the existing CLI `--from`/`--to` conversion and import workflows.
@@ -53,8 +53,9 @@ format.
 
 The CLI registry will expose all four identities. Its routing rules are:
 
-1. `csv://`, `excel://`, and `md://` select the matching concrete adapter.
-2. `file://` and bare paths select the `local_files` facade adapter.
+1. `csv://` and `md://` select the matching concrete adapter.
+2. `file://` and bare paths select the `local_files` facade adapter, which
+   probes `.xlsx` files and delegates them to the Excel connector.
 3. The facade probes the resource and delegates the operation to the concrete
    connector implementation.
 
@@ -90,9 +91,9 @@ not import the CLI package.
 
 ```text
 explicit csv:// ───────> CsvAdapter ───────> CsvConnector
-explicit excel:// ────> ExcelAdapter ─────> ExcelConnector
+file:// / bare .xlsx ──> LocalFilesAdapter ─> probe ─> ExcelConnector
 explicit md:// ────────> MdAdapter ────────> MarkdownConnector
-file:// / bare path ──> LocalFilesAdapter ─> probe ─> concrete connector
+file:// / bare other ─> LocalFilesAdapter ─> probe ─> concrete connector
 ```
 
 Reads and inspections return the same Arrow/Polars result and receipt shapes

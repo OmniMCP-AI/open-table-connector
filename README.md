@@ -121,7 +121,7 @@ use the dialect shown here; OTC does not translate between dialects.
 | --- | --- | --- | --- | --- |
 | Google Sheets | `formula.grid.read/1.0`, `formula.grid.set/1.0`, `formula.grid.values.read/1.0` | `google-sheets-a1` | Yes; provider-dynamic dependencies | No |
 | Maybe Sheet | `formula.grid.read/1.0`, `formula.grid.set/1.0`, `formula.grid.values.read/1.0`, `formula.grid.recalculate/1.0` | `maybe-sheet-a1` | Yes; provider-dynamic dependencies | Yes: `range`, `worksheet`, `workbook` |
-| Local Excel `.xlsx` (`file://`) | `formula.grid.read/1.0`, `formula.grid.set/1.0` | `excel-a1` | No Formula value read | No Formula recalculation |
+| Local Excel `.xlsx` (`file://`) | `formula.grid.read/1.0`, `formula.grid.set/1.0`, `formula.grid.values.read/1.0`, `formula.grid.recalculate/1.0` | `excel-a1` | Yes; Excelize-backed local calculation | Yes: `range`, `worksheet`, `workbook` |
 
 Grid `set()` uses top-left copy-fill for every provider: the top-left cell
 receives the supplied expression and relative references translate for each
@@ -134,10 +134,10 @@ dependencies (`dependency_scope=provider_dynamic`). A Maybe sheet formula may
 refer to a base-mode worksheet, for example
 `='R_Revenue Base'!$C2*0.8`; the reference remains native text and OTC does not
 bind or read a separate Base target. Excel reads and writes native formula text
-in a local `.xlsx` workbook through the public `file://` route. Its workbook
-calculation flags can request a later Excel recalculation, but OTC does not
-execute Excel and therefore exposes neither calculated-value reads nor a
-recalculation capability; managed temporal Excel remains formula-rejecting.
+in a local `.xlsx` workbook through the public `file://` route. Excelize
+calculates Formula Extension reads and explicit recalculation, and
+recalculation persists cached values in the workbook; managed temporal Excel
+remains formula-rejecting.
 
 Ordinary `Table` writes remain value-only and never activate formulas. Google
 ordinary writes continue to use `valueInputOption=RAW`, and the ordinary Excel
