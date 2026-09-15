@@ -126,19 +126,6 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
             "modes": ["sheet"],
         },
         {
-            "connector_id": "excel",
-            "schemes": ["excel"],
-            "capabilities": [
-                {"capability_id": "uri.resolve", "capability_version": "1.0"},
-                {"capability_id": "table.inspect", "capability_version": "1.0"},
-                {"capability_id": "table.read.arrow", "capability_version": "1.0"},
-                {"capability_id": "table.read.polars", "capability_version": "1.0"},
-                {"capability_id": "formula.grid.read", "capability_version": "1.0"},
-                {"capability_id": "formula.grid.set", "capability_version": "1.0"},
-            ],
-            "modes": ["sheet"],
-        },
-        {
             "connector_id": "md",
             "schemes": ["md"],
             "capabilities": [
@@ -192,7 +179,7 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
         },
         {
             "connector_id": "maybe_sheet",
-            "schemes": ["maybe", "https"],
+            "schemes": ["https"],
             "capabilities": [
                 {"capability_id": "base.read", "capability_version": "1.0"},
                 {"capability_id": "base.inspect", "capability_version": "1.0"},
@@ -241,20 +228,6 @@ def test_cli_list_discovers_every_injected_table_connector_with_safe_metadata() 
             3,
             {"worksheets": ["data"]},
             id="csv-explicit-scheme",
-        ),
-        pytest.param(
-            "excel",
-            None,
-            {},
-            "sheet",
-            ["id", "amount", "note"],
-            3,
-            {
-                "worksheets": ["orders", "refunds"],
-                "formula_text_captured": False,
-                "formula_calculated": False,
-            },
-            id="excel-explicit-scheme",
         ),
         pytest.param(
             "md",
@@ -381,14 +354,6 @@ def test_cli_inspect_from_selects_exact_scheme_and_reports_safe_metadata(
             id="csv-explicit-rows",
         ),
         pytest.param(
-            "excel",
-            None,
-            {},
-            {"id": "1", "amount": "2.5", "note": "first"},
-            3,
-            id="excel-explicit-rows",
-        ),
-        pytest.param(
             "md",
             None,
             {},
@@ -414,8 +379,8 @@ def test_cli_inspect_from_selects_exact_scheme_and_reports_safe_metadata(
         ),
         pytest.param(
             "maybe_sheet",
-            "maybe://fixture-doc/R_orders",
-            {"token": _FIXTURE_SECRET},
+            "https://www.maybe.ai/docs/spreadsheets/d/fixture-doc",
+            {"token": _FIXTURE_SECRET, "target": "R_orders"},
             {"id": "1", "amount": "2.5", "note": "first"},
             4,
             id="maybe_sheet-rows",

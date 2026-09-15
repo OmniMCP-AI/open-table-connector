@@ -105,7 +105,7 @@ def test_maybe_sheet_has_explicit_base_and_sheet_argv_and_receipts() -> None:
 def test_maybe_sheet_read_uses_table_id_for_base_selector() -> None:
     process = Process()
     request = MaybeSheetReadRequest(
-        TableURI("maybe://doc?table_id=tbl-orders"),
+        TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc?table_id=tbl-orders"),
         TableMode.BASE,
         "tbl-orders",
         target_is_id=True,
@@ -181,7 +181,7 @@ def test_maybe_sheet_sheet_read_uses_worksheet_name_and_applies_limit_locally() 
 def test_maybe_sheet_read_enforces_max_rows_when_process_over_returns() -> None:
     process = OverReturningProcess()
     request = MaybeSheetReadRequest(
-        TableURI("maybe://doc/R_orders"),
+        TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"),
         TableMode.BASE,
         "R_orders",
         ResourceLimits(max_rows=1),
@@ -243,7 +243,7 @@ def test_maybe_sheet_write_uses_table_insert_and_json_rows_file() -> None:
     process = WriteProcess()
     result = MaybeSheetConnector(process).write(
         TableWriteRequest(
-            TableURI("maybe://doc/R_orders"),
+            TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"),
             pl.DataFrame({"id": ["1"]}),
             table="R_orders",
             if_exists="append",
@@ -405,7 +405,7 @@ def test_maybe_sheet_subprocess_transport_maps_timeouts_to_stable_connector_erro
 def test_maybe_sheet_read_passes_request_timeout_to_compatible_process_client() -> None:
     process = TimedProcess()
     request = MaybeSheetReadRequest(
-        TableURI("maybe://doc/R_orders"),
+        TableURI("https://www.maybe.ai/docs/spreadsheets/d/doc"),
         TableMode.BASE,
         "R_orders",
         ResourceLimits(timeout_seconds=7),

@@ -121,7 +121,7 @@ use the dialect shown here; OTC does not translate between dialects.
 | --- | --- | --- | --- | --- |
 | Google Sheets | `formula.grid.read/1.0`, `formula.grid.set/1.0`, `formula.grid.values.read/1.0` | `google-sheets-a1` | Yes; provider-dynamic dependencies | No |
 | Maybe Sheet | `formula.grid.read/1.0`, `formula.grid.set/1.0`, `formula.grid.values.read/1.0`, `formula.grid.recalculate/1.0` | `maybe-sheet-a1` | Yes; provider-dynamic dependencies | Yes: `range`, `worksheet`, `workbook` |
-| Direct Excel `.xlsx` | `formula.grid.read/1.0`, `formula.grid.set/1.0` | `excel-a1` | No Formula value read | No Formula recalculation |
+| Local Excel `.xlsx` (`file://`) | `formula.grid.read/1.0`, `formula.grid.set/1.0` | `excel-a1` | No Formula value read | No Formula recalculation |
 
 Grid `set()` uses top-left copy-fill for every provider: the top-left cell
 receives the supplied expression and relative references translate for each
@@ -134,10 +134,10 @@ dependencies (`dependency_scope=provider_dynamic`). A Maybe sheet formula may
 refer to a base-mode worksheet, for example
 `='R_Revenue Base'!$C2*0.8`; the reference remains native text and OTC does not
 bind or read a separate Base target. Excel reads and writes native formula text
-in a direct `.xlsx` workbook only. Its workbook calculation flags can request a
-later Excel recalculation, but OTC does not execute Excel and therefore exposes
-neither calculated-value reads nor a recalculation capability; managed temporal
-Excel remains formula-rejecting.
+in a local `.xlsx` workbook through the public `file://` route. Its workbook
+calculation flags can request a later Excel recalculation, but OTC does not
+execute Excel and therefore exposes neither calculated-value reads nor a
+recalculation capability; managed temporal Excel remains formula-rejecting.
 
 Ordinary `Table` writes remain value-only and never activate formulas. Google
 ordinary writes continue to use `valueInputOption=RAW`, and the ordinary Excel
@@ -164,7 +164,9 @@ verifies a fresh metadata readback. It does not write calculated record values.
 ```python
 from open_table_connector.formulas import FieldFormulaTarget, FieldRef, FormulaExpression
 
-table = client.open("maybe://document/R_orders").require_value()
+table = client.open(
+    "https://www.maybe.ai/docs/spreadsheets/d/document?table_id=tbl-orders"
+).require_value()
 margin = client.formulas(
     FieldFormulaTarget(table, FieldRef(name="gross_margin"))
 ).require_value()
@@ -211,15 +213,14 @@ Install the CLI package to use `otc` (or the equivalent
 ```console
 otc convert --from orders.csv --to - --output-format jsonl
 otc read --from csv:///absolute/path/orders.csv --output-format table
-otc read --from excel:///absolute/path/orders.xlsx --sheet Orders
+otc read --from file:///absolute/path/orders.xlsx --sheet Orders
 otc read --from md:///absolute/path/orders.md --output-format json
 otc read --from gsheets://SPREADSHEET/Orders --output-format json
 ```
 
-Use explicit local schemes when the format should be selected directly:
-`csv://`, `excel://`, and `md://`. Existing bare paths and `file://` URIs
-continue to route through `local_files`, which probes CSV, XLSX, and Markdown
-payloads for compatibility.
+Use `csv://` or `md://` when the format should be selected directly. Existing
+bare paths and `file://` URIs route through `local_files`, which probes CSV,
+XLSX, and Markdown payloads for compatibility.
 
 ## Portable time-series storage
 

@@ -22,7 +22,9 @@ def table() -> BoundTable:
             "Binding",
             (),
             {
-                "uri": TableURI("maybe://workspace/R_orders"),
+                "uri": TableURI(
+                    "https://www.maybe.ai/docs/spreadsheets/d/workspace?table_id=tbl-orders"
+                ),
                 "mode": TableMode.BASE,
             },
         )()

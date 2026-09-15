@@ -5,18 +5,18 @@ CSV, JSON, JSONL, and Excel local-file connectors and managed snapshots.
 Install with `pip install open-table-connector-local-files`; import
 `open_table_connector.local_files`.
 
-## Direct Excel grid formulas
+## Local Excel grid formulas
 
-The direct `excel` provider supports bounded sheet-mode formula read and
+The local-files adapter supports bounded sheet-mode formula read and
 top-left copy-fill set for existing `.xlsx` workbooks in the `excel-a1`
-dialect:
+dialect. Use the public `file://` target:
 
 ```python
 import open_table_connector.otc as otc
 
 grid = client.formulas(
     otc.GridFormulaTarget(
-        "excel:///absolute/path/model.xlsx#sheet=Model",
+        "file:///absolute/path/model.xlsx#sheet=Model",
         otc.WorksheetRef(name="Model"),
     )
 ).require_value()
@@ -33,7 +33,10 @@ formula text after the write. It exposes exactly `formula.grid.read/1.0` and
 Excel has no `formula.grid.values.read/1.0` and no
 `formula.grid.recalculate/1.0`: openpyxl preserves formula text and can set
 workbook calculation-on-open flags, but it does not execute Excel’s calculation
-engine. Managed temporal Excel remains formula-rejecting.
+engine or persist calculated-value caches. `file://` itself does not require a
+separate calculation engine; a publisher that needs exact calculated values
+must provide one until this adapter gains trusted local value readback.
+Managed temporal Excel remains formula-rejecting.
 
 Ordinary Table writes remain value-only. The ordinary Excel writer forces
 formula-prefixed strings to text; use an explicit Formula view and

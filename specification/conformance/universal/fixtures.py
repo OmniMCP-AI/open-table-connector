@@ -16,7 +16,6 @@ import polars as pl
 import pyarrow as pa
 from open_table_connector.cli.adapters import (
     CsvAdapter,
-    ExcelAdapter,
     FeishuBitableAdapter,
     GoogleSheetsAdapter,
     LocalAdapter,
@@ -622,7 +621,6 @@ def build_cli_registry_bridge(*case_names: str) -> CliRegistryBridge:
 
     names = case_names or (
         "csv",
-        "excel",
         "md",
         "local_files",
         "google_sheets",
@@ -638,8 +636,6 @@ def build_cli_registry_bridge(*case_names: str) -> CliRegistryBridge:
         connector_case = case(name)
         if name == "csv":
             adapter = CsvAdapter(connector_case.connector)
-        elif name == "excel":
-            adapter = ExcelAdapter(connector_case.connector)
         elif name == "md":
             adapter = MarkdownAdapter(connector_case.connector)
         elif name == "google_sheets":

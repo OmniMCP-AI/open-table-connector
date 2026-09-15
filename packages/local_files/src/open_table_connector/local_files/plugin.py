@@ -5,17 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from open_table_connector.contract import (
-    PROVIDER_JSON,
-    PROVIDER_JSONL,
-    PROVIDER_LOCAL_FILES,
-    SCHEME_FILE,
-    PluginDescriptor,
-)
+from open_table_connector.contract import PluginDescriptor
 
 from .cli_adapter import (
     csv_cli_plugin,
-    excel_cli_plugin,
     local_files_cli_plugin,
     markdown_cli_plugin,
 )
@@ -82,7 +75,6 @@ def _required_text(document: Mapping[str, object], field: str) -> str:
 __all__ = [
     "csv_cli_plugin",
     "csv_process_plugin",
-    "excel_cli_plugin",
     "excel_process_plugin",
     "json_process_plugin",
     "local_files_cli_plugin",

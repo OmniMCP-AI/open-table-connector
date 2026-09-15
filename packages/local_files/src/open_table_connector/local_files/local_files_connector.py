@@ -10,9 +10,9 @@ from urllib.parse import quote
 import polars as pl
 from open_table_connector.contract import (
     PROVIDER_CSV,
-    PROVIDER_EXCEL,
     PROVIDER_JSON,
     PROVIDER_JSONL,
+    SCHEME_FILE,
     SCHEME_MD,
     ArrowReadResult,
     ArrowTableReader,
@@ -31,6 +31,8 @@ from open_table_connector.contract import (
     URIResolver,
 )
 from open_table_connector.contract.errors import ConnectorError, ConnectorErrorCode
+from open_table_connector.sdk.model import TableMode as SdkTableMode
+from open_table_connector.timeseries.capabilities import ALL_CAPABILITIES
 
 from .csv_connector import CsvConnector, CsvReadOptions, CsvTableReadRequest
 from .excel_connector import ExcelConnector, ExcelReadOptions, ExcelTableReadRequest
@@ -46,7 +48,6 @@ from .markdown_connector import MarkdownConnector, MarkdownReadOptions, Markdown
 from .receipts import make_receipt, options_identity, source_revision
 from .resolver import LocalFormat, LocalURIResolver, ResolvedLocalTable
 from .sdk_temporal import LocalFilesSdkConnectorMixin
-from open_table_connector.timeseries.capabilities import ALL_CAPABILITIES
 
 
 @dataclass(frozen=True)
@@ -99,7 +100,10 @@ class LocalFilesConnector(
         *CAPABILITY_MANIFEST.capabilities,
         *(CapabilityIdentity.parse(item) for item in ALL_CAPABILITIES),
     )
-    modes = CAPABILITY_MANIFEST.modes
+    # This object also implements the SDK connector surface. Keep its public
+    # mode declaration in the SDK vocabulary; the legacy manifest remains the
+    # source for CLI descriptor metadata.
+    modes = (SdkTableMode.SHEET_MODE,)
     local = True
     handles_paths = True
 
@@ -153,7 +157,7 @@ class LocalFilesConnector(
             return (
                 self._excel_connector,
                 ExcelTableReadRequest(
-                    self._explicit_uri(resolved.path, PROVIDER_EXCEL, sheet=resolved.sheet),
+                    self._explicit_uri(resolved.path, SCHEME_FILE, sheet=resolved.sheet),
                     resource_limits=request.resource_limits,
                     options=ExcelReadOptions(
                         sheet=request.options.sheet,
@@ -243,6 +247,16 @@ class LocalFilesConnector(
                 if mode is TableMode.BASE
                 else None
             ),
+        )
+
+    def formula_extension_for(self):
+        from open_table_connector.formulas import CompositeFormulaConnectorExtension
+
+        from .excel_formula import ExcelFormulaExtension
+
+        return CompositeFormulaConnectorExtension(
+            grid=ExcelFormulaExtension(self),
+            field=None,
         )
 
 

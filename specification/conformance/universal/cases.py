@@ -329,7 +329,7 @@ def _csv_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
 
 def _excel_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
     connector = ExcelConnector()
-    table_uri = TableURI(f"excel://{bundle.xlsx_path.as_posix()}#sheet=orders")
+    table_uri = TableURI(f"{bundle.xlsx_path.as_uri()}#sheet=orders")
 
     def make_read_request(resource_limits: ResourceLimits) -> ExcelTableReadRequest:
         return ExcelTableReadRequest(table_uri, resource_limits)
@@ -359,16 +359,6 @@ def _excel_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
             expected_mode=TableMode.SHEET,
             make_request=make_read_request,
             read_polars=lambda resource_limits: connector.read_polars(make_read_request(resource_limits)),
-        ),
-        "formula.grid.read": _binding(
-            otf.GRID_READ,
-            expected_mode=TableMode.SHEET,
-            invoke=connector.formula_extension_for,
-        ),
-        "formula.grid.set": _binding(
-            otf.GRID_SET,
-            expected_mode=TableMode.SHEET,
-            invoke=connector.formula_extension_for,
         ),
     }
 
@@ -994,7 +984,7 @@ def _maybe_case(_bundle: UniversalFixtureBundle) -> ConnectorCase:
             otf.FIELD_RECALCULATE,
         ),
         modes=frozenset({TableMode.BASE, TableMode.SHEET}),
-        schemes=frozenset({"https", "maybe"}),
+        schemes=frozenset({"https"}),
         table_uri=table_uri,
         make_read_request=make_base_read_request,
         make_inspect_request=make_base_read_request,

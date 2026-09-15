@@ -49,7 +49,7 @@ def test_recording_read_is_bounded_credential_isolated_and_connector_evaluated()
         if reference == "credential-ref"
         else {},
     )
-    target = TableURI("maybe://document/ticks")
+    target = TableURI("https://www.maybe.ai/docs/spreadsheets/d/document")
 
     for plan in operations():
         request = TemporalExecutionRequest(
@@ -85,7 +85,7 @@ def test_recording_read_rejects_provider_over_return() -> None:
     with pytest.raises(TemporalExtensionError) as error:
         executor.execute(
             TemporalExecutionRequest(
-                TableURI("maybe://document/ticks"), plan, None, "over-return", None
+                TableURI("https://www.maybe.ai/docs/spreadsheets/d/document"), plan, None, "over-return", None
             )
         )
 

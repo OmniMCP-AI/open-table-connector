@@ -29,7 +29,7 @@ class Process:
 
 def test_default_registry_lists_all_supported_adapter_schemes() -> None:
     schemes = {scheme for adapter in build_default_registry(env={}).list() for scheme in adapter.schemes}
-    assert {"gsheets", "https", "feishu", "feishu_bitable", "maybe", "file"}.issubset(schemes)
+    assert {"gsheets", "https", "feishu", "feishu_bitable", "file"}.issubset(schemes)
 
 
 def test_registry_dispatches_google_sheet_uri() -> None:
@@ -58,7 +58,7 @@ def test_duplicate_route_registration_is_rejected() -> None:
 def test_registry_reports_unsupported_capability_before_writing() -> None:
     registry = build_default_registry(env={})
     with pytest.raises(ConnectorError) as error:
-        registry.require_capability(parse_endpoint("maybe://doc/target"), "table.replace")
+        registry.require_capability(parse_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc/target"), "table.replace")
     assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
 
 
@@ -156,10 +156,10 @@ def test_maybe_sheet_sheet_capability_is_rejected_before_process_io() -> None:
     registry = build_default_registry(transports={"maybe_sheet": process})
 
     with pytest.raises(ConnectorError) as error:
-        registry.require_capability(parse_endpoint("maybe://doc/target"), "sheet.read")
+        registry.require_capability(parse_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc/target"), "sheet.read")
 
     assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
-    assert error.value.safe_details == {"scheme": "maybe", "capability": "sheet.read"}
+    assert error.value.safe_details == {"scheme": "https", "capability": "sheet.read"}
     assert process.calls == []
 
 
@@ -209,8 +209,11 @@ def test_registry_injects_maybe_sheet_process_transport() -> None:
     process = Process()
     registry = build_default_registry(transports={"maybe_sheet": process})
 
-    adapter = registry.connector_for(parse_endpoint("maybe://doc/R_orders"))
-    result = adapter.read(parse_endpoint("maybe://doc/R_orders"), CliOptions(token="cli-secret", limit=1))
+    adapter = registry.connector_for(parse_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc/R_orders"))
+    result = adapter.read(
+        parse_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc"),
+        CliOptions(token="cli-secret", limit=1, target="R_orders"),
+    )
 
     assert result.table.to_pylist() == [{"id": "1"}]
     assert process.calls[0] == (
@@ -258,14 +261,13 @@ def test_maybe_sheet_https_document_uses_explicit_target() -> None:
 @pytest.mark.parametrize(
     "uri",
     (
-        "maybe:///R_orders",
-        "maybe://",
-        "maybe://doc",
-        "maybe://doc/",
-        "maybe://doc/R_orders/extra",
+        "https://www.maybe.ai/docs/spreadsheets/d/doc?unknown=value",
+        "https://www.maybe.ai/docs/spreadsheets/d/doc?table_id=",
+        "https://www.maybe.ai/docs/spreadsheets/d/doc?table_id=tbl&extra=value",
+        "https://www.maybe.ai/docs/spreadsheets/d/doc#sheet=Orders",
     ),
 )
-def test_maybe_sheet_rejects_malformed_opaque_uris_before_process_io(uri) -> None:
+def test_maybe_sheet_rejects_invalid_https_urls_before_process_io(uri) -> None:
     process = Process()
     registry = build_default_registry(transports={"maybe_sheet": process})
     endpoint = parse_endpoint(uri)
@@ -274,7 +276,7 @@ def test_maybe_sheet_rejects_malformed_opaque_uris_before_process_io(uri) -> Non
         registry.connector_for(endpoint).read(endpoint, CliOptions(target="R_orders"))
 
     assert error.value.code is ConnectorErrorCode.INVALID_URI
-    assert error.value.safe_details == {"scheme": "maybe"}
+    assert error.value.safe_details == {"scheme": "https"}
     assert process.calls == []
 
 

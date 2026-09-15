@@ -1167,7 +1167,7 @@ def test_maybe_sheet_cli_adapter_passes_logical_credentials_per_request() -> Non
     adapter = maybe_sheet_cli_plugin().factory(context)
 
     result = adapter.read(
-        parse_adapter_endpoint("maybe://doc/R_orders"), AdapterOptions(limit=1)
+        parse_adapter_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc"), AdapterOptions(limit=1, target="R_orders")
     )
 
     assert result.table.to_pylist() == [{"id": "1"}]
@@ -1184,7 +1184,7 @@ def test_maybe_sheet_cli_adapter_rejects_bad_target_before_process_io() -> None:
     )
     adapter = maybe_sheet_cli_plugin().factory(context)
     with pytest.raises(ConnectorError):
-        adapter.read(parse_adapter_endpoint("maybe://doc/R/a"), AdapterOptions())
+        adapter.read(parse_adapter_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc"), AdapterOptions())
     assert process.calls == []
 ```
 
@@ -1504,7 +1504,7 @@ def test_cli_has_no_provider_owned_tokens() -> None:
     cli_source = read_python_tree(ROOT / "packages/cli/src/open_table_connector/cli")
     for token in PROVIDER_IDS:
         assert repr(token) not in cli_source
-    for token in (SCHEME_GSHEETS, SCHEME_FEISHU, SCHEME_MAYBE):
+    for token in (SCHEME_GSHEETS, SCHEME_FEISHU, SCHEME_HTTPS):
         assert repr(token) not in cli_source
 
 

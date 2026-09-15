@@ -1,12 +1,11 @@
 from pathlib import Path
 
 import pytest
-from openpyxl import Workbook, load_workbook
-
 from open_table_connector.cli.model import CliOptions, FormatName, parse_endpoint
 from open_table_connector.cli.pipeline import convert_endpoint, import_endpoint
 from open_table_connector.cli.registry import build_default_registry
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode, TableMode
+from openpyxl import Workbook, load_workbook
 
 
 def test_cli_lists_concrete_local_connector_types() -> None:
@@ -14,14 +13,14 @@ def test_cli_lists_concrete_local_connector_types() -> None:
 
     identities = {adapter.identity.connector_id for adapter in registry.list()}
 
-    assert {"local_files", "csv", "excel", "md"} <= identities
+    assert {"local_files", "csv", "md"} <= identities
+    assert "excel" not in identities
 
 
 @pytest.mark.parametrize(
     ("raw", "connector_id"),
     (
         ("csv:///tmp/orders.csv", "csv"),
-        ("excel:///tmp/orders.xlsx", "excel"),
         ("md:///tmp/orders.md", "md"),
     ),
 )
@@ -29,6 +28,13 @@ def test_registry_routes_explicit_local_scheme(raw: str, connector_id: str) -> N
     adapter = build_default_registry().connector_for(parse_endpoint(raw))
 
     assert adapter.identity.connector_id == connector_id
+
+
+def test_registry_rejects_explicit_excel_scheme() -> None:
+    with pytest.raises(ConnectorError) as error:
+        build_default_registry().connector_for(parse_endpoint("excel:///tmp/orders.xlsx"))
+
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
 
 
 def test_registry_routes_bare_path_to_local_files_facade(tmp_path: Path) -> None:
@@ -126,7 +132,7 @@ def test_local_adapter_retains_explicit_json_reading(
     assert result.receipt.connector.connector_id == "local_files"
 
 
-def test_excel_adapter_inspection_delegates_native_sheet_facts(tmp_path: Path) -> None:
+def test_file_adapter_inspection_delegates_native_excel_sheet_facts(tmp_path: Path) -> None:
     source = tmp_path / "book.xlsx"
     workbook = Workbook()
     orders = workbook.active
@@ -137,7 +143,7 @@ def test_excel_adapter_inspection_delegates_native_sheet_facts(tmp_path: Path) -
     refunds.append(["refund_id"])
     refunds.append(["r1"])
     workbook.save(source)
-    endpoint = parse_endpoint(f"excel://{source}")
+    endpoint = parse_endpoint(source.as_uri())
 
     inspection = build_default_registry().connector_for(endpoint).inspect(
         endpoint,
@@ -172,14 +178,14 @@ def test_cli_converts_csv_to_explicit_markdown_destination(tmp_path: Path) -> No
     assert destination.read_text(encoding="utf8").splitlines()[0].startswith("| id")
 
 
-def test_cli_converts_csv_to_explicit_excel_destination(tmp_path: Path) -> None:
+def test_cli_converts_csv_to_file_excel_destination(tmp_path: Path) -> None:
     source = tmp_path / "orders.csv"
     destination = tmp_path / "orders.xlsx"
     source.write_text("id\n1\n", encoding="utf8")
 
     summary = convert_endpoint(
         parse_endpoint(str(source)),
-        parse_endpoint(f"excel://{destination}"),
+        parse_endpoint(destination.as_uri()),
         build_default_registry(),
         CliOptions(),
     )

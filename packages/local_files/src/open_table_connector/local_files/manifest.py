@@ -8,7 +8,6 @@ from open_table_connector.contract import (
     CapabilityManifest,
     TableMode,
 )
-from open_table_connector.formulas import GRID_READ, GRID_SET
 
 from .identity import (
     CONNECTOR_IDENTITY,
@@ -47,6 +46,5 @@ CAPABILITY_MANIFEST = capability_manifest(
 
 EXCEL_CAPABILITY_MANIFEST = capability_manifest(
     connector=connector_identity(PROVIDER_EXCEL),
-    uri_schemes=(PROVIDER_EXCEL,),
-    extra_capabilities=(GRID_READ, GRID_SET),
+    uri_schemes=(SCHEME_FILE,),
 )

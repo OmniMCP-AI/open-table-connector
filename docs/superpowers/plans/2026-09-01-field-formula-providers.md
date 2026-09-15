@@ -348,7 +348,9 @@ git commit -m "feat: advertise conforming field formulas"
 Show:
 
 ~~~python
-table = client.open("maybe://document/R_orders").require_value()
+table = client.open(
+    "https://www.maybe.ai/docs/spreadsheets/d/document?table_id=tbl-orders"
+).require_value()
 margin = client.formulas(
     FieldFormulaTarget(table, FieldRef(name="gross_margin"))
 ).require_value()

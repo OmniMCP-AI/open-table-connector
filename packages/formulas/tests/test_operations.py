@@ -45,7 +45,7 @@ BOUND_GRID = BoundGridFormulaTarget(
     worksheet=WorksheetRef(worksheet_id="ws-1"),
 )
 BOUND_FIELD = BoundFieldFormulaTarget(
-    table={"uri": "maybe://orders"},
+    table={"uri": "https://www.maybe.ai/docs/spreadsheets/d/orders"},
     field=FieldRef(field_id="fld-1"),
 )
 GRID_DETAILS = FormulaCapabilityDetails(

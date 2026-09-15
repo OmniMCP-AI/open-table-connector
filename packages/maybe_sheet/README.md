@@ -16,7 +16,7 @@ import open_table_connector.otc as otc
 
 grid = client.formulas(
     otc.GridFormulaTarget(
-        "maybe://document/Model",
+        "https://www.maybe.ai/docs/spreadsheets/d/document",
         otc.WorksheetRef(name="Model"),
     )
 ).require_value()
@@ -52,7 +52,9 @@ and bind an existing formula field by stable field identity:
 ```python
 from open_table_connector.formulas import FieldFormulaTarget, FieldRef, FormulaExpression
 
-table = client.open("maybe://document/R_orders").require_value()
+table = client.open(
+    "https://www.maybe.ai/docs/spreadsheets/d/document?table_id=tbl-orders"
+).require_value()
 margin = client.formulas(
     FieldFormulaTarget(table, FieldRef(name="gross_margin"))
 ).require_value()

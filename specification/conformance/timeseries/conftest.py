@@ -6,13 +6,12 @@ from pathlib import Path
 
 import pyarrow as pa
 import pytest
-
-from open_table_connector.contract import TableURI
 from open_table_connector.conformance import (
     ManagedLifecycleCase,
     TemporalSemanticCase,
     load_temporal_cases,
 )
+from open_table_connector.contract import TableURI
 from open_table_connector.local_files import (
     CsvManagedTemporalStore,
     CsvTemporalExecutor,
@@ -33,6 +32,7 @@ from open_table_connector.timeseries import (
     TemporalExecutionRequest,
     temporal_descriptor_hash,
 )
+
 from specification.conformance.timeseries.support import (
     MemoryTemporalSource,
     RecordingTemporalProcess,
@@ -42,7 +42,6 @@ from specification.conformance.timeseries.support import (
     ticks_table,
     value_workbook,
 )
-
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[2] / "fixtures/timeseries/v1"
 
@@ -144,7 +143,7 @@ def provider_semantic_case(request, semantic_case, tmp_path):
         target = TableURI(f"excel://{path.as_posix()}#sheet=Ticks")
         executor = ExcelTemporalExecutor(descriptor(), worksheet="Ticks")
     else:
-        target = TableURI("maybe://document/ticks")
+        target = TableURI("https://www.maybe.ai/docs/spreadsheets/d/document")
         executor = MaybeSheetTemporalExecutor(RecordingTemporalProcess(), descriptor())
     execution = TemporalExecutionRequest(
         target,

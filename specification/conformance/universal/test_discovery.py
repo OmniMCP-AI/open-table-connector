@@ -68,11 +68,9 @@ _EXPECTED_METADATA = {
             ("table.inspect", "1.0"),
             ("table.read.arrow", "1.0"),
             ("table.read.polars", "1.0"),
-            ("formula.grid.read", "1.0"),
-            ("formula.grid.set", "1.0"),
         ),
         modes=("sheet",),
-        schemes=("excel",),
+        schemes=("file",),
     ),
     "md": _ExpectedConnectorMetadata(
         connector_id="md",
@@ -154,7 +152,7 @@ _EXPECTED_METADATA = {
             ("formula.field.recalculate", "1.0"),
         ),
         modes=("base", "sheet"),
-        schemes=("https", "maybe"),
+        schemes=("https",),
     ),
     "sqlite": _ExpectedConnectorMetadata(
         connector_id="sqlite",
@@ -241,7 +239,7 @@ def test_all_cases_bootstrap_fixtures_without_pytest_configure() -> None:
     ("raw", "expected_connector_id"),
     (
         ("csv:///tmp/orders.csv", "csv"),
-        ("excel:///tmp/orders.xlsx", "excel"),
+        ("file:///tmp/orders.xlsx", "local_files"),
         ("md:///tmp/orders.md", "md"),
     ),
 )
@@ -402,7 +400,6 @@ def test_formula_capability_advertisements_match_the_proven_grid_matrix() -> Non
             "formula.field.set",
             "formula.field.values.read",
         },
-        "excel": {"formula.grid.read", "formula.grid.set"},
     }
     for connector_case in all_cases():
         advertised = set(connector_case.capabilities)

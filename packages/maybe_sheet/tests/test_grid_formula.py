@@ -110,7 +110,7 @@ class RecordingProcess:
 
 
 def bound_target() -> otf.BoundGridFormulaTarget:
-    return otf.BoundGridFormulaTarget("maybe://doc", otf.WorksheetRef(worksheet_id="ws-model"))
+    return otf.BoundGridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(worksheet_id="ws-model"))
 
 
 def test_bind_grid_uses_exact_worksheet_identity_and_provider_details() -> None:
@@ -119,7 +119,7 @@ def test_bind_grid_uses_exact_worksheet_identity_and_provider_details() -> None:
 
     result = extension.bind_grid(
         otf.GridFormulaBindRequest(
-            otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model"))
+            otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model"))
         )
     )
 
@@ -162,7 +162,7 @@ def test_bind_grid_rejects_missing_ambiguous_or_non_sheet_targets(worksheets: li
     process = RecordingProcess([worksheet_list(worksheets=worksheets)])
     result = _extension(process).bind_grid(
         otf.GridFormulaBindRequest(
-            otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model"))
+            otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model"))
         )
     )
 
@@ -180,7 +180,7 @@ def test_read_grid_parses_formula_matrix_and_native_metadata_without_table_read(
     )
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
     result = extension.read_grid(otf.GridFormulaReadRequest(bound_target(), "A1:B2"))
 
@@ -233,7 +233,7 @@ def test_formula_value_receipt_does_not_fabricate_formula_observation_hash() -> 
     )
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
 
     result = extension.read_grid_values(otf.GridFormulaValueReadRequest(bound_target(), "A1"))
@@ -262,7 +262,7 @@ def test_read_grid_values_uses_formula_rendered_worksheet_and_marks_provider_dyn
     )
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
     result = extension.read_grid_values(otf.GridFormulaValueReadRequest(bound_target(), "A1:B2"))
 
@@ -302,7 +302,7 @@ def test_set_uses_verify_then_independent_formula_readback_and_top_left_copy_fil
     )
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
     result = extension.set_grid(
         otf.GridFormulaSetRequest(
@@ -378,7 +378,7 @@ def test_cross_mode_reference_is_opaque_and_never_binds_base_target() -> None:
     )
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
     result = extension.set_grid(
         otf.GridFormulaSetRequest(
@@ -428,7 +428,7 @@ def test_recalculate_only_sends_explicit_supported_scope_and_preserves_effective
     )
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
     request = otf.GridFormulaRecalculateRequest(bound_target(), scope, cell_range)
     result = extension.recalculate_grid(request)
@@ -481,7 +481,7 @@ def test_recalculate_rejects_mismatched_value_observation_target_or_range(
     )
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
 
     result = extension.recalculate_grid(
@@ -526,7 +526,7 @@ def test_recalculate_parses_non_range_value_matrix_against_reported_effective_ra
     )
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
 
     result = extension.recalculate_grid(
@@ -562,7 +562,7 @@ def test_recalculate_rejects_malformed_value_evidence_with_protocol_failure() ->
     )
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
 
     result = extension.recalculate_grid(
@@ -578,7 +578,7 @@ def test_recalculate_validates_range_shape_and_cell_limit_before_dispatch() -> N
     process = RecordingProcess([worksheet_list()])
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
 
     result = extension.recalculate_grid(
@@ -595,7 +595,7 @@ def test_recalculate_applies_caller_cell_limit_before_dispatch() -> None:
     process = RecordingProcess([worksheet_list()])
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
 
     result = extension.recalculate_grid(
@@ -637,7 +637,7 @@ def test_dispatched_recalculation_error_is_terminal_and_idempotency_is_not_reusa
     process = RecordingProcess([worksheet_list(), error_envelope("formula.recalculate", "provider_rejected")])
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
     request = otf.GridFormulaRecalculateRequest(
         bound_target(), otf.GridRecalculationScope.WORKBOOK, idempotency_key="recalculate-terminal"
@@ -674,7 +674,7 @@ def test_canonical_mbs_error_envelopes_map_to_typed_formula_errors(
     )
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
 
     result = extension.read_grid(otf.GridFormulaReadRequest(bound_target(), "A1"))
@@ -689,7 +689,7 @@ def test_dispatched_canonical_mutation_error_is_terminal_and_idempotency_is_not_
     process = RecordingProcess([worksheet_list(), error_envelope("formula.set", "provider_rejected")])
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
     request = otf.GridFormulaSetRequest(
         bound_target(), "A1", otf.FormulaExpression("=1", otf.MAYBE_SHEET_A1), idempotency_key="terminal"
@@ -710,7 +710,7 @@ def test_dispatched_mutation_parse_failure_is_terminal_and_idempotency_is_not_re
     process = RecordingProcess([worksheet_list(), response])
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
     request = otf.GridFormulaSetRequest(
         bound_target(), "A1", otf.FormulaExpression("=1", otf.MAYBE_SHEET_A1), idempotency_key="parse-terminal"
@@ -733,7 +733,7 @@ def test_dispatched_mutation_response_limit_is_terminal_and_idempotency_is_not_r
     )
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
     request = otf.GridFormulaSetRequest(
         bound_target(),
@@ -768,7 +768,7 @@ def test_formula_cells_must_be_in_requested_rectangle_and_well_formed() -> None:
     )
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
 
     result = extension.read_grid_values(otf.GridFormulaValueReadRequest(bound_target(), "A1:B1"))
@@ -795,7 +795,7 @@ def test_formula_value_matrix_over_return_fails_closed() -> None:
     )
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
 
     result = extension.read_grid_values(otf.GridFormulaValueReadRequest(bound_target(), "A1:B1"))
@@ -846,7 +846,7 @@ def test_copy_fill_preserves_literal_structured_and_external_reference_semantics
 
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
     result = extension.set_grid(
         otf.GridFormulaSetRequest(
@@ -862,7 +862,7 @@ def test_process_arguments_and_envelopes_never_expose_credentials_and_extra_keys
     extension = _extension(process, token="super-secret")
     extension.bind_grid(
         otf.GridFormulaBindRequest(
-            otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model"))
+            otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model"))
         )
     )
     assert "super-secret" not in repr([call[0] for call in process.calls])
@@ -873,7 +873,7 @@ def test_process_arguments_and_envelopes_never_expose_credentials_and_extra_keys
     malformed = RecordingProcess([dict(worksheet_list(), extra="not-allowed")])
     result = _extension(malformed).bind_grid(
         otf.GridFormulaBindRequest(
-            otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model"))
+            otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model"))
         )
     )
     assert result.outcome is otf.FormulaOutcome.FAILED
@@ -885,7 +885,7 @@ def test_formula_reads_apply_caller_response_limit_before_parsing() -> None:
     process = RecordingProcess([worksheet_list(), formula_matrix([["=A1"]], padding="x" * 200)])
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
     result = extension.read_grid(
         otf.GridFormulaReadRequest(
@@ -916,7 +916,7 @@ def test_pre_dispatch_timeout_is_retriable_but_lost_acknowledgement_is_terminal(
     process = TimeoutProcess([])
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
     first = extension.set_grid(request)
     second = extension.set_grid(request)
@@ -934,7 +934,7 @@ def test_pre_dispatch_timeout_is_retriable_but_lost_acknowledgement_is_terminal(
     process = LostAckProcess([])
     extension = _extension(process)
     assert extension.bind_grid(
-        otf.GridFormulaBindRequest(otf.GridFormulaTarget("maybe://doc", otf.WorksheetRef(name="Model")))
+        otf.GridFormulaBindRequest(otf.GridFormulaTarget("https://www.maybe.ai/docs/spreadsheets/d/doc", otf.WorksheetRef(name="Model")))
     ).outcome is otf.FormulaOutcome.SUCCEEDED
     first = extension.set_grid(request)
     second = extension.set_grid(request)

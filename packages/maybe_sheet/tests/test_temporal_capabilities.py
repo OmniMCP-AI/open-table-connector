@@ -178,7 +178,7 @@ def test_recording_managed_store_uses_only_proven_receipts(tmp_path: Path) -> No
     data, reference = _artifact(tmp_path / "artifacts")
     process = LifecycleProcess(data)
     store = MaybeSheetManagedTemporalStore(process, tmp_path / "artifacts", descriptor())
-    target = TableURI("maybe://document/ticks")
+    target = TableURI("https://www.maybe.ai/docs/spreadsheets/d/document")
     staged = store.stage(
         ManagedStageRequest(
             "mbs-stage",

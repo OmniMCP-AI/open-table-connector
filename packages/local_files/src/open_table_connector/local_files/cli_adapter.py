@@ -19,13 +19,11 @@ from open_table_connector.contract import (
     CAPABILITY_TABLE_READ_ARROW,
     CAPABILITY_TABLE_WRITE,
     PROVIDER_CSV,
-    PROVIDER_EXCEL,
     PROVIDER_JSON,
     PROVIDER_JSONL,
     PROVIDER_LOCAL_FILES,
     SCHEME_FILE,
     SCHEME_MD,
-    SCHEME_XLSX,
     AdapterEndpoint,
     AdapterFormat,
     AdapterOptions,
@@ -51,7 +49,6 @@ from open_table_connector.contract.fingerprints import (
 )
 
 from .csv_connector import CsvConnector, CsvReadOptions, CsvTableReadRequest
-from .excel_connector import ExcelConnector, ExcelReadOptions, ExcelTableReadRequest
 from .local_files_connector import (
     LocalFilesConnector,
     LocalReadOptions,
@@ -65,7 +62,6 @@ FormatName = AdapterFormat
 _MARKDOWN_SUFFIXES = {".table", ".md", ".markdown"}
 _LOCAL_FORMAT_SCHEMES = {
     PROVIDER_CSV: FormatName.CSV,
-    PROVIDER_EXCEL: FormatName.EXCEL,
     PROVIDER_JSON: FormatName.JSON,
     PROVIDER_JSONL: FormatName.JSONL,
     SCHEME_MD: FormatName.TABLE,
@@ -490,41 +486,6 @@ class CsvCliAdapter(_LocalCliAdapter):
         )
 
 
-class ExcelCliAdapter(CsvCliAdapter):
-    identity = ConnectorIdentity(PROVIDER_EXCEL, "0.1.0", "1.0")
-    schemes = (PROVIDER_EXCEL, SCHEME_XLSX)
-    capabilities = tuple(ExcelConnector.manifest.capabilities)
-
-    def _request(self, endpoint: Endpoint, options: AdapterOptions):
-        return ExcelTableReadRequest(
-            _connector_uri(endpoint),
-            resource_limits=_limits(options),
-            options=ExcelReadOptions(sheet=options.sheet),
-        )
-
-    def inspect(self, endpoint: Endpoint, options: AdapterOptions) -> TableInspection:
-        return self.connector.inspect(self._request(endpoint, options))
-
-    def write(
-        self, endpoint: Endpoint, table: pa.Table, options: AdapterOptions
-    ) -> TableWriteResult:
-        write_local(table, endpoint, FormatName.EXCEL, sheet=options.sheet)
-        return TableWriteResult(
-            _local_receipt(endpoint, table, _LOCAL_WRITE_CAPABILITY, connector=self.identity),
-            table.num_rows,
-        )
-
-    def formula_extension_for(self):
-        from open_table_connector.formulas import CompositeFormulaConnectorExtension
-
-        from .excel_formula import ExcelFormulaExtension
-
-        return CompositeFormulaConnectorExtension(
-            grid=ExcelFormulaExtension(self.connector),
-            field=None,
-        )
-
-
 class MarkdownCliAdapter(CsvCliAdapter):
     identity = ConnectorIdentity(SCHEME_MD, "0.1.0", "1.0")
     schemes = (SCHEME_MD,)
@@ -557,6 +518,16 @@ class LocalFilesCliAdapter(_LocalCliAdapter):
         _LOCAL_READ_CAPABILITY,
         CapabilityIdentity("table.read.polars", "1.0"),
     )
+
+    def formula_extension_for(self):
+        from open_table_connector.formulas import CompositeFormulaConnectorExtension
+
+        from .excel_formula import ExcelFormulaExtension
+
+        return CompositeFormulaConnectorExtension(
+            grid=ExcelFormulaExtension(self.connector),
+            field=None,
+        )
 
     def _format(
         self, endpoint: Endpoint, options: AdapterOptions, *, output: bool = False
@@ -632,19 +603,6 @@ def csv_cli_plugin() -> PluginDescriptor:
     )
 
 
-def excel_cli_plugin() -> PluginDescriptor:
-    return PluginDescriptor(
-        PROVIDER_EXCEL,
-        ExcelCliAdapter.identity,
-        ExcelCliAdapter.schemes,
-        lambda context: _context_factory(ExcelCliAdapter, ExcelConnector, context),
-        capabilities=ExcelCliAdapter.capabilities,
-        modes=ExcelCliAdapter.modes,
-        local=True,
-        handles_paths=False,
-    )
-
-
 def markdown_cli_plugin() -> PluginDescriptor:
     return PluginDescriptor(
         SCHEME_MD,
@@ -673,11 +631,9 @@ def local_files_cli_plugin() -> PluginDescriptor:
 
 __all__ = [
     "CsvCliAdapter",
-    "ExcelCliAdapter",
     "LocalFilesCliAdapter",
     "MarkdownCliAdapter",
     "csv_cli_plugin",
-    "excel_cli_plugin",
     "infer_format",
     "local_files_cli_plugin",
     "markdown_cli_plugin",

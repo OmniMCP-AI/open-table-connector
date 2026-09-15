@@ -67,7 +67,7 @@ Canonical conversion and import examples:
 otc convert --from orders.csv --to orders.json
 otc convert --from orders.csv --to - --output-format jsonl
 otc import --from orders.csv --to gsheets://SPREADSHEET/Orders --if-exists replace
-otc import --from gsheets://SPREADSHEET/Orders --to maybe://DOCUMENT/TARGET --if-exists append
+otc import --from gsheets://SPREADSHEET/Orders --to https://www.maybe.ai/docs/spreadsheets/d/DOCUMENT --target TARGET --if-exists append
 ```
 
 An import emits one completion event containing source and destination
@@ -152,10 +152,9 @@ process JSON response as a neutral receipt. The CLI can therefore route Google
 Sheets reads to MaybeSheet writes without knowing MaybeSheet’s subprocess
 details.
 
-The CLI-facing MaybeSheet destination form is `maybe://DOCUMENT/TARGET`; the
-registry adapter converts the document and target parts into the existing
-MaybeSheet request fields. A real MaybeSheet HTTPS URI may also be accepted
-when the target is supplied with `--target`.
+The CLI-facing MaybeSheet destination form is the HTTPS document URL with
+`--target`; the registry adapter converts those values into the existing
+MaybeSheet request fields.
 
 MaybeSheet `replace` semantics must be rejected unless the process protocol
 provides an explicit replace operation; `append` and `error` must have

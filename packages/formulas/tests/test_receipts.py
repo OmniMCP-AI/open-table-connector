@@ -119,7 +119,7 @@ def test_formula_receipts_require_calculation_metadata_for_value_evidence() -> N
 
     with pytest.raises(ValueError, match="provider_dynamic"):
         FormulaReceiptDetails.for_field_values_read(
-            target="maybe://orders",
+            target="https://www.maybe.ai/docs/spreadsheets/d/orders",
             selector="fld-1",
             capability="formula.field.values.read/1.0",
             dialect="maybe-base",
@@ -136,7 +136,7 @@ def test_formula_receipts_require_calculation_metadata_for_value_evidence() -> N
 def test_formula_set_receipts_require_readback_hashes_and_forbid_value_verification_claims() -> None:
     with pytest.raises(ValueError, match="expression_sha256"):
         FormulaReceiptDetails.for_field_set(
-            target="maybe://orders",
+            target="https://www.maybe.ai/docs/spreadsheets/d/orders",
             selector="fld-1",
             capability="formula.field.set/1.0",
             dialect="maybe-base",

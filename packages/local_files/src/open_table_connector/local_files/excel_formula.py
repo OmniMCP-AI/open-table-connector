@@ -17,9 +17,14 @@ from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
 import open_table_connector.formulas as otf
-from open_table_connector.contract import PROVIDER_EXCEL, ConnectorError, ResolveContext
+from open_table_connector.contract import (
+    PROVIDER_EXCEL,
+    SCHEME_FILE,
+    ConnectorError,
+    ResolveContext,
+)
 
-from .excel_connector import ExcelConnector
+from .local_files_connector import LocalFilesConnector
 
 _MAX_CELLS = 100_000
 _MAX_EXPRESSION_BYTES = 8_192
@@ -103,10 +108,10 @@ def _unknown(message: str) -> otf.FormulaExtensionResult[Any]:
 
 
 class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
-    """Formula adapter for direct ``excel://`` targets only."""
+    """Formula adapter for local ``file://`` workbook targets."""
 
-    def __init__(self, connector: ExcelConnector | None = None) -> None:
-        self._connector = connector or ExcelConnector()
+    def __init__(self, connector: Any | None = None) -> None:
+        self._connector = connector or LocalFilesConnector()
         self._bindings: dict[tuple[str, str], str] = {}
         self._ledger = otf.FormulaIdempotencyLedger(limit=_DEFAULT_LEDGER_LIMIT)
         self._completed_limit = _COMPLETED_CACHE_LIMIT
@@ -408,9 +413,10 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
         )
 
     def _resolve_path(self, uri) -> tuple[Path, str | None]:
-        if uri.scheme != PROVIDER_EXCEL:
+        if uri.scheme != SCHEME_FILE:
             raise _TargetFailure(
-                otf.FormulaErrorCode.INVALID_TARGET, "Excel Formula requires an excel:// target"
+                otf.FormulaErrorCode.INVALID_TARGET,
+                "Excel Formula requires a file:// target",
             )
         try:
             resolved = self._connector.resolve(uri, ResolveContext())
@@ -423,6 +429,11 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
             raise _TargetFailure(
                 otf.FormulaErrorCode.INVALID_TARGET,
                 "Excel Formula target must have an .xlsx suffix",
+            )
+        if getattr(resolved.resource.format, "value", None) != PROVIDER_EXCEL:
+            raise _TargetFailure(
+                otf.FormulaErrorCode.INVALID_TARGET,
+                "Excel Formula target must resolve to an .xlsx workbook",
             )
         return path, resolved.resource.sheet
 

@@ -3,19 +3,23 @@ from __future__ import annotations
 from pathlib import Path
 
 import pyarrow as pa
+import pytest
 from open_table_connector.contract import (
     CREDENTIAL_ACCESS_TOKEN,
     HOST_MAYBE,
     OPTION_TIMEOUT_SECONDS,
     PROVIDER_MAYBE_SHEET,
-    SCHEME_MAYBE,
+    SCHEME_HTTPS,
     SETTING_BINARY,
     AdapterOptions,
+    ConnectorError,
+    ConnectorErrorCode,
     ProviderConfig,
     ProviderFactoryContext,
     parse_adapter_endpoint,
 )
 from open_table_connector.maybe_sheet import MaybeSheetCliAdapter, maybe_sheet_cli_plugin
+from open_table_connector.maybe_sheet.connector import MaybeSheetConnector
 
 
 class RecordingProcess:
@@ -46,18 +50,32 @@ def test_maybe_plugin_factory_scopes_binary_credentials_and_timeout() -> None:
     )
 
     assert isinstance(adapter, MaybeSheetCliAdapter)
-    result = adapter.read(parse_adapter_endpoint("maybe://doc/table"), AdapterOptions())
+    result = adapter.read(
+        parse_adapter_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc"),
+        AdapterOptions(target="table"),
+    )
     assert result.table.column_names == ["name"]
     assert process.calls[0][0][:2] == ("mbs", "db-table")
     assert process.calls[0][1]["credentials"] == {CREDENTIAL_ACCESS_TOKEN: "access-secret"}
     assert process.calls[0][1]["timeout"] == 9
 
 
-def test_maybe_plugin_descriptor_declares_document_route() -> None:
+def test_maybe_plugin_descriptor_declares_https_document_route_only() -> None:
     descriptor = maybe_sheet_cli_plugin()
     assert descriptor.name == PROVIDER_MAYBE_SHEET
-    assert descriptor.schemes == (SCHEME_MAYBE, "https")
+    assert descriptor.schemes == (SCHEME_HTTPS,)
     assert descriptor.hosts == (HOST_MAYBE,)
+
+
+def test_maybe_adapter_rejects_non_https_uri_scheme() -> None:
+    process = RecordingProcess()
+    adapter = MaybeSheetCliAdapter(MaybeSheetConnector(process), {}, 13)
+
+    with pytest.raises(ConnectorError) as error:
+        adapter.read(parse_adapter_endpoint("gsheets://doc/table"), AdapterOptions())
+
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+    assert process.calls == []
 
 
 def test_maybe_read_uses_table_id_for_stable_table_identifier() -> None:
@@ -69,7 +87,7 @@ def test_maybe_read_uses_table_id_for_stable_table_identifier() -> None:
             transports={PROVIDER_MAYBE_SHEET: process},
         )
     )
-    adapter.read(parse_adapter_endpoint("maybe://doc?table_id=tbl_orders"), AdapterOptions())
+    adapter.read(parse_adapter_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc?table_id=tbl_orders"), AdapterOptions())
     argv = process.calls[0][0]
     assert argv == (
         "mbs",
@@ -92,9 +110,9 @@ def test_maybe_write_uses_table_insert_and_scoped_credentials() -> None:
         )
     )
     adapter.write(
-        parse_adapter_endpoint("maybe://doc/table"),
+        parse_adapter_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc"),
         pa.table({"name": ["Ada"]}),
-        AdapterOptions(if_exists="append"),
+        AdapterOptions(if_exists="append", target="table"),
     )
     argv = process.calls[0][0]
     assert argv[:7] == (

@@ -241,9 +241,11 @@ def test_client_from_config_defaults_maybe_credentials_from_environment() -> Non
         transports={"maybe_sheet": process},
     )
 
-    table = client.open("maybe://doc/R_orders").require_value()
+    table = client.open(
+        "https://www.maybe.ai/docs/spreadsheets/d/doc?table_id=tbl-orders"
+    ).require_value()
 
-    assert table.uri.value == "maybe://doc/R_orders"
+    assert table.uri.value == "https://www.maybe.ai/docs/spreadsheets/d/doc?table_id=tbl-orders"
     assert process.calls[0][1] == {"access_token": "maybe-secret"}
 
 
@@ -257,9 +259,9 @@ def test_client_open_base_mode_table_with_stable_table_id() -> None:
         transports={"maybe_sheet": process},
     )
 
-    table = client.open(otc.BaseModeTableAddress("maybe://doc", "tbl-orders")).require_value()
+    table = client.open(otc.BaseModeTableAddress("https://www.maybe.ai/docs/spreadsheets/d/doc", "tbl-orders")).require_value()
 
-    assert table.uri.value == "maybe://doc?table_id=tbl-orders"
+    assert table.uri.value == "https://www.maybe.ai/docs/spreadsheets/d/doc?table_id=tbl-orders"
     assert process.calls[0][1] == {"access_token": "maybe-secret"}
     assert process.calls[0][0][:7] == (
         "mbs",

@@ -11,15 +11,13 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Protocol
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 
 import polars as pl
 import pyarrow as pa
 from open_table_connector.contract import (
-    HOST_MAYBE,
     PROVIDER_JSON,
     SCHEME_HTTPS,
-    SCHEME_MAYBE,
     BaseConvention,
     ConnectorError,
     ConnectorErrorCode,
@@ -67,6 +65,8 @@ class MaybeSheetReadRequest:
     target_is_id: bool = False
 
     def __post_init__(self) -> None:
+        if self.uri.scheme != SCHEME_HTTPS:
+            raise ValueError("MaybeSheet URI must use an HTTPS URL")
         if self.mode not in {TableMode.BASE, TableMode.SHEET}:
             raise ValueError("MaybeSheet mode must be base or sheet")
         if not self.target.strip():
@@ -121,12 +121,16 @@ def _payload_table(payload: Mapping[str, Any]) -> pa.Table:
 
 
 def _mbs_target(uri: TableURI) -> str:
-    """Translate OTC's opaque maybe:// identity to mbs' canonical HTTP target."""
+    """Return the Maybe document URL without OTC table selectors."""
 
-    if uri.scheme != SCHEME_MAYBE:
-        return uri.value
-    document_id = urlsplit(uri.value).netloc
-    return f"{SCHEME_HTTPS}://{HOST_MAYBE}/docs/spreadsheets/d/{quote(document_id, safe='')}"
+    if uri.scheme != SCHEME_HTTPS:
+        raise ConnectorError(
+            ConnectorErrorCode.INVALID_URI,
+            "MaybeSheet targets must use an HTTPS URL",
+            {"scheme": uri.scheme},
+        )
+    parsed = urlsplit(uri.value)
+    return f"{SCHEME_HTTPS}://{parsed.netloc}{parsed.path}"
 
 
 class MaybeSheetConnector:

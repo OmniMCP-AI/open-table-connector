@@ -15,6 +15,7 @@ from open_table_connector.contract import (
     PROVIDER_FEISHU_BITABLE,
     PROVIDER_GOOGLE_SHEETS,
     PROVIDER_MAYBE_SHEET,
+    SCHEME_FILE,
     SCHEME_HTTPS,
     ConnectorAdapter,
     PluginDescriptor,
@@ -288,9 +289,27 @@ class ConnectorRegistry:
         self._connectors.clear()
 
     def _plugin_for(self, target: str | object) -> ConfiguredPlugin:
-        endpoint = parse_adapter_endpoint(
-            target if isinstance(target, str) else self._route_key_value(target)
-        )
+        route = target if isinstance(target, str) else self._route_key_value(target)
+        parsed_route = urlsplit(route)
+        # ``file://`` is also the public route for worksheet-qualified local
+        # workbooks. The legacy endpoint parser intentionally rejects
+        # fragments, so validate the worksheet selector here and route by the
+        # underlying file path while preserving the original URI for the
+        # connector.
+        if parsed_route.scheme == SCHEME_FILE and parsed_route.fragment:
+            from urllib.parse import parse_qsl, unquote
+
+            selectors = parse_qsl(parsed_route.fragment, keep_blank_values=True)
+            if (
+                parsed_route.query
+                or not unquote(parsed_route.path).casefold().endswith(".xlsx")
+                or len(selectors) != 1
+                or selectors[0][0] != "sheet"
+                or not selectors[0][1]
+            ):
+                raise _registry_error(ErrorCode.INVALID_TARGET, "invalid Excel worksheet selector")
+            route = parsed_route._replace(fragment="").geturl()
+        endpoint = parse_adapter_endpoint(route)
         if endpoint.is_stdio or endpoint.path is not None:
             if self._path_connector_id is None:
                 raise _registry_error(

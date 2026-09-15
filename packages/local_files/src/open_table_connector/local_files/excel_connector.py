@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import polars as pl
 from open_table_connector.contract import (
     PROVIDER_EXCEL,
+    SCHEME_FILE,
     ArrowReadResult,
     ArrowTableReader,
     InspectRequest,
@@ -21,7 +22,6 @@ from open_table_connector.contract import (
     TableURI,
     URIResolver,
 )
-from open_table_connector.formulas import CompositeFormulaConnectorExtension
 
 from .excel_reader import read_excel_arrow
 from .identity import (
@@ -60,19 +60,11 @@ class ExcelConnector(URIResolver, TableInspector, ArrowTableReader, PolarsTableR
     identity = EXCEL_CONNECTOR_IDENTITY
     manifest = EXCEL_CAPABILITY_MANIFEST
 
-    def formula_extension_for(self):
-        from .excel_formula import ExcelFormulaExtension
-
-        return CompositeFormulaConnectorExtension(
-            grid=ExcelFormulaExtension(self),
-            field=None,
-        )
-
     def resolve(self, uri: TableURI, context: ResolveContext) -> ResolvedTable:
         path, sheet = _resolve_explicit_local_path(
             uri,
             context,
-            scheme=PROVIDER_EXCEL,
+            scheme=SCHEME_FILE,
             expected_format=LocalFormat.EXCEL,
             allow_sheet_fragment=True,
         )

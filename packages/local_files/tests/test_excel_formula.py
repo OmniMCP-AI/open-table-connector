@@ -5,6 +5,7 @@ from zipfile import ZipFile
 
 import open_table_connector.formulas as otf
 import open_table_connector.local_files.excel_formula as excel_formula_module
+import open_table_connector.sdk as otc
 import pytest
 from open_table_connector.contract import (
     ConnectorError,
@@ -14,11 +15,16 @@ from open_table_connector.contract import (
     ResolveContext,
     TableURI,
 )
-from open_table_connector.local_files import ExcelConnector, ExcelFormulaExtension
+from open_table_connector.local_files import (
+    ExcelConnector,
+    ExcelFormulaExtension,
+    LocalFilesConnector,
+)
 from open_table_connector.local_files.cli_adapter import (
     CsvCliAdapter,
-    ExcelCliAdapter,
+    LocalFilesCliAdapter,
 )
+from open_table_connector.sdk import Client, ConnectorRegistry
 from openpyxl import Workbook, load_workbook
 from openpyxl.comments import Comment
 from openpyxl.styles import Font
@@ -33,7 +39,7 @@ def _target(
 ) -> otf.GridFormulaTarget:
     fragment = f"#sheet={sheet}" if include_fragment else ""
     return otf.GridFormulaTarget(
-        f"excel://{path.as_posix()}{fragment}",
+        f"file://{path.as_posix()}{fragment}",
         otf.WorksheetRef(name=sheet),
     )
 
@@ -83,7 +89,7 @@ def _bound(
 
 def test_read_grid_uses_native_formula_cells_and_exact_worksheet_binding(tmp_path: Path) -> None:
     path = _workbook(tmp_path / "model.xlsx")
-    extension = ExcelFormulaExtension(ExcelConnector())
+    extension = ExcelFormulaExtension(LocalFilesConnector())
 
     binding_result = extension.bind_grid(otf.GridFormulaBindRequest(_target(path)))
 
@@ -119,12 +125,12 @@ def test_bind_grid_rejects_conflicting_or_missing_worksheet_before_mutation(
     tmp_path: Path, uri_sheet: str, reference: otf.WorksheetRef
 ) -> None:
     path = _workbook(tmp_path / "model.xlsx")
-    extension = ExcelFormulaExtension(ExcelConnector())
+    extension = ExcelFormulaExtension(LocalFilesConnector())
 
     result = extension.bind_grid(
         otf.GridFormulaBindRequest(
             otf.GridFormulaTarget(
-                f"excel://{path.as_posix()}#sheet={uri_sheet}",
+                f"file://{path.as_posix()}#sheet={uri_sheet}",
                 reference,
             )
         )
@@ -141,7 +147,7 @@ def test_set_translates_top_left_formula_and_preserves_unrelated_workbook_object
     path = _workbook(tmp_path / "model.xlsx")
     before_bytes = path.read_bytes()
     before_zip_names = set(ZipFile(path).namelist())
-    extension = ExcelFormulaExtension(ExcelConnector())
+    extension = ExcelFormulaExtension(LocalFilesConnector())
     target = _bound(extension, path)
     before = extension.read_grid(otf.GridFormulaReadRequest(target, "A1:D1"))
     assert before.value is not None
@@ -196,7 +202,7 @@ def test_set_normalizes_absolute_selector_origin_without_changing_formula_absolu
     tmp_path: Path,
 ) -> None:
     path = _workbook(tmp_path / "absolute-selector.xlsx")
-    extension = ExcelFormulaExtension(ExcelConnector())
+    extension = ExcelFormulaExtension(LocalFilesConnector())
     target = _bound(extension, path)
 
     result = extension.set_grid(
@@ -224,7 +230,7 @@ def test_set_normalizes_absolute_selector_origin_without_changing_formula_absolu
 
 def test_set_rejects_stale_revision_without_mutating_bytes(tmp_path: Path) -> None:
     path = _workbook(tmp_path / "model.xlsx")
-    extension = ExcelFormulaExtension(ExcelConnector())
+    extension = ExcelFormulaExtension(LocalFilesConnector())
     target = _bound(extension, path)
     before_bytes = path.read_bytes()
 
@@ -247,7 +253,7 @@ def test_set_rejects_loss_of_unsupported_zip_parts_before_publication(tmp_path: 
     path = _workbook(tmp_path / "custom.xlsx")
     with ZipFile(path, "a") as archive:
         archive.writestr("custom/unsupported.xml", b"<custom />")
-    extension = ExcelFormulaExtension(ExcelConnector())
+    extension = ExcelFormulaExtension(LocalFilesConnector())
     target = _bound(extension, path)
     before = extension.read_grid(otf.GridFormulaReadRequest(target, "B1"))
     assert before.value is not None
@@ -271,9 +277,9 @@ def test_set_rejects_loss_of_unsupported_zip_parts_before_publication(tmp_path: 
 def test_limits_are_rejected_before_workbook_parse_and_after_formula_parse(tmp_path: Path) -> None:
     invalid = tmp_path / "invalid.xlsx"
     invalid.write_bytes(b"PK\x03\x04not a workbook")
-    extension = ExcelFormulaExtension(ExcelConnector())
+    extension = ExcelFormulaExtension(LocalFilesConnector())
     target = otf.BoundGridFormulaTarget(
-        f"excel://{invalid.as_posix()}#sheet=Model",
+        f"file://{invalid.as_posix()}#sheet=Model",
         otf.WorksheetRef(worksheet_id="Model"),
     )
 
@@ -295,11 +301,11 @@ def test_limits_are_rejected_before_workbook_parse_and_after_formula_parse(tmp_p
     assert too_long.error.code is otf.FormulaErrorCode.RESOURCE_LIMIT
 
 
-def test_direct_excel_rejects_symlink_and_non_xlsx_payloads(tmp_path: Path) -> None:
+def test_local_excel_rejects_symlink_and_non_xlsx_payloads(tmp_path: Path) -> None:
     source = _workbook(tmp_path / "model.xlsx")
     link = tmp_path / "link.xlsx"
     link.symlink_to(source)
-    extension = ExcelFormulaExtension(ExcelConnector())
+    extension = ExcelFormulaExtension(LocalFilesConnector())
 
     result = extension.bind_grid(otf.GridFormulaBindRequest(_target(link)))
     assert result.outcome is otf.FormulaOutcome.REJECTED
@@ -309,15 +315,15 @@ def test_direct_excel_rejects_symlink_and_non_xlsx_payloads(tmp_path: Path) -> N
     renamed = tmp_path / "renamed.xlsx"
     renamed.write_text("id,value\n1,2\n", encoding="utf-8")
     with pytest.raises(ConnectorError) as raised:
-        ExcelConnector().resolve(TableURI(f"excel://{renamed}"), ResolveContext())
+        ExcelConnector().resolve(TableURI(renamed.as_uri()), ResolveContext())
     assert raised.value.code is ConnectorErrorCode.INVALID_URI
 
 
-def test_excel_has_no_calculated_value_or_recalculation_path_and_adapter_forwards_only_excel(
+def test_local_excel_has_no_calculated_value_or_recalculation_path(
     tmp_path: Path,
 ) -> None:
     path = _workbook(tmp_path / "model.xlsx")
-    extension = ExcelFormulaExtension(ExcelConnector())
+    extension = ExcelFormulaExtension(LocalFilesConnector())
     target = _bound(extension, path)
 
     values = extension.read_grid_values(otf.GridFormulaValueReadRequest(target, "A1"))
@@ -332,13 +338,53 @@ def test_excel_has_no_calculated_value_or_recalculation_path_and_adapter_forward
     assert recalculate.error is not None
     assert recalculate.error.code is otf.FormulaErrorCode.UNSUPPORTED_CAPABILITY
     assert not hasattr(CsvCliAdapter, "formula_extension_for")
-    adapter = ExcelCliAdapter(ExcelConnector(), ProviderFactoryContext(ProviderConfig("excel")))
-    assert isinstance(adapter.formula_extension_for(), otf.CompositeFormulaConnectorExtension)
+    local_adapter = LocalFilesCliAdapter(
+        LocalFilesConnector(), ProviderFactoryContext(ProviderConfig("local_files"))
+    )
+    assert isinstance(local_adapter.formula_extension_for(), otf.CompositeFormulaConnectorExtension)
+
+
+def test_explicit_excel_connector_does_not_expose_formula_surface() -> None:
+    assert not hasattr(ExcelConnector, "formula_extension_for")
+
+
+def test_file_uri_formula_surface_writes_text_but_does_not_calculate_cached_values(
+    tmp_path: Path,
+) -> None:
+    path = _workbook(tmp_path / "file-target.xlsx")
+    client = Client(registry=ConnectorRegistry([LocalFilesConnector()]))
+    try:
+        target = otf.GridFormulaTarget(
+            path.as_uri() + "#sheet=Model",
+            otf.WorksheetRef(name="Model"),
+        )
+        view = client.formulas(target).require_value()
+
+        result = view.set(
+            "B2",
+            otf.FormulaExpression(
+                '=SUMIFS($D$1:$D$1,$A$1:$A$1,"value")',
+                otf.EXCEL_A1,
+            ),
+        )
+
+        assert result.outcome is otc.Outcome.SUCCEEDED
+        assert result.verification is otc.VerificationState.PASSED
+        formulas = load_workbook(path, data_only=False)
+        values = load_workbook(path, data_only=True)
+        try:
+            assert formulas["Model"]["B2"].value == '=SUMIFS($D$1:$D$1,$A$1:$A$1,"value")'
+            assert values["Model"]["B2"].value is None
+        finally:
+            formulas.close()
+            values.close()
+    finally:
+        client.close()
 
 
 def test_same_idempotency_key_replays_without_second_publication(tmp_path: Path) -> None:
     path = _workbook(tmp_path / "model.xlsx")
-    extension = ExcelFormulaExtension(ExcelConnector())
+    extension = ExcelFormulaExtension(LocalFilesConnector())
     target = _bound(extension, path)
     before = extension.read_grid(otf.GridFormulaReadRequest(target, "A1"))
     assert before.value is not None
@@ -361,7 +407,7 @@ def test_same_idempotency_key_replays_without_second_publication(tmp_path: Path)
 
 def test_same_idempotency_key_is_bound_to_the_worksheet(tmp_path: Path) -> None:
     path = _workbook(tmp_path / "worksheet-binding.xlsx")
-    extension = ExcelFormulaExtension(ExcelConnector())
+    extension = ExcelFormulaExtension(LocalFilesConnector())
     model = _bound(extension, path, include_fragment=False)
     last = _bound(extension, path, "Last", include_fragment=False)
     request = otf.GridFormulaSetRequest(
@@ -397,7 +443,7 @@ def test_target_failure_after_ledger_begin_allows_retry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = _workbook(tmp_path / "retry-target-failure.xlsx")
-    extension = ExcelFormulaExtension(ExcelConnector())
+    extension = ExcelFormulaExtension(LocalFilesConnector())
     target = _bound(extension, path)
     original_validate_zip = extension._validate_zip
     calls = 0
@@ -431,7 +477,7 @@ def test_target_failure_after_ledger_begin_allows_retry(
 def test_completed_result_cache_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(excel_formula_module, "_COMPLETED_CACHE_LIMIT", 2, raising=False)
     path = _workbook(tmp_path / "bounded-cache.xlsx")
-    extension = ExcelFormulaExtension(ExcelConnector())
+    extension = ExcelFormulaExtension(LocalFilesConnector())
     target = _bound(extension, path)
 
     for index in range(3):

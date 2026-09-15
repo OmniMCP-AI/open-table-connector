@@ -561,9 +561,9 @@ def test_google_sheets_to_maybe_sheet_import_sends_rows_file_to_process(tmp_path
 
     summary = import_endpoint(
         parse_endpoint(str(source)),
-        parse_endpoint("maybe://doc/R_orders"),
+        parse_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc"),
         registry,
-        CliOptions(if_exists="append", token="explicit-write-token"),
+        CliOptions(if_exists="append", token="explicit-write-token", target="R_orders"),
     )
 
     assert summary.rows_read == 1
@@ -714,9 +714,9 @@ def test_maybe_sheet_unsupported_policy_is_rejected_before_source_read() -> None
     with pytest.raises(ConnectorError) as error:
         import_endpoint(
             parse_endpoint("fake://book/Orders"),
-            parse_endpoint("maybe://doc/R_orders"),
+            parse_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc"),
             registry,
-            CliOptions(if_exists="error"),
+            CliOptions(if_exists="error", target="R_orders"),
         )
 
     assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
@@ -915,10 +915,10 @@ def test_maybe_sheet_source_limit_is_enforced_when_process_over_returns_during_i
     registry.register(destination_adapter)
 
     summary = import_endpoint(
-        parse_endpoint("maybe://doc/R_orders"),
+        parse_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc"),
         parse_endpoint("fake://book/Orders"),
         registry,
-        CliOptions(limit=2, if_exists="append"),
+        CliOptions(limit=2, if_exists="append", target="R_orders"),
     )
 
     written_table = destination_adapter.tables[0]

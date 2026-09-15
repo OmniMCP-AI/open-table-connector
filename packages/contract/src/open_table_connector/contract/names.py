@@ -44,8 +44,6 @@ SCHEME_POSTGRESQL = "postgresql"
 SCHEME_GSHEETS = "gsheets"
 SCHEME_HTTPS = "https"
 SCHEME_FEISHU = "feishu"
-SCHEME_MAYBE = "maybe"
-
 HOST_GOOGLE_DOCS = "docs.google.com"
 HOST_MAYBE = "www.maybe.ai"
 

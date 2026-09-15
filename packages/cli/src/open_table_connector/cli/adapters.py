@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from typing import Any
 
-from open_table_connector.contract import PROVIDER_EXCEL, SCHEME_FILE
+from open_table_connector.contract import SCHEME_FILE
 
 from . import plugins
 
@@ -30,7 +30,6 @@ def __getattr__(name: str):
 
     providers = {
         "CsvAdapter": ("open_table_connector.local_files.cli_adapter", "CsvCliAdapter"),
-        "ExcelAdapter": ("open_table_connector.local_files.cli_adapter", "ExcelCliAdapter"),
         "MarkdownAdapter": (
             "open_table_connector.local_files.cli_adapter",
             "MarkdownCliAdapter",
@@ -59,7 +58,7 @@ def __getattr__(name: str):
     from importlib import import_module
 
     value = getattr(import_module(module_name), attribute)
-    if name in {"CsvAdapter", "ExcelAdapter", "MarkdownAdapter", "LocalAdapter"}:
+    if name in {"CsvAdapter", "MarkdownAdapter", "LocalAdapter"}:
         value = _legacy_local_adapter(value, name)
     elif name == "MaybeSheetAdapter":
         value = _legacy_maybe_sheet_adapter(value)
@@ -105,8 +104,6 @@ def _legacy_local_adapter(adapter_type, name: str):
         for capability in adapter_type.capabilities
         if capability.capability_id != "table.write"
     )
-    if name == "ExcelAdapter":
-        LegacyLocalAdapter.schemes = (PROVIDER_EXCEL,)
     return LegacyLocalAdapter
 
 

@@ -15,13 +15,12 @@ from open_table_connector.contract import (
     OPTION_TIMEOUT_SECONDS,
     PROVIDER_MAYBE_SHEET,
     SCHEME_HTTPS,
-    SCHEME_MAYBE,
     SETTING_BINARY,
     AdapterEndpoint,
     AdapterOptions,
     ArrowReadResult,
-    ConnectorAdapter,
     BaseTableBindingAdapter,
+    ConnectorAdapter,
     ConnectorError,
     ConnectorErrorCode,
     PluginDescriptor,
@@ -65,7 +64,7 @@ class MaybeSheetCliAdapter(
     timeout_seconds: float = 120.0
 
     identity = CONNECTOR_IDENTITY
-    schemes = (SCHEME_MAYBE, SCHEME_HTTPS)
+    schemes = (SCHEME_HTTPS,)
     hosts = (HOST_MAYBE,)
     capabilities = (
         BASE_READ_CAPABILITY,
@@ -106,47 +105,42 @@ class MaybeSheetCliAdapter(
                 "MaybeSheet requires a URI endpoint",
                 {"endpoint": endpoint.raw},
             )
-        if options.target:
-            return options.target, False
         uri = endpoint.uri
-        if uri.scheme == SCHEME_HTTPS:
+        if uri.scheme != SCHEME_HTTPS:
             raise ConnectorError(
-                ConnectorErrorCode.INVALID_URI,
-                "MaybeSheet HTTPS document URLs require an explicit target",
-                {"option": "target"},
+                ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+                "MaybeSheet requires an HTTPS URL",
+                {"scheme": uri.scheme},
             )
         parsed = urlsplit(uri.value)
-        if uri.scheme == SCHEME_MAYBE and parsed.query:
+        if parsed.fragment:
+            raise ConnectorError(
+                ConnectorErrorCode.INVALID_URI,
+                "MaybeSheet URLs cannot contain a fragment",
+                {"scheme": SCHEME_HTTPS},
+            )
+        if parsed.query:
             table_id = self._maybe_table_id_from_query(parsed.query)
             if table_id is None:
                 raise ConnectorError(
                     ConnectorErrorCode.INVALID_URI,
-                    "MaybeSheet URI must use maybe://DOCUMENT/TABLE_ID",
-                    {"scheme": SCHEME_MAYBE},
+                    "MaybeSheet URL query must contain only table_id",
+                    {"scheme": SCHEME_HTTPS},
                 )
-            if parsed.path.strip("/"):
+            if options.target:
                 raise ConnectorError(
                     ConnectorErrorCode.INVALID_URI,
-                    "MaybeSheet URI must use maybe://DOCUMENT/TABLE_ID",
-                    {"scheme": SCHEME_MAYBE},
+                    "MaybeSheet URL table_id cannot be combined with an explicit target",
+                    {"scheme": SCHEME_HTTPS},
                 )
             return table_id, True
-        target = parsed.path.strip("/")
-        if uri.scheme == SCHEME_MAYBE and (
-            not parsed.netloc or not target or "/" in target or parsed.fragment
-        ):
-            raise ConnectorError(
-                ConnectorErrorCode.INVALID_URI,
-                "MaybeSheet URI must use maybe://DOCUMENT/TARGET",
-                {"scheme": SCHEME_MAYBE},
-            )
-        if not target:
-            raise ConnectorError(
-                ConnectorErrorCode.INVALID_URI,
-                "MaybeSheet URI requires an explicit target",
-                {"option": "target"},
-            )
-        return target, False
+        if options.target:
+            return options.target, False
+        raise ConnectorError(
+            ConnectorErrorCode.INVALID_URI,
+            "MaybeSheet HTTPS document URLs require an explicit target",
+            {"option": "target"},
+        )
 
     def bind_base_table(self, endpoint: AdapterEndpoint, table_id: str) -> AdapterEndpoint:
         if endpoint.uri is None:
@@ -156,19 +150,17 @@ class MaybeSheetCliAdapter(
                 {"endpoint": endpoint.raw},
             )
         uri = endpoint.uri
-        if uri.scheme != SCHEME_MAYBE:
+        if uri.scheme != SCHEME_HTTPS:
             raise ConnectorError(
                 ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
-                "MaybeSheet base table binding requires a maybe:// URL",
+                "MaybeSheet base table binding requires an HTTPS URL",
                 {"scheme": uri.scheme},
             )
         parsed = urlsplit(uri.value)
-        if (
-            parsed.path.strip("/") or parsed.query or parsed.fragment
-        ):
+        if parsed.query or parsed.fragment:
             raise ConnectorError(
                 ConnectorErrorCode.INVALID_URI,
-                "MaybeSheet base table URI must be maybe://DOCUMENT",
+                "MaybeSheet base table URL cannot contain a query or fragment",
                 {"endpoint": endpoint.raw},
             )
         bound_uri = TableURI(
@@ -282,7 +274,7 @@ def maybe_sheet_cli_plugin() -> PluginDescriptor:
     return PluginDescriptor(
         PROVIDER_MAYBE_SHEET,
         CONNECTOR_IDENTITY,
-        (SCHEME_MAYBE, SCHEME_HTTPS),
+        (SCHEME_HTTPS,),
         _factory,
         (HOST_MAYBE,),
         capabilities=MaybeSheetCliAdapter.capabilities,

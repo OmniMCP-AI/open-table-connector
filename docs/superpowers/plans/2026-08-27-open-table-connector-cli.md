@@ -306,7 +306,7 @@ from open_table_connector.contract import ConnectorError, ConnectorErrorCode
 
 def test_default_registry_lists_all_supported_adapter_schemes() -> None:
     schemes = {scheme for adapter in build_default_registry(env={}).list() for scheme in adapter.schemes}
-    assert {"gsheets", "https", "feishu", "feishu_bitable", "maybe", "file"}.issubset(schemes)
+    assert {"gsheets", "https", "feishu", "feishu_bitable", "file"}.issubset(schemes)
 
 
 def test_registry_dispatches_google_sheet_uri() -> None:
@@ -317,7 +317,7 @@ def test_registry_dispatches_google_sheet_uri() -> None:
 def test_registry_reports_unsupported_capability_before_writing() -> None:
     registry = build_default_registry(env={})
     with pytest.raises(ConnectorError) as error:
-        registry.require_capability(parse_endpoint("maybe://doc/target"), "table.replace")
+        registry.require_capability(parse_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc"), "table.replace")
     assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
 ```
 
@@ -329,7 +329,7 @@ Expected: collection fails because the registry and adapter modules are missing.
 
 - [ ] **Step 3: Implement adapter translations and registry**
 
-Implement one adapter wrapper per provider. The Google wrapper constructs `GoogleSheetsTableReadRequest` with `GoogleSheetsReadOptions(range=options.range, sheet=options.sheet)` and obtains its token from `options.token` or `GOOGLE_SHEETS_ACCESS_TOKEN`. The Feishu wrapper constructs `FeishuBitableTableReadRequest` with `FeishuBitableReadOptions(field_names=options.field_names)` and obtains `FEISHU_TENANT_ACCESS_TOKEN`. The MaybeSheet wrapper parses `maybe://DOCUMENT/TARGET` into the URI plus `request.table=TARGET` and constructs `MaybeSheetReadRequest` for reads; its write method delegates to the new writer. The local adapter delegates to `formats.py` and reports `table.read.arrow`, `table.read.polars`, `table.inspect`, and `table.write`.
+Implement one adapter wrapper per provider. The Google wrapper constructs `GoogleSheetsTableReadRequest` with `GoogleSheetsReadOptions(range=options.range, sheet=options.sheet)` and obtains its token from `options.token` or `GOOGLE_SHEETS_ACCESS_TOKEN`. The Feishu wrapper constructs `FeishuBitableTableReadRequest` with `FeishuBitableReadOptions(field_names=options.field_names)` and obtains `FEISHU_TENANT_ACCESS_TOKEN`. The MaybeSheet wrapper accepts the HTTPS document URL plus `--target`, constructs `MaybeSheetReadRequest` for reads, and its write method delegates to the new writer. The local adapter delegates to `formats.py` and reports `table.read.arrow`, `table.read.polars`, `table.inspect`, and `table.write`.
 
 Register `gsheets`, Google Sheets `https` URLs, `feishu`, `feishu_bitable`, `maybe`, `file`, and bare local paths. Restrict `https` dispatch to `docs.google.com` for Google Sheets and `www.maybe.ai` for MaybeSheet; reject other hosts with `INVALID_URI`. Construct provider connectors with injected transports from the optional `transports` mapping so tests can assert exact HTTP requests. `require_capability` must raise `UNSUPPORTED_CAPABILITY` with `scheme` and `capability` safe details.
 
@@ -575,7 +575,7 @@ def test_google_sheets_to_maybe_sheet_import_sends_jsonl_to_process(tmp_path):
     source.write_text('{"id":"a"}\n')
     process = RecordingProcess()
     registry = build_default_registry(env={"MAYBE_SHEET_ACCESS_TOKEN": "token"}, processes={"maybe_sheet": process})
-    summary = import_endpoint(parse_endpoint(str(source)), parse_endpoint("maybe://doc/R_orders"), registry, CliOptions(if_exists="append"))
+    summary = import_endpoint(parse_endpoint(str(source)), parse_endpoint("https://www.maybe.ai/docs/spreadsheets/d/doc"), registry, CliOptions(if_exists="append", target="R_orders"))
     assert summary.rows_written == 1
     assert process.stdin_payload == '{"id":"a"}\n'
 
