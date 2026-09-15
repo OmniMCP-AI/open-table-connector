@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import posixpath
+import re
 import stat
 import tempfile
 import threading
 from collections import OrderedDict
 from contextlib import contextmanager, suppress
+from datetime import date, datetime, time
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -30,7 +33,26 @@ _MAX_CELLS = 100_000
 _MAX_EXPRESSION_BYTES = 8_192
 _DEFAULT_LEDGER_LIMIT = 1_024
 _COMPLETED_CACHE_LIMIT = _DEFAULT_LEDGER_LIMIT
-_UNSUPPORTED_RECALC_MESSAGE = "direct Excel does not expose calculated values or recalculation"
+_MAIN_NAMESPACE = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+_CALCULATION_SCOPES = (
+    otf.GridRecalculationScope.RANGE.value,
+    otf.GridRecalculationScope.WORKSHEET.value,
+    otf.GridRecalculationScope.WORKBOOK.value,
+)
+_NUMBER_PATTERN = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$")
+_EXCEL_ERROR_CODES = {
+    "#CALC!": "CALC",
+    "#DIV/0!": "DIV0",
+    "#N/A": "NA",
+    "#NAME?": "NAME",
+    "#NULL!": "NULL",
+    "#NUM!": "NUM",
+    "#REF!": "REF",
+    "#SPILL!": "SPILL",
+    "#VALUE!": "VALUE",
+}
+
+ElementTree.register_namespace("", _MAIN_NAMESPACE)
 
 
 class _LimitFailure(ValueError):
@@ -115,7 +137,7 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
         self._bindings: dict[tuple[str, str], str] = {}
         self._ledger = otf.FormulaIdempotencyLedger(limit=_DEFAULT_LEDGER_LIMIT)
         self._completed_limit = _COMPLETED_CACHE_LIMIT
-        self._completed: OrderedDict[str, otf.FormulaExtensionResult[otf.FormulaMutation]] = (
+        self._completed: OrderedDict[str, otf.FormulaExtensionResult[Any]] = (
             OrderedDict()
         )
         self._lock = threading.RLock()
@@ -149,7 +171,15 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
                 self._bindings[(target.grid.value, worksheet_id)] = worksheet
             binding = otf.GridFormulaBinding(
                 target=target,
-                capabilities=otf.FormulaCapabilitySet((otf.GRID_READ, otf.GRID_SET), details),
+                capabilities=otf.FormulaCapabilitySet(
+                    (
+                        otf.GRID_READ,
+                        otf.GRID_SET,
+                        otf.GRID_VALUES_READ,
+                        otf.GRID_RECALCULATE,
+                    ),
+                    details,
+                ),
                 observed_revision=_hash_bytes(data),
             )
             return _success(binding)
@@ -198,14 +228,210 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
     def read_grid_values(
         self, request: otf.GridFormulaValueReadRequest
     ) -> otf.FormulaExtensionResult[otf.GridFormulaValueObservation]:
-        del request
-        return _rejected(otf.FormulaErrorCode.UNSUPPORTED_CAPABILITY, _UNSUPPORTED_RECALC_MESSAGE)
+        try:
+            path, worksheet_name = self._bound_path(request.target)
+            rectangle = self._validated_range(request.cell_range, request.limits)
+            data = self._read_bytes(path)
+            self._check_response_limit(data, request.limits)
+            observation = self._read_value_observation(
+                data,
+                worksheet_name,
+                rectangle,
+                request.limits,
+                trigger=otf.CalculationTrigger.PROVIDER_READ,
+            )
+            formulas = self._read_observation(data, worksheet_name, rectangle, request.limits)
+            receipt = otf.FormulaReceiptDetails.for_grid_values_read(
+                target=request.target.grid.value,
+                selector=request.cell_range,
+                capability=otf.GRID_VALUES_READ.to_reference(),
+                dialect=otf.EXCEL_A1,
+                observation_sha256=otf.formula_observation_hash(formulas),
+                value_observation_sha256=otf.formula_observation_hash(observation),
+                observed_count=len(observation.values),
+                revision_after=observation.observed_revision,
+                calculation_state=observation.calculation_state.value,
+                calculation_trigger=observation.calculation_trigger.value,
+                dependency_scope=observation.dependency_scope,
+            )
+            return _success(observation, (receipt,))
+        except _TargetFailure as exc:
+            return _rejected(exc.code, str(exc))
+        except _LimitFailure as exc:
+            return _rejected(otf.FormulaErrorCode.RESOURCE_LIMIT, str(exc), {"limit": exc.limit})
+        except (BadZipFile, OSError, _ProtocolFailure, RuntimeError, TypeError, ValueError, KeyError):
+            return _failed(
+                otf.FormulaErrorCode.PROTOCOL_FAILURE,
+                "Excel calculated-value read returned an invalid workbook",
+            )
+        except Exception:
+            return _failed(
+                otf.FormulaErrorCode.EXECUTION_FAILED,
+                "Excel calculated-value read failed",
+            )
 
     def recalculate_grid(
         self, request: otf.GridFormulaRecalculateRequest
     ) -> otf.FormulaExtensionResult[otf.RecalculationObservation]:
-        del request
-        return _rejected(otf.FormulaErrorCode.UNSUPPORTED_CAPABILITY, _UNSUPPORTED_RECALC_MESSAGE)
+        context: tuple[str, str, str] | None = None
+        published = False
+        try:
+            if request.scope.value not in _CALCULATION_SCOPES:
+                return _rejected(
+                    otf.FormulaErrorCode.UNSUPPORTED_CAPABILITY,
+                    "Excel does not support the requested recalculation scope",
+                )
+            path, worksheet_name = self._bound_path(request.target)
+            requested_rectangle = (
+                self._validated_range(request.cell_range, request.limits)
+                if request.scope is otf.GridRecalculationScope.RANGE
+                else None
+            )
+            current = self._read_bytes(path)
+            self._check_response_limit(current, request.limits)
+            before_revision = _hash_bytes(current)
+            if request.expected_revision is not None and request.expected_revision != before_revision:
+                return _rejected(
+                    otf.FormulaErrorCode.STALE_REVISION,
+                    "formula target revision is stale",
+                    {"revision_hash": before_revision},
+                )
+            effective_rectangle = (
+                requested_rectangle
+                if requested_rectangle is not None
+                else self._worksheet_rectangle(current, worksheet_name, request.limits)
+            )
+            target_hash = _hash_bytes(
+                f"{path.resolve()}\0{worksheet_name}".encode()
+            )
+            selector_hash = _hash_bytes(otf.GRID_RECALCULATE.to_reference().encode("utf-8"))
+            payload_hash = _hash_bytes(
+                f"{request.scope.value}\0{request.cell_range}\0{request.expected_revision}".encode()
+            )
+            context = (target_hash, selector_hash, payload_hash)
+            if request.idempotency_key is not None:
+                with self._lock:
+                    decision = self._ledger.begin(
+                        connector_id=PROVIDER_EXCEL,
+                        capability=otf.GRID_RECALCULATE.to_reference(),
+                        target_hash=target_hash,
+                        selector_hash=selector_hash,
+                        idempotency_key=request.idempotency_key,
+                        payload_hash=payload_hash,
+                    )
+                if decision.disposition is otf.FormulaIdempotencyDisposition.CONFLICT:
+                    return _rejected(
+                        otf.FormulaErrorCode.IDEMPOTENCY_CONFLICT,
+                        "formula recalculation idempotency key conflicts with a prior request",
+                    )
+                if decision.disposition is otf.FormulaIdempotencyDisposition.IN_FLIGHT:
+                    return _rejected(
+                        otf.FormulaErrorCode.IDEMPOTENCY_CONFLICT,
+                        "formula recalculation idempotency key is already in flight",
+                    )
+                if decision.disposition is otf.FormulaIdempotencyDisposition.UNKNOWN:
+                    return _unknown("formula recalculation remains uncertain")
+                if decision.disposition is otf.FormulaIdempotencyDisposition.REPLAY:
+                    with self._lock:
+                        cached = self._completed.get(decision.operation_hash or "")
+                    return (
+                        cached
+                        if cached is not None
+                        else _unknown("formula recalculation replay result is unavailable")
+                    )
+
+            scope_names = self._recalculation_worksheet_names(
+                current, worksheet_name, request.scope
+            )
+            staged = self._recalculate_bytes(
+                current,
+                worksheet_name,
+                request.scope,
+                requested_rectangle,
+                request.limits,
+            )
+            if staged != current:
+                self._assert_archive_preserved(
+                    current,
+                    staged,
+                    worksheet_name,
+                    worksheet_names=scope_names,
+                )
+                temporary: str | None = self._save_staged_bytes(staged, path.parent)
+                try:
+                    self._publish_staged(temporary, path)
+                except _PublicationFailure as exc:
+                    published = exc.replaced
+                    raise
+                finally:
+                    self._unlink_staged(temporary)
+                published = True
+            readback_data = self._read_bytes(path)
+            self._check_response_limit(readback_data, request.limits)
+            value_observation = self._read_value_observation(
+                readback_data,
+                worksheet_name,
+                effective_rectangle,
+                request.limits,
+                trigger=otf.CalculationTrigger.EXPLICIT_RECALCULATION,
+            )
+            observation = otf.RecalculationObservation(
+                target_kind="grid",
+                requested_scope=request.scope.value,
+                effective_scope=request.scope.value,
+                revision_before=before_revision,
+                revision_after=value_observation.observed_revision,
+                provider_status="completed",
+                calculation_state=otf.CalculationState.PROVIDER_CURRENT,
+                verification="passed",
+                value_observation=value_observation,
+            )
+            result = otf.FormulaExtensionResult(
+                value=observation,
+                outcome=otf.FormulaOutcome.SUCCEEDED,
+                commit=otf.FormulaCommitState.COMMITTED,
+                verification=otf.FormulaVerificationState.PASSED,
+                receipts=(),
+            )
+            if request.idempotency_key is not None and context is not None:
+                operation_hash = _hash_bytes(str(observation.to_wire()).encode())
+                with self._lock:
+                    self._completed[operation_hash] = result
+                    self._completed.move_to_end(operation_hash)
+                    while len(self._completed) > self._completed_limit:
+                        self._completed.popitem(last=False)
+                    self._ledger.succeed(
+                        connector_id=PROVIDER_EXCEL,
+                        target_hash=context[0],
+                        selector_hash=context[1],
+                        idempotency_key=request.idempotency_key,
+                        payload_hash=context[2],
+                        operation_hash=operation_hash,
+                    )
+            return result
+        except _TargetFailure as exc:
+            self._finish_recalculation_ledger(request, context, dispatched=published)
+            if published:
+                return _unknown("formula recalculation state could not be determined")
+            return _rejected(exc.code, str(exc))
+        except _LimitFailure as exc:
+            self._finish_recalculation_ledger(request, context, dispatched=published)
+            if published:
+                return _unknown("formula recalculation state could not be determined")
+            return _rejected(otf.FormulaErrorCode.RESOURCE_LIMIT, str(exc), {"limit": exc.limit})
+        except (BadZipFile, OSError, _ProtocolFailure, RuntimeError, TypeError, ValueError, KeyError):
+            self._finish_recalculation_ledger(request, context, dispatched=published)
+            if published:
+                return _unknown("formula recalculation state could not be determined")
+            return _failed(
+                otf.FormulaErrorCode.PROTOCOL_FAILURE,
+                "Excel recalculation could not be completed",
+            )
+        except Exception:
+            self._finish_recalculation_ledger(request, context, dispatched=published)
+            if published:
+                return _unknown("formula recalculation state could not be determined")
+            return _failed(otf.FormulaErrorCode.EXECUTION_FAILED, "Excel recalculation failed")
 
     def set_grid(
         self, request: otf.GridFormulaSetRequest
@@ -405,8 +631,8 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
             dialects=(otf.EXCEL_A1,),
             max_cells_per_operation=_MAX_CELLS,
             max_expression_bytes=_MAX_EXPRESSION_BYTES,
-            recalculation_scopes=(),
-            calculation_states=(),
+            recalculation_scopes=_CALCULATION_SCOPES,
+            calculation_states=(otf.CalculationState.PROVIDER_CURRENT,),
             mutation_atomicity=otf.MutationAtomicity.ATOMIC,
             revision_enforcement=otf.RevisionEnforcement.ATOMIC,
             idempotency_strength=otf.IdempotencyStrength.HOST_LEDGER,
@@ -581,6 +807,292 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
         finally:
             workbook.close()
 
+    def _read_value_observation(
+        self,
+        data: bytes,
+        worksheet_name: str,
+        rectangle: otf.A1Rectangle,
+        limits: otf.FormulaResourceLimits | None,
+        *,
+        trigger: otf.CalculationTrigger,
+    ) -> otf.GridFormulaValueObservation:
+        self._validate_zip(data)
+        from openpyxl import load_workbook
+
+        workbook = load_workbook(BytesIO(data), data_only=False, read_only=False, keep_links=True)
+        try:
+            if worksheet_name not in workbook.sheetnames:
+                raise _TargetFailure(
+                    otf.FormulaErrorCode.TARGET_NOT_FOUND, "Excel worksheet does not exist"
+                )
+            worksheet = workbook[worksheet_name]
+            values: list[otf.FormulaValueCell] = []
+            with self._open_excelize(data) as calculator:
+                for row in worksheet.iter_rows(
+                    min_row=rectangle.start_row,
+                    max_row=rectangle.end_row,
+                    min_col=rectangle.start_column,
+                    max_col=rectangle.end_column,
+                ):
+                    for cell in row:
+                        if cell.data_type == "f":
+                            if not isinstance(cell.value, str):
+                                raise _ProtocolFailure
+                            value = self._calculate_cell_value(
+                                calculator, worksheet_name, cell.coordinate
+                            )
+                        else:
+                            value = self._literal_value(cell.value, cell.data_type)
+                        values.append(otf.FormulaValueCell(cell.coordinate, value))
+            return otf.GridFormulaValueObservation(
+                worksheet_id=worksheet_name,
+                requested_range=self._range_text(rectangle),
+                values=tuple(values),
+                calculation_state=otf.CalculationState.PROVIDER_CURRENT,
+                calculation_trigger=trigger,
+                dependency_scope="provider_dynamic",
+                observed_revision=_hash_bytes(data),
+            )
+        finally:
+            workbook.close()
+
+    @contextmanager
+    def _open_excelize(self, data: bytes):
+        try:
+            import excelize
+        except ImportError as exc:
+            raise _ProtocolFailure from exc
+        try:
+            calculator = excelize.open_reader(data)
+        except Exception as exc:
+            raise _ProtocolFailure from exc
+        if calculator is None:
+            raise _ProtocolFailure
+        try:
+            yield calculator
+        finally:
+            try:
+                error = calculator.close()
+            except Exception as exc:
+                raise _ProtocolFailure from exc
+            if error is not None:
+                raise _ProtocolFailure from error
+
+    def _calculate_cell_value(self, calculator, worksheet_name: str, address: str) -> otf.FormulaValue:
+        try:
+            value = calculator.calc_cell_value(worksheet_name, address)
+        except RuntimeError as exc:
+            message = str(exc).strip()
+            if not message.startswith("#"):
+                raise _ProtocolFailure from exc
+            return otf.FormulaValue.provider_error(
+                otf.FormulaErrorValue(_EXCEL_ERROR_CODES.get(message.upper(), message))
+            )
+        if not isinstance(value, str):
+            raise _ProtocolFailure
+        raw_value = value
+        normalized = raw_value.strip()
+        if normalized.upper() in {"TRUE", "FALSE"}:
+            return otf.FormulaValue.from_python(normalized.upper() == "TRUE")
+        if _NUMBER_PATTERN.fullmatch(normalized):
+            try:
+                number = (
+                    int(normalized)
+                    if re.fullmatch(r"[+-]?\d+", normalized)
+                    else float(normalized)
+                )
+            except ValueError as exc:
+                raise _ProtocolFailure from exc
+            if isinstance(number, float) and not math.isfinite(number):
+                raise _ProtocolFailure
+            return otf.FormulaValue.from_python(number)
+        return otf.FormulaValue.from_python(raw_value)
+
+    def _literal_value(self, value: object, data_type: str) -> otf.FormulaValue:
+        if data_type == "e" and isinstance(value, str):
+            return otf.FormulaValue.provider_error(
+                otf.FormulaErrorValue(_EXCEL_ERROR_CODES.get(value.upper(), value))
+            )
+        if isinstance(value, datetime):
+            return otf.FormulaValue.logical("datetime", value.isoformat())
+        if isinstance(value, date):
+            return otf.FormulaValue.logical("date", value.isoformat())
+        if isinstance(value, time):
+            return otf.FormulaValue.logical("time", value.isoformat())
+        try:
+            return otf.FormulaValue.from_python(value)
+        except (TypeError, ValueError) as exc:
+            raise _ProtocolFailure from exc
+
+    def _worksheet_rectangle(
+        self,
+        data: bytes,
+        worksheet_name: str,
+        limits: otf.FormulaResourceLimits | None,
+    ) -> otf.A1Rectangle:
+        from openpyxl import load_workbook
+
+        workbook = load_workbook(BytesIO(data), data_only=False, read_only=False, keep_links=True)
+        try:
+            if worksheet_name not in workbook.sheetnames:
+                raise _TargetFailure(
+                    otf.FormulaErrorCode.TARGET_NOT_FOUND, "Excel worksheet does not exist"
+                )
+            dimension = workbook[worksheet_name].calculate_dimension()
+        finally:
+            workbook.close()
+        return self._validated_range(dimension, limits)
+
+    def _recalculation_worksheet_names(
+        self,
+        data: bytes,
+        worksheet_name: str,
+        scope: otf.GridRecalculationScope,
+    ) -> set[str]:
+        if scope is not otf.GridRecalculationScope.WORKBOOK:
+            return {worksheet_name}
+        from openpyxl import load_workbook
+
+        workbook = load_workbook(BytesIO(data), data_only=False, read_only=False, keep_links=True)
+        try:
+            return set(workbook.sheetnames)
+        finally:
+            workbook.close()
+
+    def _recalculate_bytes(
+        self,
+        data: bytes,
+        worksheet_name: str,
+        scope: otf.GridRecalculationScope,
+        rectangle: otf.A1Rectangle | None,
+        limits: otf.FormulaResourceLimits | None,
+    ) -> bytes:
+        from openpyxl import load_workbook
+
+        workbook = load_workbook(BytesIO(data), data_only=False, read_only=False, keep_links=True)
+        try:
+            selected: list[tuple[Any, otf.A1Rectangle]] = []
+            if scope is otf.GridRecalculationScope.WORKBOOK:
+                worksheets = tuple(workbook.worksheets)
+            else:
+                worksheets = (workbook[worksheet_name],)
+            for worksheet in worksheets:
+                selected_rectangle = (
+                    rectangle
+                    if scope is otf.GridRecalculationScope.RANGE
+                    else self._validated_range(worksheet.calculate_dimension(), limits)
+                )
+                selected.append((worksheet, selected_rectangle))
+            maximum = limits.max_cells if limits is not None else _MAX_CELLS
+            if maximum is None:
+                maximum = _MAX_CELLS
+            if sum(selected_rectangle.cell_count for _, selected_rectangle in selected) > maximum:
+                raise _LimitFailure("formula recalculation exceeds the configured cell limit", maximum)
+            cells: list[tuple[str, str]] = []
+            for worksheet, selected_rectangle in selected:
+                rows = worksheet.iter_rows(
+                    min_row=selected_rectangle.start_row,
+                    max_row=selected_rectangle.end_row,
+                    min_col=selected_rectangle.start_column,
+                    max_col=selected_rectangle.end_column,
+                )
+                for row in rows:
+                    for cell in row:
+                        if cell.data_type == "f":
+                            cells.append((worksheet.title, cell.coordinate))
+        finally:
+            workbook.close()
+        if not cells:
+            return data
+        with self._open_excelize(data) as calculator:
+            calculated = {
+                (sheet, address): self._calculated_cache_value(
+                    calculator, sheet, address
+                )
+                for sheet, address in cells
+            }
+        return self._patch_cached_values(data, calculated)
+
+    def _calculated_cache_value(self, calculator, worksheet_name: str, address: str) -> str:
+        try:
+            value = calculator.calc_cell_value(worksheet_name, address)
+        except RuntimeError as exc:
+            message = str(exc).strip()
+            if not message.startswith("#"):
+                raise _ProtocolFailure from exc
+            return message
+        if not isinstance(value, str):
+            raise _ProtocolFailure
+        return value
+
+    def _patch_cached_values(
+        self,
+        data: bytes,
+        values: dict[tuple[str, str], str],
+    ) -> bytes:
+        with ZipFile(BytesIO(data)) as source:
+            output = BytesIO()
+            with ZipFile(output, "w") as destination:
+                worksheet_parts = {
+                    self._worksheet_archive_name(source, worksheet_name): worksheet_name
+                    for worksheet_name, _ in values
+                }
+                for info in source.infolist():
+                    content = source.read(info.filename)
+                    worksheet_name = worksheet_parts.get(info.filename)
+                    if worksheet_name is not None:
+                        content = self._patch_worksheet_cache(
+                            content,
+                            worksheet_name,
+                            values,
+                        )
+                    destination.writestr(info, content)
+            return output.getvalue()
+
+    def _patch_worksheet_cache(
+        self,
+        data: bytes,
+        worksheet_name: str,
+        values: dict[tuple[str, str], str],
+    ) -> bytes:
+        root = ElementTree.fromstring(data)
+        seen: set[tuple[str, str]] = set()
+        value_tag = f"{{{_MAIN_NAMESPACE}}}v"
+        formula_tag = f"{{{_MAIN_NAMESPACE}}}f"
+        for cell in root.findall(f".//{{{_MAIN_NAMESPACE}}}c"):
+            address = cell.attrib.get("r")
+            key = (worksheet_name, address) if address is not None else None
+            if key not in values:
+                continue
+            if cell.find(formula_tag) is None:
+                raise _ProtocolFailure
+            value = values[key]
+            value_type, cached = self._cache_encoding(value)
+            if value_type is None:
+                cell.attrib.pop("t", None)
+            else:
+                cell.attrib["t"] = value_type
+            cached_element = cell.find(value_tag)
+            if cached_element is None:
+                cached_element = ElementTree.Element(value_tag)
+                cell.append(cached_element)
+            cached_element.text = cached
+            seen.add(key)
+        expected = {key for key in values if key[0] == worksheet_name}
+        if seen != expected:
+            raise _ProtocolFailure
+        return ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
+
+    def _cache_encoding(self, value: str) -> tuple[str | None, str]:
+        normalized = value.strip()
+        if normalized.upper() in {"TRUE", "FALSE"}:
+            return "b", "1" if normalized.upper() == "TRUE" else "0"
+        if normalized.startswith("#"):
+            return "e", normalized
+        if _NUMBER_PATTERN.fullmatch(normalized):
+            return None, normalized
+        return "str", value
+
     def _load_editable(self, data: bytes):
         from openpyxl import load_workbook
 
@@ -648,7 +1160,12 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
             raise _ProtocolFailure from exc
 
     def _assert_archive_preserved(
-        self, original: bytes, staged: bytes, worksheet_name: str
+        self,
+        original: bytes,
+        staged: bytes,
+        worksheet_name: str,
+        *,
+        worksheet_names: set[str] | None = None,
     ) -> None:
         try:
             with ZipFile(BytesIO(original)) as before, ZipFile(BytesIO(staged)) as after:
@@ -656,8 +1173,10 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
                 after_names = set(after.namelist())
                 if before_names != after_names:
                     raise _ProtocolFailure
-                worksheet_part = self._worksheet_archive_name(before, worksheet_name)
-                allowed = {"xl/workbook.xml", worksheet_part}
+                names = worksheet_names or {worksheet_name}
+                allowed = {"xl/workbook.xml"} | {
+                    self._worksheet_archive_name(before, name) for name in names
+                }
                 for name in before_names - allowed:
                     old, new = before.read(name), after.read(name)
                     if name == "docProps/core.xml":
@@ -716,6 +1235,22 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
             os.chmod(temporary, 0o600)
             workbook.save(temporary)
             with open(temporary, "rb") as stream:
+                stream.flush()
+                os.fsync(stream.fileno())
+            return temporary
+        except Exception:
+            self._unlink_staged(temporary)
+            raise
+
+    def _save_staged_bytes(self, data: bytes, directory: Path) -> str:
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=".otc-excel-", suffix=".xlsx", dir=directory
+        )
+        os.close(descriptor)
+        try:
+            os.chmod(temporary, 0o600)
+            with open(temporary, "wb") as stream:
+                stream.write(data)
                 stream.flush()
                 os.fsync(stream.fileno())
             return temporary
@@ -803,6 +1338,11 @@ class ExcelFormulaExtension(otf.GridFormulaConnectorExtension):
                     )
         except (KeyError, ValueError):
             pass
+
+    def _finish_recalculation_ledger(
+        self, request, context: tuple[str, str, str] | None, *, dispatched: bool
+    ) -> None:
+        self._finish_ledger(request, context, dispatched=dispatched)
 
     def _mark_unknown(self, request, context: tuple[str, str, str] | None) -> None:
         if request.idempotency_key is None or context is None:

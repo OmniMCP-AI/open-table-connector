@@ -49,6 +49,8 @@ def test_capability_matrix_is_exactly_the_planned_grid_surface() -> None:
         "excel": {
             "formula.grid.read/1.0",
             "formula.grid.set/1.0",
+            "formula.grid.values.read/1.0",
+            "formula.grid.recalculate/1.0",
         },
     } == EXPECTED_GRID_CAPABILITIES
 

@@ -28,9 +28,9 @@ base-mode worksheets.
 Formula persistence and formula calculation are separate claims. All five
 provider/mode combinations in scope implement formula-text read and set. Only
 a Connector with independent calculated-value or explicit-recalculation
-evidence advertises those additional capabilities. Local Excel v1 persists
-and reads formula text but does not claim in-process calculation or fresh
-calculated values.
+evidence advertises those additional capabilities. Direct local Excel now
+uses Excelize for calculated-value reads and explicit recalculation, with
+cached-value persistence verified after recalculation.
 
 Ordinary Table writes remain formula-safe. A string beginning with `=` never
 becomes a formula merely because it crosses a Table or DataFrame write path.
@@ -51,8 +51,9 @@ The providers do not have one physical formula model:
   calculate one value per record.
 - Google and Feishu normally calculate as part of provider behavior but do
   not expose the same explicit recalculation operation as Maybe.
-- Excel files can persist formula text and cached results, but the current
-  openpyxl-based local Connector has no calculation engine.
+- Excel files can persist formula text and cached results. The local Excel
+  Connector uses openpyxl for workbook preservation and Excelize for formula
+  evaluation.
 
 A single `Table.formula(...)` method would erase those differences. A generic
 provider-operation escape hatch would preserve the differences but lose
@@ -597,9 +598,10 @@ bytes, and elapsed time.
 The result and Receipt disclose calculation state and trigger. They never
 claim dependency lineage, repeatability, or cross-provider equivalence.
 
-Local Excel v1 does not advertise calculated-value read. Ordinary Excel Table
-reads may continue returning workbook-cached values, but those values are not
-Formula Extension evidence.
+Direct local Excel calculated-value reads use Excelize and report
+`calculation_state=provider_current`. Ordinary Excel Table reads may continue
+returning workbook-cached values, but those values are not Formula Extension
+evidence.
 
 ## Explicit Recalculation
 
@@ -622,9 +624,8 @@ does not fabricate values.
 
 Automatic provider calculation on set or read is not an explicit
 recalculation capability. Google Sheets and Feishu Bitable therefore do not
-advertise `formula.*.recalculate/1.0` in v1. Local Excel setting workbook
-recalculation metadata also does not prove execution and does not advertise
-the capability.
+advertise `formula.*.recalculate/1.0` in v1. Local Excel uses Excelize to
+execute explicit recalculation and persists the resulting cached values.
 
 ## Operation Results and Receipt Evidence
 
@@ -706,7 +707,7 @@ diagnostics that echo formula text, credentials, or exception objects.
 | --- | --- | ---: | ---: | ---: | ---: |
 | Google Sheets sheet-mode | A1 cell/range | yes | yes | yes | no |
 | Maybe Sheet sheet-mode | A1 cell/range | yes | yes | yes | yes |
-| Local Excel sheet-mode | A1 cell/range | yes | yes | no | no |
+| Local Excel sheet-mode | A1 cell/range | yes | yes | yes | yes |
 | Maybe Sheet base-mode | stable formula field | yes | yes | yes | yes |
 | Feishu Bitable base-mode | stable formula field | yes | yes | yes | no |
 
@@ -770,7 +771,8 @@ Excel formula support applies to direct `.xlsx` workbooks through the local
 Excel Connector. It does not apply to managed temporal Excel storage.
 
 Read opens the workbook with `data_only=False` and detects formulas from the
-native formula cell type. Set opens the existing workbook in editable mode,
+native formula cell type. Calculated-value reads evaluate formula cells with
+Excelize and include typed values for the requested rectangle. Set opens the existing workbook in editable mode,
 changes only the selected formula cells, and uses the openpyxl A1 formula
 translator for copy-fill. It must preserve unrelated cells, formulas,
 worksheets, worksheet identities, styles, names, links, and workbook
@@ -781,19 +783,19 @@ directory, durable flush where supported, and atomic replacement. The
 filesystem content identity is the revision. Set reopens the published file
 with `data_only=False` and verifies every affected formula.
 
-The adapter may mark the workbook for recalculation when next opened by a
-calculation-capable application. That metadata is not evidence that formula
-execution occurred. The adapter must not invent or retain a known-stale cached
-result for a changed formula.
+Explicit recalculation evaluates the selected range, worksheet, or workbook
+with Excelize, persists the resulting cached values, and performs an
+independent value readback. The adapter must not invent or retain a
+known-stale cached result for a changed formula.
 
 Excel advertises:
 
 ```text
 formula.grid.read/1.0
 formula.grid.set/1.0
+formula.grid.values.read/1.0
+formula.grid.recalculate/1.0
 ```
-
-It does not advertise calculated-value read or explicit recalculation in v1.
 The ordinary Excel writer continues forcing formula-prefixed user strings to
 text. The managed temporal Excel reader continues rejecting formulas in its
 governed worksheet.

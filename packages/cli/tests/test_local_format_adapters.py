@@ -30,9 +30,9 @@ def test_registry_routes_explicit_local_scheme(raw: str, connector_id: str) -> N
     assert adapter.identity.connector_id == connector_id
 
 
-def test_registry_rejects_explicit_excel_scheme() -> None:
+def test_registry_rejects_format_specific_excel_scheme() -> None:
     with pytest.raises(ConnectorError) as error:
-        build_default_registry().connector_for(parse_endpoint("excel:///tmp/orders.xlsx"))
+        build_default_registry().connector_for(parse_endpoint("xlsx:///tmp/orders.xlsx"))
 
     assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
 

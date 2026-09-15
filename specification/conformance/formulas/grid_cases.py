@@ -41,6 +41,8 @@ EXPECTED_GRID_CAPABILITIES = {
     "excel": {
         "formula.grid.read/1.0",
         "formula.grid.set/1.0",
+        "formula.grid.values.read/1.0",
+        "formula.grid.recalculate/1.0",
     },
 }
 
@@ -125,14 +127,19 @@ def _make_registered_case(provider_id: str) -> FormulaProviderCase:
             idempotency_strength=otf.IdempotencyStrength.PROVIDER,
         )
     else:
-        capabilities = (otf.GRID_READ, otf.GRID_SET)
+        capabilities = (
+            otf.GRID_READ,
+            otf.GRID_SET,
+            otf.GRID_VALUES_READ,
+            otf.GRID_RECALCULATE,
+        )
         details = otf.FormulaCapabilityDetails(
             target_kind="grid",
             dialects=(fixture["dialect"],),
             max_cells_per_operation=100_000,
             max_expression_bytes=8_192,
-            recalculation_scopes=(),
-            calculation_states=(),
+            recalculation_scopes=(otf.GridRecalculationScope.RANGE.value,),
+            calculation_states=(otf.CalculationState.PROVIDER_CURRENT,),
             mutation_atomicity=otf.MutationAtomicity.ATOMIC,
             revision_enforcement=otf.RevisionEnforcement.CHECKED,
             idempotency_strength=otf.IdempotencyStrength.RECONCILED,

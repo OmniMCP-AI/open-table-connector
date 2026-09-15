@@ -103,8 +103,14 @@ def test_read_grid_uses_native_formula_cells_and_exact_worksheet_binding(tmp_pat
     assert binding_result.value.capabilities.details.dialects == (otf.EXCEL_A1,)
     assert binding_result.value.capabilities.details.max_cells_per_operation == 100_000
     assert binding_result.value.capabilities.details.max_expression_bytes == 8_192
-    assert binding_result.value.capabilities.details.calculation_states == ()
-    assert binding_result.value.capabilities.details.recalculation_scopes == ()
+    assert binding_result.value.capabilities.details.calculation_states == (
+        otf.CalculationState.PROVIDER_CURRENT,
+    )
+    assert binding_result.value.capabilities.details.recalculation_scopes == (
+        otf.GridRecalculationScope.RANGE.value,
+        otf.GridRecalculationScope.WORKSHEET.value,
+        otf.GridRecalculationScope.WORKBOOK.value,
+    )
 
     result = extension.read_grid(otf.GridFormulaReadRequest(binding_result.value.target, "A1:D1"))
 
@@ -322,24 +328,66 @@ def test_local_excel_rejects_symlink_and_non_xlsx_payloads(tmp_path: Path) -> No
     assert raised.value.code is ConnectorErrorCode.INVALID_URI
 
 
-def test_local_excel_has_no_calculated_value_or_recalculation_path(
+def test_local_excel_calculates_and_reads_values_with_excelize(
     tmp_path: Path,
 ) -> None:
     path = _workbook(tmp_path / "model.xlsx")
     extension = ExcelFormulaExtension(LocalFilesConnector())
     target = _bound(extension, path)
 
-    values = extension.read_grid_values(otf.GridFormulaValueReadRequest(target, "A1"))
+    mutation = extension.set_grid(
+        otf.GridFormulaSetRequest(
+            target,
+            "B2",
+            otf.FormulaExpression(
+                '=SUMIFS($D$1:$D$1,$A$1:$A$1,"value")',
+                otf.EXCEL_A1,
+            ),
+        )
+    )
+    assert mutation.outcome is otf.FormulaOutcome.SUCCEEDED
+    assert mutation.value is not None
+
+    values = extension.read_grid_values(otf.GridFormulaValueReadRequest(target, "B2"))
+
+    assert values.outcome is otf.FormulaOutcome.SUCCEEDED
+    assert values.value is not None
+    assert [(cell.address, cell.value.to_python()) for cell in values.value.values] == [("B2", 7)]
+    assert values.value.calculation_state is otf.CalculationState.PROVIDER_CURRENT
+    assert values.value.calculation_trigger is otf.CalculationTrigger.PROVIDER_READ
+    assert values.receipts[0].value_observation_sha256 is not None
+
+    before_recalculate = load_workbook(path, data_only=True)
+    try:
+        assert before_recalculate["Model"]["B2"].value is None
+    finally:
+        before_recalculate.close()
+
     recalculate = extension.recalculate_grid(
-        otf.GridFormulaRecalculateRequest(target, otf.GridRecalculationScope.WORKBOOK)
+        otf.GridFormulaRecalculateRequest(
+            target,
+            otf.GridRecalculationScope.RANGE,
+            cell_range="B2",
+            expected_revision=mutation.value.revision_after,
+        )
     )
 
-    assert values.outcome is otf.FormulaOutcome.REJECTED
-    assert values.error is not None
-    assert values.error.code is otf.FormulaErrorCode.UNSUPPORTED_CAPABILITY
-    assert recalculate.outcome is otf.FormulaOutcome.REJECTED
-    assert recalculate.error is not None
-    assert recalculate.error.code is otf.FormulaErrorCode.UNSUPPORTED_CAPABILITY
+    assert recalculate.outcome is otf.FormulaOutcome.SUCCEEDED
+    assert recalculate.value is not None
+    assert recalculate.value.verification == "passed"
+    assert recalculate.value.calculation_state is otf.CalculationState.PROVIDER_CURRENT
+    assert recalculate.value.value_observation is not None
+    assert [
+        (cell.address, cell.value.to_python())
+        for cell in recalculate.value.value_observation.values
+    ] == [("B2", 7)]
+
+    persisted = load_workbook(path, data_only=True)
+    try:
+        assert persisted["Model"]["B2"].value == 7
+    finally:
+        persisted.close()
+
     assert not hasattr(CsvCliAdapter, "formula_extension_for")
     local_adapter = LocalFilesCliAdapter(
         LocalFilesConnector(), ProviderFactoryContext(ProviderConfig("local_files"))

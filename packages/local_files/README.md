@@ -11,9 +11,9 @@ Excel workbooks use standard local file targets such as
 `file:///absolute/path/model.xlsx`. The unified Spreadsheet interface and the
 existing Formula view resolve that target to the same local adapter.
 
-The direct `excel` provider supports bounded sheet-mode formula read and
-top-left copy-fill set for existing `.xlsx` workbooks in the `excel-a1`
-dialect:
+The direct `excel` provider supports bounded sheet-mode formula read,
+top-left copy-fill set, calculated-value readback, and explicit recalculation
+for existing `.xlsx` workbooks in the `excel-a1` dialect:
 
 ```python
 import open_table_connector.otc as otc
@@ -31,13 +31,12 @@ grid.set("D2:F4", otc.FormulaExpression("=B2+$C$1", "excel-a1"))
 `set()` copies the top-left expression across the bounded rectangle: relative
 references translate per destination, while absolute and mixed `$` references
 remain anchored. The provider reopens the published workbook and verifies
-formula text after the write. It exposes exactly `formula.grid.read/1.0` and
-`formula.grid.set/1.0` for direct `.xlsx` files.
-
-Excel has no `formula.grid.values.read/1.0` and no
-`formula.grid.recalculate/1.0`: openpyxl preserves formula text and can set
-workbook calculation-on-open flags, but it does not execute Excel’s calculation
-engine. Managed temporal Excel remains formula-rejecting.
+formula text after the write. `read_values()` and `recalculate()` use Excelize
+to calculate formulas; explicit recalculation also persists the calculated
+values as workbook caches. The provider exposes `formula.grid.read/1.0`,
+`formula.grid.set/1.0`, `formula.grid.values.read/1.0`, and
+`formula.grid.recalculate/1.0` for direct `.xlsx` files. Managed temporal Excel
+remains formula-rejecting.
 
 Ordinary Table writes remain value-only. The ordinary Excel writer forces
 formula-prefixed strings to text; use an explicit Formula view and

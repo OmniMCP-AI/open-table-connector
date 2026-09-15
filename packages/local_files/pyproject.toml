@@ -15,6 +15,7 @@ dependencies = [
   "open-table-connector-sdk>=0.1,<0.2",
   "open-table-connector-timeseries>=0.1,<0.2",
   "open-table-connector-spreadsheets>=0.1,<0.2",
+  "excelize>=0.1,<0.2",
   "openpyxl>=3.1,<4",
   "pillow>=10,<12",
   "polars>=1,<2",

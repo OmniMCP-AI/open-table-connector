@@ -15,7 +15,7 @@
 - Expose concrete connector identities for `csv`, `excel`, and `md`.
 - Preserve the existing `local_files` identity as a compatibility facade.
 - Preserve `file://` URIs and bare local paths through format autodetection.
-- Add explicit URI schemes for direct format selection: `csv://`, `excel://`, and `md://`.
+- Add explicit URI schemes for direct format selection: `csv://` and `md://`.
 - Keep format-specific behavior behind small, testable connector interfaces.
 - Keep neutral connector code independent of the CLI package.
 - Preserve the existing CLI `--from`/`--to` conversion and import workflows.
@@ -166,7 +166,7 @@ def test_excel_connector_rejects_csv_payload(tmp_path: Path) -> None:
     source.write_text("id\n1\n", encoding="utf8")
     with pytest.raises(ConnectorError) as caught:
         ExcelConnector().read_arrow(
-            ExcelTableReadRequest(TableURI(f"excel://{source}"), ResourceLimits())
+            ExcelTableReadRequest(TableURI(source.as_uri()), ResourceLimits())
         )
     assert caught.value.code is ConnectorErrorCode.INVALID_URI
 
@@ -302,7 +302,7 @@ git commit -m "feat: preserve local files as format facade"
 
 **Interfaces:**
 - Consumes: concrete connector classes and manifests from Task 2, `LocalFilesConnector` from Task 3, and the existing `ConnectorAdapter` protocol.
-- Produces: `CsvAdapter`, `ExcelAdapter`, `MarkdownAdapter`, and the compatibility `LocalAdapter`; `build_adapters()` registers all four local identities; `csv://`, `excel://`, and `md://` are routable CLI endpoints.
+- Produces: `CsvAdapter`, `MarkdownAdapter`, and the compatibility `LocalAdapter`; `build_adapters()` registers the concrete local identities; `csv://`, `md://`, and `file://` are routable CLI endpoints.
 
 - [x] **Step 1: Write failing registry and CLI tests**
 
@@ -310,12 +310,12 @@ git commit -m "feat: preserve local files as format facade"
 def test_cli_lists_concrete_local_connector_types() -> None:
     registry = build_default_registry()
     identities = {adapter.identity.connector_id for adapter in registry.list()}
-    assert {"local_files", "csv", "excel", "md"} <= identities
+    assert {"local_files", "csv", "md"} <= identities
 
 
 @pytest.mark.parametrize(
     ("raw", "connector_id"),
-    (("csv:///tmp/orders.csv", "csv"), ("excel:///tmp/orders.xlsx", "excel"), ("md:///tmp/orders.md", "md")),
+    (("csv:///tmp/orders.csv", "csv"), ("md:///tmp/orders.md", "md")),
 )
 def test_registry_routes_explicit_local_scheme(raw: str, connector_id: str) -> None:
     adapter = build_default_registry().connector_for(parse_endpoint(raw))
@@ -342,7 +342,7 @@ def test_cli_converts_csv_to_explicit_excel_destination(tmp_path: Path) -> None:
     source.write_text("id\n1\n", encoding="utf8")
     summary = convert_endpoint(
         parse_endpoint(str(source)),
-        parse_endpoint(f"excel://{destination}"),
+        parse_endpoint(str(destination)),
         build_default_registry(),
         CliOptions(),
     )
@@ -358,9 +358,9 @@ Expected: FAIL because the CLI currently registers only `local_files`, treats on
 
 - [x] **Step 2: Implement concrete adapters and registry routing**
 
-Add the local-files workspace dependency to `packages/cli/pyproject.toml`. Each explicit adapter converts its endpoint URI into an absolute `Path`, builds its format-specific request, delegates reads/inspection to the corresponding connector, and uses the neutral local writer for conversion targets. Add `FormatName.EXCEL`, map `.xlsx` and `excel://` to it, and implement `write_excel(table, path, sheet)` in `excel_writer.py` with openpyxl: create one workbook, write headers and rows to the selected sheet (default `Sheet1`), save it, and map file errors to the existing execution error. The compatibility `LocalAdapter` continues to own `file` and bare-path routing.
+Add the local-files workspace dependency to `packages/cli/pyproject.toml`. Each explicit adapter converts its endpoint URI into an absolute `Path`, builds its format-specific request, delegates reads/inspection to the corresponding connector, and uses the neutral local writer for conversion targets. Add `FormatName.EXCEL`, map `.xlsx` and `file://` paths to it, and implement `write_excel(table, path, sheet)` in `excel_writer.py` with openpyxl: create one workbook, write headers and rows to the selected sheet (default `Sheet1`), save it, and map file errors to the existing execution error. The compatibility `LocalAdapter` continues to own `file` and bare-path routing.
 
-Make `_is_local` recognize `file`, `csv`, `excel`, and `md` endpoints for `convert`, while `import` still rejects all local destinations. `infer_format` must map explicit URI schemes to `FormatName.CSV`, `FormatName.EXCEL`, and `FormatName.TABLE`, and map `.csv`, `.xlsx`, `.md`, `.markdown`, and `.table` suffixes to the corresponding local codecs. Keep the existing `open-connectors` executable compatibility alias and route it to the new `open_table_connector` entry point; do not reintroduce the old Python namespace.
+Make `_is_local` recognize `file`, `csv`, and `md` endpoints for `convert`, while `import` still rejects all local destinations. `infer_format` must map explicit URI schemes to `FormatName.CSV` and `FormatName.TABLE`, and map `.csv`, `.xlsx`, `.md`, `.markdown`, and `.table` suffixes to the corresponding local codecs. Keep the existing `open-connectors` executable compatibility alias and route it to the new `open_table_connector` entry point; do not reintroduce the old Python namespace.
 
 Register explicit adapters before the compatibility adapter so scheme routing is deterministic. Ensure `https` provider host restrictions are unaffected and `list` emits the concrete local manifests.
 
@@ -416,10 +416,10 @@ def test_all_current_connectors_have_named_cases() -> None:
     )
 
 
-@pytest.mark.parametrize("raw", ("csv:///tmp/orders.csv", "excel:///tmp/orders.xlsx", "md:///tmp/orders.md"))
+@pytest.mark.parametrize("raw", ("csv:///tmp/orders.csv", "md:///tmp/orders.md"))
 def test_universal_cli_fixture_routes_explicit_local_schemes(raw: str) -> None:
     adapter = build_default_registry().connector_for(parse_endpoint(raw))
-    assert adapter.identity.connector_id in {"csv", "excel", "md"}
+    assert adapter.identity.connector_id in {"csv", "md"}
 ```
 
 Run: `uv run pytest specification/conformance/universal/test_discovery.py specification/conformance/universal/test_contract.py specification/conformance/universal/test_cli_surface.py -q`

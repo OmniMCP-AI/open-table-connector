@@ -9,9 +9,8 @@ from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlsplit
 
 import pyarrow as pa
-
 from open_table_connector.contract import (
-    PROVIDER_EXCEL,
+    SCHEME_FILE,
     SCHEME_MANAGED_XLSX,
     SCHEME_XLSX,
     TableURI,
@@ -49,9 +48,8 @@ from open_table_connector.timeseries.capabilities import (
     STORAGE_VISIBILITY_ATOMIC,
 )
 
-from .managed_snapshots import ManagedSnapshotStore
 from .identity import CONNECTOR_IDENTITY
-
+from .managed_snapshots import ManagedSnapshotStore
 
 _SCHEMA_SHEET = "_otc_ts_schema"
 
@@ -415,11 +413,11 @@ def _target_parts(target: TableURI, worksheet: str):
 
 
 def _direct_source(target: TableURI, worksheet: str, *, required: bool) -> Path | None:
-    if target.scheme not in {SCHEME_XLSX, PROVIDER_EXCEL}:
+    if target.scheme not in {SCHEME_FILE, SCHEME_XLSX}:
         if required:
             raise TemporalExtensionError(
                 TemporalErrorCode.PROTOCOL_INVALID,
-                "direct Excel target requires xlsx or excel scheme",
+                "direct Excel target requires a file or xlsx URI",
                 {"scheme": target.scheme},
             )
         return None

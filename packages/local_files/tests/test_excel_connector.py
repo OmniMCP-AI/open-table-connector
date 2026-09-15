@@ -122,12 +122,12 @@ def test_excel_connector_rejects_unsupported_hosts(tmp_path: Path) -> None:
     assert raised.value.code is ConnectorErrorCode.INVALID_URI
 
 
-def test_excel_connector_rejects_explicit_excel_scheme(tmp_path: Path) -> None:
+def test_excel_connector_rejects_format_specific_scheme(tmp_path: Path) -> None:
     source = tmp_path / "book.xlsx"
     _workbook(source)
 
     with pytest.raises(ConnectorError) as raised:
-        ExcelConnector().resolve(TableURI(f"excel://{source}"), ResolveContext())
+        ExcelConnector().resolve(TableURI(f"xlsx://{source}"), ResolveContext())
 
     assert raised.value.code is ConnectorErrorCode.INVALID_URI
 
