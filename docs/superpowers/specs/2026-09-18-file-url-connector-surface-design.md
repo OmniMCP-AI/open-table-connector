@@ -14,10 +14,10 @@ The public URL policy after this change is:
   routes.
 
 CSV and Excel remain supported file formats. This change removes their
-provider-specific connector identities and URL aliases; it does not remove
-CSV/Excel codecs, CLI format selection, local workbook operations, or managed
-snapshot implementations. Managed CSV snapshots use canonical file URLs while
-retaining CSV encoding.
+provider-specific URL registrations and aliases; it does not remove
+`PROVIDER_CSV`, the CSV connector identity, CSV/Excel codecs, CLI format
+selection, local workbook operations, or managed snapshot implementations.
+Managed CSV snapshots use canonical file URLs while retaining CSV encoding.
 
 ## Architecture
 
