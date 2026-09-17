@@ -13,21 +13,23 @@ def test_cli_lists_concrete_local_connector_types() -> None:
 
     identities = {adapter.identity.connector_id for adapter in registry.list()}
 
-    assert {"local_files", "csv", "md"} <= identities
+    assert {"local_files", "md"} <= identities
+    assert "csv" not in identities
     assert "excel" not in identities
 
 
-@pytest.mark.parametrize(
-    ("raw", "connector_id"),
-    (
-        ("csv:///tmp/orders.csv", "csv"),
-        ("md:///tmp/orders.md", "md"),
-    ),
-)
-def test_registry_routes_explicit_local_scheme(raw: str, connector_id: str) -> None:
-    adapter = build_default_registry().connector_for(parse_endpoint(raw))
+def test_registry_routes_explicit_markdown_scheme() -> None:
+    adapter = build_default_registry().connector_for(parse_endpoint("md:///tmp/orders.md"))
 
-    assert adapter.identity.connector_id == connector_id
+    assert adapter.identity.connector_id == "md"
+
+
+def test_registry_rejects_retired_csv_scheme() -> None:
+    with pytest.raises(ConnectorError) as error:
+        build_default_registry().connector_for(parse_endpoint("csv:///tmp/orders.csv"))
+
+    assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
+    assert error.value.safe_details["scheme"] == "csv"
 
 
 def test_registry_rejects_format_specific_excel_scheme() -> None:
@@ -43,6 +45,19 @@ def test_registry_routes_bare_path_to_local_files_facade(tmp_path: Path) -> None
     adapter = build_default_registry().connector_for(endpoint)
 
     assert adapter.identity.connector_id == "local_files"
+
+
+def test_registry_reads_csv_file_url_through_local_files_facade(tmp_path: Path) -> None:
+    source = tmp_path / "orders.csv"
+    source.write_text("id,note\n1,ok\n", encoding="utf8")
+    endpoint = parse_endpoint(source.as_uri())
+
+    adapter = build_default_registry().connector_for(endpoint)
+    result = adapter.read(endpoint, CliOptions())
+
+    assert adapter.identity.connector_id == "local_files"
+    assert result.table.to_pylist() == [{"id": "1", "note": "ok"}]
+    assert result.receipt.connector.connector_id == "local_files"
 
 
 def test_local_adapter_auto_probes_extensionless_csv_and_preserves_facade_receipt(
@@ -196,6 +211,22 @@ def test_cli_converts_csv_to_file_excel_destination(tmp_path: Path) -> None:
         assert list(workbook.active.values) == [("id",), ("1",)]
     finally:
         workbook.close()
+
+
+def test_cli_converts_file_url_csv_to_bare_path_with_csv_format(tmp_path: Path) -> None:
+    source = tmp_path / "orders.csv"
+    destination = tmp_path / "orders.data"
+    source.write_text("id,note\n1,ok\n", encoding="utf8")
+
+    summary = convert_endpoint(
+        parse_endpoint(source.as_uri()),
+        parse_endpoint(str(destination)),
+        build_default_registry(),
+        CliOptions(output_format=FormatName.CSV),
+    )
+
+    assert summary.rows_written == 1
+    assert destination.read_text(encoding="utf8") == "id,note\n1,ok\n"
 
 
 def test_explicit_local_destination_scheme_takes_precedence_over_output_format(tmp_path: Path) -> None:

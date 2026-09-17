@@ -48,7 +48,6 @@ from open_table_connector.contract.fingerprints import (
     operation_identity,
 )
 
-from .csv_connector import CsvConnector, CsvReadOptions, CsvTableReadRequest
 from .local_files_connector import (
     LocalFilesConnector,
     LocalReadOptions,
@@ -447,9 +446,7 @@ class _LocalCliAdapter:
             raise ValueError("local adapter credentials must be empty")
 
 
-class CsvCliAdapter(_LocalCliAdapter):
-    identity = ConnectorIdentity(PROVIDER_CSV, "0.1.0", "1.0")
-    schemes = (PROVIDER_CSV,)
+class _TextCodecCliAdapter(_LocalCliAdapter):
     hosts: tuple[str, ...] = ()
     modes = (TableMode.SHEET,)
     capabilities = (
@@ -460,30 +457,14 @@ class CsvCliAdapter(_LocalCliAdapter):
         _LOCAL_WRITE_CAPABILITY,
     )
 
-    def _request(self, endpoint: Endpoint, options: AdapterOptions):
-        return CsvTableReadRequest(
-            _connector_uri(endpoint),
-            resource_limits=_limits(options),
-            options=CsvReadOptions(),
-        )
-
     def read(self, endpoint: Endpoint, options: AdapterOptions) -> ArrowReadResult:
         return self.connector.read_arrow(self._request(endpoint, options))
 
     def inspect(self, endpoint: Endpoint, options: AdapterOptions) -> TableInspection:
         return self.connector.inspect(InspectRequest(_connector_uri(endpoint), _limits(options)))
 
-    def write(
-        self, endpoint: Endpoint, table: pa.Table, options: AdapterOptions
-    ) -> TableWriteResult:
-        write_local(table, endpoint, FormatName.CSV)
-        return TableWriteResult(
-            _local_receipt(endpoint, table, _LOCAL_WRITE_CAPABILITY, connector=self.identity),
-            table.num_rows,
-        )
 
-
-class MarkdownCliAdapter(CsvCliAdapter):
+class MarkdownCliAdapter(_TextCodecCliAdapter):
     identity = ConnectorIdentity(SCHEME_MD, "0.1.0", "1.0")
     schemes = (SCHEME_MD,)
 
@@ -588,19 +569,6 @@ def _context_factory(adapter_type, connector_type, context):
     return adapter_type(connector_type(), context)
 
 
-def csv_cli_plugin() -> PluginDescriptor:
-    return PluginDescriptor(
-        PROVIDER_CSV,
-        CsvCliAdapter.identity,
-        CsvCliAdapter.schemes,
-        lambda context: _context_factory(CsvCliAdapter, CsvConnector, context),
-        capabilities=CsvCliAdapter.capabilities,
-        modes=CsvCliAdapter.modes,
-        local=True,
-        handles_paths=False,
-    )
-
-
 def markdown_cli_plugin() -> PluginDescriptor:
     return PluginDescriptor(
         SCHEME_MD,
@@ -629,10 +597,8 @@ def local_files_cli_plugin() -> PluginDescriptor:
 
 
 __all__ = [
-    "CsvCliAdapter",
     "LocalFilesCliAdapter",
     "MarkdownCliAdapter",
-    "csv_cli_plugin",
     "infer_format",
     "local_files_cli_plugin",
     "markdown_cli_plugin",

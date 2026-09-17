@@ -1,16 +1,15 @@
+import csv
 import io
 import json
-import csv
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pyarrow as pa
 import pytest
-
-from open_table_connector.contract import ConnectorError, ConnectorErrorCode
 from open_table_connector.cli.formats import infer_format, read_local, write_local
-from open_table_connector.cli.model import Endpoint, FormatName, parse_endpoint
+from open_table_connector.cli.model import FormatName, parse_endpoint
 from open_table_connector.cli.output import emit_csv, emit_error
+from open_table_connector.contract import ConnectorError, ConnectorErrorCode
 
 
 def _strict_json_loads(text: str):
@@ -133,7 +132,7 @@ def test_json_writers_preserve_nested_arrow_values(format_name) -> None:
     table = pa.table(
         {
             "date": [date(2026, 8, 28)],
-            "timestamp": [datetime(2026, 8, 28, 1, 2, 3, tzinfo=timezone.utc)],
+            "timestamp": [datetime(2026, 8, 28, 1, 2, 3, tzinfo=UTC)],
             "decimal": pa.array([Decimal("12.30")], type=pa.decimal128(4, 2)),
             "nested": pa.array([[1.0, 2.0]]),
         }
@@ -171,6 +170,11 @@ def test_infer_format_uses_explicit_format() -> None:
 def test_infer_format_uses_file_suffix_for_auto() -> None:
     endpoint = parse_endpoint("rows.table")
     assert infer_format(endpoint, FormatName.AUTO) is FormatName.TABLE
+
+
+def test_infer_format_keeps_csv_for_file_url() -> None:
+    endpoint = parse_endpoint("file:///tmp/rows.csv")
+    assert infer_format(endpoint, FormatName.AUTO) is FormatName.CSV
 
 
 @pytest.mark.parametrize(

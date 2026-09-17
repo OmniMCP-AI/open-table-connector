@@ -21,8 +21,8 @@ from open_table_connector.local_files import (
     LocalFilesConnector,
 )
 from open_table_connector.local_files.cli_adapter import (
-    CsvCliAdapter,
     LocalFilesCliAdapter,
+    MarkdownCliAdapter,
 )
 from open_table_connector.sdk import Client, ConnectorRegistry
 from openpyxl import Workbook, load_workbook
@@ -388,7 +388,7 @@ def test_local_excel_calculates_and_reads_values_with_excelize(
     finally:
         persisted.close()
 
-    assert not hasattr(CsvCliAdapter, "formula_extension_for")
+    assert not hasattr(MarkdownCliAdapter, "formula_extension_for")
     local_adapter = LocalFilesCliAdapter(
         LocalFilesConnector(), ProviderFactoryContext(ProviderConfig("local_files"))
     )

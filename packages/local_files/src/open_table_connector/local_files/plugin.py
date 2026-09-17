@@ -8,7 +8,6 @@ from typing import Any
 from open_table_connector.contract import PluginDescriptor
 
 from .cli_adapter import (
-    csv_cli_plugin,
     local_files_cli_plugin,
     markdown_cli_plugin,
 )
@@ -73,7 +72,6 @@ def _required_text(document: Mapping[str, object], field: str) -> str:
 
 
 __all__ = [
-    "csv_cli_plugin",
     "csv_process_plugin",
     "excel_process_plugin",
     "json_process_plugin",

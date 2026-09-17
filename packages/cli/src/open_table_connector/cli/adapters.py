@@ -29,7 +29,6 @@ def __getattr__(name: str):
     """Resolve legacy adapter names from their owning provider package."""
 
     providers = {
-        "CsvAdapter": ("open_table_connector.local_files.cli_adapter", "CsvCliAdapter"),
         "MarkdownAdapter": (
             "open_table_connector.local_files.cli_adapter",
             "MarkdownCliAdapter",
@@ -58,7 +57,7 @@ def __getattr__(name: str):
     from importlib import import_module
 
     value = getattr(import_module(module_name), attribute)
-    if name in {"CsvAdapter", "MarkdownAdapter", "LocalAdapter"}:
+    if name in {"MarkdownAdapter", "LocalAdapter"}:
         value = _legacy_local_adapter(value, name)
     elif name == "MaybeSheetAdapter":
         value = _legacy_maybe_sheet_adapter(value)
