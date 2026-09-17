@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pyarrow as pa
-
 from open_table_connector.contract import ResourceLimits, TableURI
 from open_table_connector.local_files.reader import (
     LocalFilesConnector,
@@ -29,6 +28,8 @@ def test_csv_read_exposes_arrow_and_polars_with_identical_values(tmp_path: Path)
     ]
     assert arrow_result.receipt.operation_id == polars_result.receipt.operation_id
     assert arrow_result.receipt.content_fingerprint == polars_result.receipt.content_fingerprint
+    assert arrow_result.receipt.safe_uri == TableURI(source.as_uri())
+    assert polars_result.receipt.safe_uri == TableURI(source.as_uri())
     assert arrow_result.receipt.coordinate_convention.sheet == "data"
 
 

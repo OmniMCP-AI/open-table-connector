@@ -5,11 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import polars as pl
-
 from open_table_connector.contract import (
+    PROVIDER_CSV,
+    SCHEME_FILE,
     ArrowReadResult,
     ArrowTableReader,
-    PROVIDER_CSV,
     InspectRequest,
     PolarsReadResult,
     PolarsTableReader,
@@ -34,10 +34,9 @@ from .manifest import capability_manifest
 from .receipts import make_receipt, normalize_parameters
 from .resolver import LocalFormat, ResolvedLocalTable, _resolve_explicit_local_path
 
-
 CSV_CONNECTOR_IDENTITY = connector_identity(PROVIDER_CSV)
 CSV_CAPABILITY_MANIFEST = capability_manifest(
-    connector=CSV_CONNECTOR_IDENTITY, uri_schemes=(PROVIDER_CSV,)
+    connector=CSV_CONNECTOR_IDENTITY, uri_schemes=(SCHEME_FILE,)
 )
 CSV_COORDINATE_CONVENTION = SheetConvention(sheet="data", header_rows=1, first_data_row=2)
 
@@ -71,7 +70,7 @@ class CsvConnector(URIResolver, TableInspector, ArrowTableReader, PolarsTableRea
         path, _ = _resolve_explicit_local_path(
             uri,
             context,
-            scheme=PROVIDER_CSV,
+            scheme=SCHEME_FILE,
             expected_format=LocalFormat.CSV,
         )
         return ResolvedTable(

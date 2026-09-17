@@ -3,16 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from openpyxl import Workbook
-
 from open_table_connector.contract import ResolveContext, TableURI
 from open_table_connector.contract.errors import ConnectorError, ConnectorErrorCode
+from open_table_connector.local_files.csv_connector import CsvConnector, CsvTableReadRequest
 from open_table_connector.local_files.reader import (
     LocalFilesConnector,
     LocalReadOptions,
     LocalTableReadRequest,
 )
 from open_table_connector.local_files.resolver import LocalFormat
+from openpyxl import Workbook
 
 
 @pytest.mark.parametrize(
@@ -52,6 +52,23 @@ def test_local_files_facade_reads_excel_and_preserves_compatibility_receipts(
 
     assert result.table.column_names == ["id"]
     assert result.receipt.connector.connector_id == "local_files"
+
+
+def test_local_files_facade_delegates_csv_with_canonical_file_uri(tmp_path: Path) -> None:
+    source = tmp_path / "orders.csv"
+    source.write_text("id,amount\n1,2.50\n", encoding="utf-8")
+    uri = TableURI(source.as_uri())
+    connector = LocalFilesConnector()
+    request = LocalTableReadRequest(uri)
+    resolved = connector.resolve(uri, request.resolve_context)
+
+    concrete_connector, concrete_request = connector._build_concrete_request(
+        request, resolved.resource
+    )
+
+    assert isinstance(concrete_connector, CsvConnector)
+    assert isinstance(concrete_request, CsvTableReadRequest)
+    assert concrete_request.uri == uri
 
 
 @pytest.mark.parametrize(("filename", "payload"), (("orders.csv", "id\n1\n"), ("orders.md", "| id |\n| --- |\n| 1 |\n")))

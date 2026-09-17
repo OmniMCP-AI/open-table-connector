@@ -9,7 +9,6 @@ from urllib.parse import quote
 
 import polars as pl
 from open_table_connector.contract import (
-    PROVIDER_CSV,
     PROVIDER_JSON,
     PROVIDER_JSONL,
     SCHEME_FILE,
@@ -143,7 +142,7 @@ class LocalFilesConnector(
             return (
                 self._csv_connector,
                 CsvTableReadRequest(
-                    self._explicit_uri(resolved.path, PROVIDER_CSV),
+                    self._explicit_uri(resolved.path, SCHEME_FILE),
                     resource_limits=request.resource_limits,
                     options=CsvReadOptions(
                         separator=request.options.separator,
