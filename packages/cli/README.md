@@ -15,11 +15,11 @@ Examples:
 otc list
 otc inspect --from orders.csv
 otc read --from orders.csv --output-format jsonl
-otc read --from csv:///absolute/path/orders.csv --output-format table
+otc read --from file:///absolute/path/orders.csv --output-format table
 otc read --from file:///absolute/path/orders.xlsx --sheet Orders
 otc read --from md:///absolute/path/orders.md --output-format json
 otc convert --from orders.csv --to - --output-format jsonl
-otc convert --from csv:///absolute/path/orders.csv --to md:///absolute/path/orders.md
+otc convert --from /absolute/path/orders.csv --to md:///absolute/path/orders.md
 otc import --from orders.csv --to gsheets://SPREADSHEET/Orders --if-exists replace
 ```
 
@@ -62,14 +62,16 @@ independently; `otc list` reports only installed and enabled descriptors.
 
 ## Local connector routing
 
-The CLI exposes four local connector identities:
+The CLI exposes two public local connector identities:
 
 | Connector | Routes |
 | --- | --- |
-| `csv` | `csv://` absolute file URIs |
 | `md` | `md://` absolute Markdown pipe-table file URIs |
-| `local_files` | bare paths and `file://` URIs with CSV, XLSX, or Markdown autodetection |
+| `local_files` | bare paths and `file://` URIs with CSV, XLSX, JSON, JSONL, or Markdown autodetection |
 
-Use `csv://` or `md://` when the format is part of the endpoint. Use bare paths
-or `file://` when compatibility probing should select the local format from
-the file payload.
+CSV is a supported format and codec, not a public connector identity or URI
+scheme. Use bare paths or `file://` for local CSV files, `--from-format csv`
+when the input format must be explicit, and `--output-format csv` or
+`--to-format csv` for CSV output. Use `md://` when Markdown is explicitly part
+of the endpoint; otherwise local-file probing selects the format from the path
+and payload.

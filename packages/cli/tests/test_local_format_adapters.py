@@ -1,8 +1,10 @@
+import io
+import sys
 from pathlib import Path
 
 import pytest
 from open_table_connector.cli.model import CliOptions, FormatName, parse_endpoint
-from open_table_connector.cli.pipeline import convert_endpoint, import_endpoint
+from open_table_connector.cli.pipeline import convert_endpoint, import_endpoint, read_endpoint
 from open_table_connector.cli.registry import build_default_registry
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode, TableMode
 from openpyxl import Workbook, load_workbook
@@ -56,6 +58,35 @@ def test_registry_reads_csv_file_url_through_local_files_facade(tmp_path: Path) 
     result = adapter.read(endpoint, CliOptions())
 
     assert adapter.identity.connector_id == "local_files"
+    assert result.table.to_pylist() == [{"id": "1", "note": "ok"}]
+    assert result.receipt.connector.connector_id == "local_files"
+
+
+def test_local_adapter_reads_explicit_csv_source_format(tmp_path: Path) -> None:
+    source = tmp_path / "orders.data"
+    source.write_text("id,note\n1,ok\n", encoding="utf8")
+    endpoint = parse_endpoint(str(source))
+    adapter = build_default_registry().connector_for(endpoint)
+
+    result = adapter.read(
+        endpoint,
+        CliOptions(from_format=FormatName.CSV),
+    )
+
+    assert adapter.identity.connector_id == "local_files"
+    assert result.table.to_pylist() == [{"id": "1", "note": "ok"}]
+    assert result.receipt.connector.connector_id == "local_files"
+
+
+def test_local_adapter_reads_csv_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "stdin", io.StringIO("id,note\n1,ok\n"))
+
+    result = read_endpoint(
+        parse_endpoint("-"),
+        build_default_registry(),
+        CliOptions(from_format=FormatName.CSV),
+    )
+
     assert result.table.to_pylist() == [{"id": "1", "note": "ok"}]
     assert result.receipt.connector.connector_id == "local_files"
 

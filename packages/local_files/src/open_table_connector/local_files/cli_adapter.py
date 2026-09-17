@@ -7,11 +7,12 @@ import io
 import json
 import math
 import sys
+from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import TextIO
+from typing import Generic, Protocol, TextIO, TypeVar
 from urllib.parse import parse_qsl, unquote, urlsplit
 
 import pyarrow as pa
@@ -39,6 +40,7 @@ from open_table_connector.contract import (
     ResourceLimits,
     TableInspection,
     TableMode,
+    TableReadRequest,
     TableURI,
     TableWriteResult,
 )
@@ -57,6 +59,11 @@ from .markdown_connector import MarkdownConnector, MarkdownReadOptions, Markdown
 
 Endpoint = AdapterEndpoint
 FormatName = AdapterFormat
+
+_ConnectorRequestT = TypeVar(
+    "_ConnectorRequestT", bound=TableReadRequest, contravariant=True
+)
+_RequestT = TypeVar("_RequestT", bound=TableReadRequest)
 
 _MARKDOWN_SUFFIXES = {".table", ".md", ".markdown"}
 _LOCAL_FORMAT_SCHEMES = {
@@ -446,7 +453,14 @@ class _LocalCliAdapter:
             raise ValueError("local adapter credentials must be empty")
 
 
-class _TextCodecCliAdapter(_LocalCliAdapter):
+class _TextCodecConnector(Protocol[_ConnectorRequestT]):
+    def read_arrow(self, request: _ConnectorRequestT) -> ArrowReadResult: ...
+
+    def inspect(self, request: InspectRequest) -> TableInspection: ...
+
+
+class _TextCodecCliAdapter(_LocalCliAdapter, Generic[_RequestT], ABC):
+    connector: _TextCodecConnector[_RequestT]
     hosts: tuple[str, ...] = ()
     modes = (TableMode.SHEET,)
     capabilities = (
@@ -457,6 +471,14 @@ class _TextCodecCliAdapter(_LocalCliAdapter):
         _LOCAL_WRITE_CAPABILITY,
     )
 
+    def __init__(self, connector: _TextCodecConnector[_RequestT], context) -> None:
+        super().__init__(connector, context)
+        self.connector = connector
+
+    @abstractmethod
+    def _request(self, endpoint: Endpoint, options: AdapterOptions) -> _RequestT:
+        raise NotImplementedError
+
     def read(self, endpoint: Endpoint, options: AdapterOptions) -> ArrowReadResult:
         return self.connector.read_arrow(self._request(endpoint, options))
 
@@ -464,11 +486,13 @@ class _TextCodecCliAdapter(_LocalCliAdapter):
         return self.connector.inspect(InspectRequest(_connector_uri(endpoint), _limits(options)))
 
 
-class MarkdownCliAdapter(_TextCodecCliAdapter):
+class MarkdownCliAdapter(_TextCodecCliAdapter[MarkdownTableReadRequest]):
     identity = ConnectorIdentity(SCHEME_MD, "0.1.0", "1.0")
     schemes = (SCHEME_MD,)
 
-    def _request(self, endpoint: Endpoint, options: AdapterOptions):
+    def _request(
+        self, endpoint: Endpoint, options: AdapterOptions
+    ) -> MarkdownTableReadRequest:
         return MarkdownTableReadRequest(
             _connector_uri(endpoint),
             resource_limits=_limits(options),
