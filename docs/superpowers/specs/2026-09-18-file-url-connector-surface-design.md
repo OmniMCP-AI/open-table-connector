@@ -16,7 +16,8 @@ The public URL policy after this change is:
 CSV and Excel remain supported file formats. This change removes their
 provider-specific connector identities and URL aliases; it does not remove
 CSV/Excel codecs, CLI format selection, local workbook operations, or managed
-snapshot implementations that have an explicit internal namespace.
+snapshot implementations. Managed CSV snapshots use canonical file URLs while
+retaining CSV encoding.
 
 ## Architecture
 
@@ -62,10 +63,9 @@ needed as format or managed-temporal identifiers, but no provider descriptor
 may advertise the retired direct URL schemes.
 
 Temporal process configuration for local CSV/Excel sources will accept the
-canonical file target where direct source access is required. Managed snapshot
-schemes remain unchanged because they identify internal snapshot storage, not
-public source connectors. MaybeSheet temporal bindings continue to use the
-canonical HTTPS target.
+canonical file target where source access is required. Managed CSV snapshots
+also use canonical file targets while retaining their CSV codec and extension.
+MaybeSheet temporal bindings continue to use the canonical HTTPS target.
 
 ## Tests and documentation
 

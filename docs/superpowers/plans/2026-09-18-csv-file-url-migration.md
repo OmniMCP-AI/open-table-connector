@@ -4,7 +4,7 @@
 
 **Goal:** Retire the public CSV-specific connector route and make local CSV operations use canonical `file://` URLs, while preserving CSV as a supported file format and preserving the already-landed MaybeSheet HTTPS and Excel file-URL behavior.
 
-**Architecture:** `LocalFilesConnector` is the sole public local-file connector surface. CSV remains an internal codec/format implementation and continues to support CSV reads, writes, conversion, and managed `managed+csv://` snapshots. Explicit local CSV requests resolve through `file://`; the CSV-specific CLI adapter, plugin, and entry point are removed. Direct CSV temporal sources and SDK-created physical targets also use `file://`.
+**Architecture:** `LocalFilesConnector` is the sole public local-file connector surface. CSV remains an internal codec/format implementation and continues to support CSV reads, writes, conversion, and managed snapshots addressed by `file://` URLs. Explicit local CSV requests resolve through `file://`; the CSV-specific CLI adapter, plugin, and entry point are removed. Direct CSV temporal sources and SDK-created physical targets also use `file://`.
 
 **Tech Stack:** Python, `TableURI`, connector capability manifests, setuptools entry points, pytest, Ruff, mypy, and the repository’s conformance suites.
 
@@ -13,11 +13,11 @@
 ## Global Constraints
 
 - Start implementation from the fetched `origin/main` commit `a4dc909ce80a0a524aa12b105338a40fa822cae7`, or rebase the implementation branch onto it after protecting the user’s existing `.gitignore` edit. Do not discard the existing untracked files or unrelated changes.
-- Keep `PROVIDER_CSV` as the format/codec identity and keep `managed+csv://` as an internal managed-snapshot namespace. Remove only the public direct CSV-specific route.
+- Keep `PROVIDER_CSV` as the format/codec identity. Both the direct and managed CSV URI schemes are retired; managed snapshots use canonical `file://` targets.
 - `MaybeSheetCliAdapter` remains HTTPS-only with canonical `https://www.maybe.ai/docs/spreadsheets/d/<document>` URLs. Do not reintroduce MaybeSheet- or Excel-specific URI schemes or a CSV-specific public route.
 - Preserve bare-path and format-based CSV CLI workflows, including `--from-format csv`, `--output-format csv`, stdin/stdout conversion, and local CSV reads/writes.
 - Use test-first changes: add or update a regression test, run it and record the expected failure, then make the smallest implementation change and rerun it.
-- Do not use a global replacement for the CSV-specific scheme literal; distinguish retired direct routes from intentional `managed+csv://` references.
+- Do not use a global replacement for the CSV provider name; distinguish retired URI routes from retained format/codec identity.
 
 ## Remote Baseline
 
@@ -80,14 +80,14 @@ The remote refresh confirmed that commit `7306105` already removed `SCHEME_MAYBE
 - Modify `packages/process/src/open_table_connector/process/bootstrap.py`
 - Modify/add tests in `packages/local_files/tests/test_temporal_csv.py`, `packages/local_files/tests/test_sdk_temporal.py`, and `packages/process/tests/test_bootstrap_process.py`
 
-- [x] Add failing temporal tests for a direct `TableURI(path.as_uri())` CSV source, rejection of the retired direct CSV scheme, and continued acceptance of `managed+csv://` snapshots.
+- [x] Add failing temporal tests for a direct `TableURI(path.as_uri())` CSV source, rejection of both retired CSV schemes, and continued managed-snapshot behavior through file URLs.
 - [x] Add a failing SDK test proving the physical CSV target produced by `_csv_uri()` is the canonical file URI and does not rewrite `file://` to the retired CSV scheme.
-- [x] Add a failing process-bootstrap test proving configured direct CSV targets use `SCHEME_FILE` while the managed CSV scheme remains accepted.
+- [x] Add a failing process-bootstrap test proving configured direct and managed CSV targets use `SCHEME_FILE` while both retired CSV schemes are rejected.
 - [x] Run the temporal/SDK/process tests and confirm the failures identify the direct-scheme branches and target map.
-- [x] Change the direct branch in `CsvTemporalExecutor` to `SCHEME_FILE`; retain the managed branch and CSV format checks. Update the rejection message to name `file` and `managed+csv` targets.
+- [x] Change `CsvTemporalExecutor` to accept only `SCHEME_FILE`, selecting managed snapshots through snapshot references while retaining CSV format checks. Update the rejection message to name only file targets.
 - [x] Change `_csv_uri(path)` to return `TableURI(path.absolute().as_uri())`, retaining `PROVIDER_CSV` only for the resource format identity.
-- [x] Change the process target-scheme map from `{PROVIDER_CSV, SCHEME_MANAGED_CSV}` to `{SCHEME_FILE, SCHEME_MANAGED_CSV}` and import `SCHEME_FILE`.
-- [x] Rerun the focused tests, including path validation and recovery behavior, and verify no managed snapshot scheme was changed.
+- [x] Change the process target-scheme map to accept only `SCHEME_FILE` for CSV while retaining `PROVIDER_CSV` as the format/provider identity.
+- [x] Rerun the focused tests, including path validation and recovery behavior, and verify managed CSV snapshots still use the CSV codec through file targets.
 - [x] Commit the completed task as `refactor: use file urls for temporal csv`.
 
 ## Task 4: Align URI parsing, conformance, and regression coverage
@@ -99,12 +99,12 @@ The remote refresh confirmed that commit `7306105` already removed `SCHEME_MAYBE
 - Modify `specification/conformance/universal/cases.py`, `fixtures.py`, `test_cli_surface.py`, and `test_discovery.py` where direct CSV endpoint examples or expectations occur
 - Update any remaining direct-CSV references in `packages/local_files/tests/` and `packages/cli/tests/` found by exhaustive search
 
-- [x] Write failing parser/registry tests that treat the CSV-specific scheme as retired, while still recognizing `csv` as a format and `managed+csv://` as an internal managed target.
+- [x] Write failing parser/registry tests that treat both CSV-specific schemes as retired while still recognizing `csv` as a format and provider identity.
 - [x] Convert direct CSV conformance fixtures and examples to `Path.as_uri()`/`file://` and update expected connector identities to `local_files` where discovery is testing the public route.
 - [x] Preserve connector-level CSV cases where they test the internal CSV implementation, but give them canonical `file://` targets and a file-scheme capability manifest.
 - [x] Run contract, local-files, CLI, and universal conformance tests; use each failure to close a specific stale direct-route expectation.
 - [x] Remove `PROVIDER_CSV` only from the URI-specific fallback/endpoint parsing set in `contract/adapters.py`; do not remove the `AdapterFormat.CSV` enum or format parsing.
-- [x] Add an exhaustive repository check that direct CSV-specific scheme references are gone from code, tests, user-facing docs, and conformance examples, allowing only intentional `managed+csv://` references and the explicit forbidden-scheme policy sentence in `AGENTS.md`. Also verify MaybeSheet- and Excel-specific scheme literals remain absent outside that policy sentence.
+- [x] Add an exhaustive repository check that both CSV-specific scheme references are gone from code, tests, user-facing docs, and conformance examples, allowing only the explicit forbidden-scheme policy sentence in `AGENTS.md`. Also verify MaybeSheet- and Excel-specific scheme literals remain absent outside that policy sentence.
 - [x] Commit the completed task as `test: enforce file url csv surface`.
 
 ## Task 5: Update documentation and durable project guidance
@@ -115,7 +115,7 @@ The remote refresh confirmed that commit `7306105` already removed `SCHEME_MAYBE
 - Update stale historical/specification/report references in `docs/superpowers/plans/2026-08-28-local-connector-types.md`, `2026-08-29-portable-time-series-storage.md`, `2026-08-31-config-driven-cli-adapters.md`, `docs/superpowers/specs/2026-08-28-local-connector-types-design.md`, `docs/superpowers/specs/2026-08-31-python-sdk-design.md`, and `task-6-report.md` when they contain direct retired CSV-scheme examples
 - Append the exact project URL policy accepted by `scripts/check_url_literals.py` to the existing user-owned `AGENTS.md` without overwriting its current content.
 
-- [x] Replace direct local CSV examples with canonical `file:///...` URLs or bare local paths according to the surrounding API, and explicitly label `managed+csv://` examples as internal managed storage where they remain.
+- [x] Replace direct and managed local CSV examples with canonical `file:///...` URLs or bare local paths according to the surrounding API.
 - [x] Document that CSV is still a supported format/codec and conversion option even though its format-specific URI scheme is no longer a public connector endpoint.
 - [x] Add or update the MaybeSheet wording to use canonical HTTPS URLs and avoid implying that a scheme-specific local connector is available.
 - [x] Run the documentation/reference search and confirm no direct retired route is presented as supported.
@@ -156,7 +156,7 @@ The remote refresh confirmed that commit `7306105` already removed `SCHEME_MAYBE
   rg -n 'Project URL policy:.*(csv|excel|xlsx|maybe)://' AGENTS.md
   ```
 
-  The first command must show only intentional `managed+csv://`/`managed+xlsx://` internal-storage references; direct CSV-, Excel-, and MaybeSheet-specific public scheme literals must be absent. The second command should show only the one explicit policy line. Preserve any remote-baseline internal managed schemes unless a test proves they are public routes.
+  The first command must show only intentional `managed+xlsx://` internal-storage references; both CSV-specific schemes and direct Excel- and MaybeSheet-specific public scheme literals must be absent. The second command should show only the one explicit policy line. Preserve any other remote-baseline internal managed schemes unless a test proves they are public routes.
 - [x] Run `graft build` to refresh the repository context graph after the implementation changes.
 - [x] Review `git diff`, `git status`, and the final test output. Confirm the pre-existing `.gitignore` edit and unrelated untracked user files remain untouched.
 - [x] Before claiming completion, apply `superpowers:verification-before-completion` and report the exact verification results.
@@ -165,6 +165,6 @@ The remote refresh confirmed that commit `7306105` already removed `SCHEME_MAYBE
 
 - A CSV-specific URI scheme is not accepted, advertised, registered, documented, or emitted as a public direct local route.
 - Canonical `file://` CSV sources resolve through `LocalFilesConnector` and work for reads, writes, inspection, temporal execution, and SDK physical targets.
-- CSV remains available as a format and codec, and `managed+csv://` snapshot behavior remains intact.
+- CSV remains available as a format and codec, and managed snapshot behavior remains intact through canonical file URLs.
 - MaybeSheet continues to use canonical HTTPS document URLs, and the remote-main Excel changes remain intact.
 - Focused tests, full tests, lint/type checks, package checks, exhaustive scheme search, and `graft build` all complete successfully.

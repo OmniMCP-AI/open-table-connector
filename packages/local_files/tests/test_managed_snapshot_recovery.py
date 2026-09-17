@@ -5,14 +5,13 @@ from pathlib import Path
 from threading import Barrier, Thread
 
 import pytest
-
 from open_table_connector.contract import TableURI
 from open_table_connector.local_files import CsvManagedTemporalStore
 from open_table_connector.timeseries import TemporalErrorCode, TemporalExtensionError
 
 from packages.timeseries.tests.fixtures import descriptor
 
-from .managed_fixtures import commit_request, managed_uri, stage_request
+from .managed_fixtures import commit_request, stage_request
 
 
 def test_crash_before_pointer_is_invisible_and_stale_temporary_is_cleaned(tmp_path: Path) -> None:
@@ -102,7 +101,7 @@ def test_concurrent_commits_are_serialized_to_one_closed_pointer(tmp_path: Path)
 def test_managed_targets_reject_traversal_and_symlink_namespaces(tmp_path: Path) -> None:
     artifact_root = tmp_path / "artifacts"
     store = CsvManagedTemporalStore(artifact_root, descriptor())
-    traversal = TableURI(f"managed+csv://{tmp_path}/safe/../escape")
+    traversal = TableURI("file://" + str(tmp_path / "safe" / ".." / "escape"))
     request = stage_request(artifact_root, tmp_path / "valid")
     with pytest.raises(TemporalExtensionError) as raised:
         store.stage(

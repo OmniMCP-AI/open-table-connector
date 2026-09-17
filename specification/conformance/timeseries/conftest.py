@@ -103,9 +103,7 @@ def provider_semantic_case(request, semantic_case, tmp_path):
         target = semantic_case.request.target
     elif provider == "csv":
         artifact_root = tmp_path / "csv-artifacts"
-        target = TableURI(
-            (tmp_path / "csv-ticks").as_uri().replace("file://", "managed+csv://", 1)
-        )
+        target = TableURI((tmp_path / "csv-ticks").as_uri())
         store = CsvManagedTemporalStore(artifact_root, descriptor())
         lifecycle = lifecycle_case(artifact_root, target)
         staged = store.stage(lifecycle.stage_request)

@@ -40,4 +40,4 @@ After big code changes, refresh the graph with `graft build` (deterministic,
 no API key, $0).
 <!-- graft:end -->
 
-Project URL policy: local tabular/workbook files use canonical file:// URLs; do not introduce csv://, excel://, xlsx://, or maybe:// public routes. MaybeSheet uses canonical HTTPS document URLs.
+Project URL policy: local tabular/workbook files use canonical file:// URLs; do not introduce csv://, managed+csv://, excel://, xlsx://, or maybe:// public routes. CSV remains supported as a format/codec; both CSV URI schemes are retired. MaybeSheet uses canonical HTTPS document URLs.

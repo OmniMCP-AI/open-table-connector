@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from open_table_connector.contract import TableURI
+from open_table_connector.local_files import CsvManagedTemporalStore, CsvTemporalExecutor
 from open_table_connector.process import (
     ArtifactStore,
     ConnectorProcessEnvelope,
@@ -10,9 +12,8 @@ from open_table_connector.process import (
     TemporalProcessHandler,
     temporal_registration,
 )
-from open_table_connector.contract import TableURI
-from open_table_connector.local_files import CsvManagedTemporalStore, CsvTemporalExecutor
 from open_table_connector.timeseries import PolarsTemporalExecutor
+
 from specification.conformance.timeseries.support import MemoryTemporalSource, descriptor
 
 from .conftest import lifecycle_case
@@ -73,15 +74,15 @@ def test_ots_shaped_hello_and_execute_return_verified_arrow(tmp_path, semantic_c
 def test_ots_shaped_stage_commit_readback_and_abort(tmp_path) -> None:
     artifact_root = tmp_path / "artifacts"
     artifacts = ArtifactStore(artifact_root)
-    target = TableURI(
-        (tmp_path / "ticks").as_uri().replace("file://", "managed+csv://", 1)
-    )
+    target = TableURI((tmp_path / "ticks").as_uri())
     case = lifecycle_case(artifact_root, target)
     store = CsvManagedTemporalStore(artifact_root, descriptor())
     handler = TemporalProcessHandler(
         executor=CsvTemporalExecutor(descriptor(), store), store=store
     )
     registration = temporal_registration("csv", handler)
+    assert target.scheme == "file"
+    assert registration.connector_id == "csv"
     registry = ConnectorProcessRegistry((registration,))
     server = ConnectorProcessServer(registry, artifacts, CredentialResolver())
 

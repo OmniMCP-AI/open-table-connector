@@ -41,15 +41,19 @@ def test_url_literal_checker_rejects_csv_in_any_composite_scheme_position(
         "".join(f"reject {scheme}://snapshots/orders\n" for scheme in composites),
         encoding="utf-8",
     )
+    retired_managed_csv = "managed+csv" + "://snapshots/orders"
+    allowed_managed_xlsx = "managed+xlsx" + "://snapshots/orders"
     (tmp_path / "managed.md").write_text(
-        "managed+csv://snapshots/orders\n"
-        "managed+xlsx://snapshots/orders\n",
+        retired_managed_csv + "\n" + allowed_managed_xlsx + "\n",
         encoding="utf-8",
     )
-    forbidden = ", ".join(f"{scheme}://" for scheme in ("csv", "excel", "xlsx"))
+    forbidden = ", ".join(
+        f"{scheme}://" for scheme in ("csv", "managed+csv", "excel", "xlsx")
+    )
     (tmp_path / "AGENTS.md").write_text(
         "Project URL policy: local tabular/workbook files use canonical file:// URLs; "
         f"do not introduce {forbidden}, or {'maybe' + '://'} public routes. "
+        "CSV remains supported as a format/codec; both CSV URI schemes are retired. "
         "MaybeSheet uses canonical HTTPS document URLs.\n",
         encoding="utf-8",
     )
@@ -67,6 +71,7 @@ def test_url_literal_checker_rejects_csv_in_any_composite_scheme_position(
         "composite.md:1: forbidden public URL scheme: csv",
         "composite.md:2: forbidden public URL scheme: csv",
         "composite.md:3: forbidden public URL scheme: csv",
+        "managed.md:1: forbidden public URL scheme: csv",
     ]
 
 

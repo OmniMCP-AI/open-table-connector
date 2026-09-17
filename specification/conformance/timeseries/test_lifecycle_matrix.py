@@ -4,19 +4,24 @@ from open_table_connector.conformance import assert_managed_lifecycle
 from open_table_connector.contract import TableURI
 from open_table_connector.local_files import CsvManagedTemporalStore, JsonManagedTemporalStore
 from open_table_connector.sqlite import SQLiteManagedTemporalStore
-from specification.conformance.timeseries.support import create_ticks, descriptor, sqlite_uri, ticks_table
+
+from specification.conformance.timeseries.support import (
+    create_ticks,
+    descriptor,
+    sqlite_uri,
+    ticks_table,
+)
 
 from .conftest import lifecycle_case
 
 
 def test_csv_managed_lifecycle(tmp_path) -> None:
     root = tmp_path / "artifacts"
-    target = TableURI(
-        (tmp_path / "ticks").as_uri().replace("file://", "managed+csv://", 1)
-    )
+    target = TableURI((tmp_path / "ticks").as_uri())
     result = assert_managed_lifecycle(
         CsvManagedTemporalStore(root, descriptor()), lifecycle_case(root, target)
     )
+    assert target.scheme == "file"
     assert result.readback.table is not None
     assert result.readback.table.equals(ticks_table())
 

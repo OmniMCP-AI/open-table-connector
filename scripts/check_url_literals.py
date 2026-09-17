@@ -8,13 +8,16 @@ import subprocess
 from pathlib import Path
 
 _FORBIDDEN_SCHEMES = ("csv", "excel", "xlsx", "maybe")
-_ALLOWED_MANAGED_SCHEMES = frozenset({"managed+csv", "managed+xlsx"})
+_ALLOWED_MANAGED_SCHEMES = frozenset({"managed+xlsx"})
 _URL = re.compile(r"(?<![A-Za-z0-9_.+-])(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*):\/\/", re.IGNORECASE)
 _AGENTS_POLICY = (
     "Project URL policy: local tabular/workbook files use canonical file:// URLs; "
     "do not introduce "
-    + ", ".join(f"{scheme}://" for scheme in ("csv", "excel", "xlsx"))
+    + ", ".join(
+        f"{scheme}://" for scheme in ("csv", "managed+csv", "excel", "xlsx")
+    )
     + f", or {'maybe' + '://'} public routes. "
+    "CSV remains supported as a format/codec; both CSV URI schemes are retired. "
     "MaybeSheet uses canonical HTTPS document URLs."
 )
 
