@@ -142,6 +142,7 @@ class CsvManagedTemporalStore:
             extension=PROVIDER_CSV,
             encode_snapshot=_encode_csv,
             decode_snapshot=lambda data: _decode_csv(data, descriptor),
+            physical_target_validator=self._validate_physical_target,
             clock=clock,
             fault_injector=fault_injector,
         )
@@ -175,6 +176,15 @@ class CsvManagedTemporalStore:
 
     def recover(self, target: TableURI) -> None:
         self.snapshots.recover(target)
+
+    @staticmethod
+    def _validate_physical_target(target: TableURI) -> None:
+        if target.scheme != SCHEME_FILE:
+            raise TemporalExtensionError(
+                TemporalErrorCode.PROTOCOL_INVALID,
+                "CSV managed store accepts only file physical targets",
+                {"scheme": target.scheme},
+            )
 
 
 class _CsvTemporalSource:

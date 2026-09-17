@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import polars as pl
@@ -85,6 +86,24 @@ def test_csv_rejects_non_file_uri_before_io(tmp_path: Path, scheme: str) -> None
         CsvTemporalExecutor(descriptor()).execute(request)
 
     assert raised.value.code is TemporalErrorCode.PROTOCOL_INVALID
+
+
+@pytest.mark.parametrize("scheme", ("csv", "managed+csv"))
+def test_managed_csv_rejects_non_file_physical_target_before_layout_creation(
+    tmp_path: Path,
+    scheme: str,
+) -> None:
+    artifact_root = tmp_path / "artifacts"
+    logical = tmp_path / "ticks"
+    store = CsvManagedTemporalStore(artifact_root, descriptor())
+    request = stage_request(artifact_root, logical)
+    physical_target = TableURI(request.physical_target.value.replace("file://", f"{scheme}://", 1))
+
+    with pytest.raises(TemporalExtensionError) as raised:
+        store.stage(replace(request, physical_target=physical_target))
+
+    assert raised.value.code is TemporalErrorCode.PROTOCOL_INVALID
+    assert not logical.with_name("ticks.otc").exists()
 
 
 @pytest.mark.parametrize("plan", operations())
