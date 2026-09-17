@@ -183,7 +183,7 @@
 
   Expected: only the version-label commits are ahead, and no unrelated `.gitignore` or `.ignore` changes are staged.
 
-- [ ] **Step 4: Push the implementation to remote main**
+- [x] **Step 4: Push the implementation to remote main**
 
   ```bash
   git push origin HEAD:main
@@ -191,6 +191,6 @@
 
   Expected: remote `main` advances to the final version-label commit.
 
-- [ ] **Step 5: Mark all plan tasks complete**
+- [x] **Step 5: Mark all plan tasks complete**
 
   Update every checkbox in this plan to `[x]` only after its corresponding command succeeds.
