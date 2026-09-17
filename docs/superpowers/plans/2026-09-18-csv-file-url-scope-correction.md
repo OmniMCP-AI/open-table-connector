@@ -67,9 +67,9 @@
 - Consumes: The complete file-URL CSV implementation and aligned repository policy.
 - Produces: A verified branch ready to merge into remote `main`.
 
-- [ ] **Step 1: Search the graph exhaustively** for `SCHEME_MANAGED_CSV`, the `managed+csv` scheme, and scheme-specific CSV URI construction; resolve every remaining production reference.
-- [ ] **Step 2: Run the full suite** with `uv run pytest -q` and record the result.
-- [ ] **Step 3: Run repository quality checks**: Ruff, mypy scripts, metadata, package-boundary/independence checks, canonical-literal checks, URL-literal checks, schema parity, provider independence, and package build checks as defined by the repository CI workflow.
-- [ ] **Step 4: Rebuild graft** with `graft build`, then run the final graph search and inspect the diff for scope compliance.
-- [ ] **Step 5: Commit any verification fixes**, run the affected checks again, and commit with an appropriate `fix:` message.
-- [ ] **Step 6: Push the verified branch to remote `main`** using the repository's existing direct-main delivery convention, then verify `origin/main` points to the delivered commit.
+- [x] **Step 1: Search the graph exhaustively** for `SCHEME_MANAGED_CSV`, the `managed+csv` scheme, and scheme-specific CSV URI construction; resolve every remaining production reference.
+- [x] **Step 2: Run the full suite** with `uv run pytest -q` and record the result: 1,632 passed, 5 skipped, 2 unrelated warnings.
+- [x] **Step 3: Run repository quality checks**: Ruff, mypy scripts, metadata, package-boundary/independence checks, canonical-literal checks, URL-literal checks, schema parity, provider independence, and package build checks as defined by the repository CI workflow; all exited 0.
+- [x] **Step 4: Rebuild graft** with `graft build`, then run the final graph search and inspect the diff for scope compliance.
+- [x] **Step 5: Commit any verification fixes**, run the affected checks again, and commit with an appropriate `fix:` message; the pre-delivery physical-target validation fix was committed as `1578e3b` and verified by 37 focused tests plus the full suite.
+- [x] **Step 6: Push the verified branch to remote `main`** using the repository's existing direct-main delivery convention, then verify `origin/main` points to the delivered commit.
