@@ -1,5 +1,4 @@
 import pytest
-
 from open_table_connector.cli import __main__ as cli_main
 from open_table_connector.cli import version
 

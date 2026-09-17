@@ -24,6 +24,7 @@ from open_table_connector.contract import (
 from .commands import run_command
 from .output import emit_error
 from .registry import build_default_registry
+from .version import get_version_label
 
 _FORMATS = (FORMAT_AUTO, PROVIDER_CSV, PROVIDER_EXCEL, PROVIDER_JSON, PROVIDER_JSONL, FORMAT_TABLE)
 _OUTPUT_FORMATS = (PROVIDER_CSV, PROVIDER_JSON, PROVIDER_JSONL, FORMAT_TABLE)
@@ -123,6 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = _ArgumentParser(
         prog="otc", description="Move and inspect tables through Open Connectors."
     )
+    parser.add_argument("--version", action="version", version=get_version_label())
     subparsers = parser.add_subparsers(dest="command", required=True, parser_class=_ArgumentParser)
 
     list_parser = subparsers.add_parser("list", help="list available connectors")
