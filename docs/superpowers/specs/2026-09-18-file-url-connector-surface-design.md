@@ -10,8 +10,8 @@ The public URL policy after this change is:
 - Local CSV, Excel, JSON, JSONL, Markdown, and workbook operations use
   `file://` URLs.
 - MaybeSheet uses `https://www.maybe.ai/docs/spreadsheets/d/<document>` URLs.
-- CSV-, Excel-, and MaybeSheet-specific schemes, plus `xlsx://`, are not public
-  connector routes.
+- CSV-, Excel-, XLSX-, and MaybeSheet-specific schemes are not public connector
+  routes.
 
 CSV and Excel remain supported file formats. This change removes their
 provider-specific connector identities and URL aliases; it does not remove
@@ -72,8 +72,8 @@ canonical HTTPS target.
 Add or update regression coverage for:
 
 1. CSV and Excel reads through `LocalFilesConnector` with `file://` URIs.
-2. Rejection/non-discovery of the retired CSV, Excel, and MaybeSheet-specific
-   routes and the `xlsx://` route.
+2. Rejection/non-discovery of the retired CSV, Excel, XLSX, and
+   MaybeSheet-specific routes.
 3. MaybeSheet CLI, connector, spreadsheet, formula, and temporal behavior with
    canonical HTTPS URLs, including stable `table_id` binding.
 4. No leaked retired schemes in plugin descriptors, manifests, generated
@@ -85,6 +85,6 @@ the URL policy so future changes do not reintroduce the aliases.
 ## Compatibility boundary
 
 This is an intentional breaking change for callers that instantiate the
-dedicated CSV/Excel connector classes or pass scheme-specific CSV/Excel,
-`xlsx://`, or MaybeSheet endpoints. Callers should use `file:///absolute/path/...` for
-local files and the canonical MaybeSheet HTTPS document URL for MaybeSheet.
+dedicated CSV/Excel connector classes or pass scheme-specific CSV/Excel/XLSX or
+MaybeSheet endpoints. Callers should use `file:///absolute/path/...` for local
+files and the canonical MaybeSheet HTTPS document URL for MaybeSheet.

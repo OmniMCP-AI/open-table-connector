@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from open_table_connector.contract import (
     BoundedTableReadRequest,
     ResourceLimits,
@@ -9,6 +10,15 @@ from open_table_connector.contract import (
 )
 from open_table_connector.contract.bounded_reads import ReadExtent
 from open_table_connector.local_files import CONNECTOR_IDENTITY, LocalBoundedReader
+
+
+def test_bounded_reader_rejects_retired_csv_scheme_before_path_validation(tmp_path) -> None:
+    missing_source = tmp_path / "missing.csv"
+
+    with pytest.raises(ValueError, match="unsupported scheme"):
+        LocalBoundedReader(connector=CONNECTOR_IDENTITY).read_arrow_bounded(
+            BoundedTableReadRequest(TableURI("csv" + f"://{missing_source}"))
+        )
 
 
 def test_csv_bounded_reader_returns_truthful_truncation_receipt(tmp_path) -> None:

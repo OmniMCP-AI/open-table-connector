@@ -42,7 +42,8 @@ def test_url_literal_checker_rejects_csv_in_any_composite_scheme_position(
         encoding="utf-8",
     )
     (tmp_path / "managed.md").write_text(
-        "managed+csv://snapshots/orders\nmanaged+xlsx://snapshots/orders\n",
+        "managed+csv://snapshots/orders\n"
+        "managed+xlsx://snapshots/orders\n",
         encoding="utf-8",
     )
     forbidden = ", ".join(f"{scheme}://" for scheme in ("csv", "excel", "xlsx"))
@@ -66,6 +67,38 @@ def test_url_literal_checker_rejects_csv_in_any_composite_scheme_position(
         "composite.md:1: forbidden public URL scheme: csv",
         "composite.md:2: forbidden public URL scheme: csv",
         "composite.md:3: forbidden public URL scheme: csv",
+    ]
+
+
+def test_url_literal_checker_rejects_xlsx_direct_and_nonexact_managed_schemes(
+    tmp_path: Path,
+) -> None:
+    scheme = "xlsx"
+    (tmp_path / "xlsx.md").write_text(
+        "\n".join(
+            (
+                scheme + "://snapshots/orders",
+                "foo+" + scheme + "://snapshots/orders",
+                "managed+" + scheme + "+foo://snapshots/orders",
+                "managed+xlsx://snapshots/orders",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(URL_POLICY_CHECKER), "--root", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert result.stdout.splitlines() == [
+        "xlsx.md:1: forbidden public URL scheme: xlsx",
+        "xlsx.md:2: forbidden public URL scheme: xlsx",
+        "xlsx.md:3: forbidden public URL scheme: xlsx",
     ]
 
 

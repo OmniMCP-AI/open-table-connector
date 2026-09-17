@@ -10,12 +10,13 @@ from urllib.parse import unquote, urlsplit
 
 import pyarrow as pa
 from open_table_connector.contract import (
+    PROVIDER_JSONL,
+    SCHEME_FILE,
     BaseConvention,
     BoundedArrowTableReadResult,
     BoundedReadReceipt,
     BoundedTableReadRequest,
     ConnectorIdentity,
-    PROVIDER_JSONL,
     ReadExtent,
     TableMode,
 )
@@ -31,6 +32,8 @@ class LocalBoundedReader:
 
     def read_arrow_bounded(self, request: BoundedTableReadRequest) -> BoundedArrowTableReadResult:
         parsed = urlsplit(request.uri.value)
+        if parsed.scheme not in {SCHEME_FILE, PROVIDER_JSONL}:
+            raise ValueError("bounded local reads reject unsupported schemes")
         if parsed.netloc not in {"", "localhost"} or parsed.query:
             raise ValueError("bounded local reads require a hostless URI without a query")
         path = Path(unquote(parsed.path))

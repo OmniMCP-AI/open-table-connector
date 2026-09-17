@@ -41,7 +41,7 @@ def test_address_and_destination_values_round_trip_without_credentials() -> None
     }
 
     sheet_destination = otc.SheetModeDestination(
-        grid=TableURI("xlsx:///tmp/orders.xlsx"),
+        grid=TableURI("file:///tmp/orders.xlsx"),
         anchor="B3",
         header=True,
     )
@@ -50,7 +50,7 @@ def test_address_and_destination_values_round_trip_without_credentials() -> None
 
 def test_sheet_range_source_requires_an_explicit_schema_policy_contract() -> None:
     source = otc.SheetRangeSource(
-        grid=TableURI("xlsx:///tmp/orders.xlsx"),
+        grid=TableURI("file:///tmp/orders.xlsx"),
         cell_range="A1:C5",
         header=True,
         schema=pl.Schema({"order_id": pl.Int64, "status": pl.String}),
@@ -63,7 +63,7 @@ def test_sheet_range_source_requires_an_explicit_schema_policy_contract() -> Non
 
     with pytest.raises(ValueError, match="requires schema"):
         otc.SheetRangeSource(
-            grid=TableURI("xlsx:///tmp/orders.xlsx"),
+            grid=TableURI("file:///tmp/orders.xlsx"),
             cell_range="A1:C5",
             header=True,
             schema=None,
@@ -72,7 +72,7 @@ def test_sheet_range_source_requires_an_explicit_schema_policy_contract() -> Non
 
     with pytest.raises(ValueError, match="requires schema=None"):
         otc.SheetRangeSource(
-            grid=TableURI("xlsx:///tmp/orders.xlsx"),
+            grid=TableURI("file:///tmp/orders.xlsx"),
             cell_range="A1:C5",
             header=True,
             schema=pl.Schema({"order_id": pl.Int64}),

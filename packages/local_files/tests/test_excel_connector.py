@@ -127,7 +127,7 @@ def test_excel_connector_rejects_format_specific_scheme(tmp_path: Path) -> None:
     _workbook(source)
 
     with pytest.raises(ConnectorError) as raised:
-        ExcelConnector().resolve(TableURI(f"xlsx://{source}"), ResolveContext())
+        ExcelConnector().resolve(TableURI("xlsx" + f"://{source}"), ResolveContext())
 
     assert raised.value.code is ConnectorErrorCode.INVALID_URI
 

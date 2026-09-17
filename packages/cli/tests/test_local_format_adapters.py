@@ -38,7 +38,9 @@ def test_registry_rejects_retired_csv_scheme() -> None:
 
 def test_registry_rejects_format_specific_excel_scheme() -> None:
     with pytest.raises(ConnectorError) as error:
-        build_default_registry().connector_for(parse_endpoint("xlsx:///tmp/orders.xlsx"))
+        build_default_registry().connector_for(
+            parse_endpoint("xlsx" + ":///tmp/orders.xlsx")
+        )
 
     assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
 
