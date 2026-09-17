@@ -85,6 +85,10 @@ print(result.table)
 print(result.receipt.to_wire())
 ```
 
+`Path.as_uri()` supplies the canonical `file://` target. The CSV executor
+selects the CSV codec for that file; CSV is a supported format, not a separate
+public URI route.
+
 Run it from the directory containing `ticks.csv` after installing the local
 files and time-series packages. The range is half-open (`[start, end)`), and
 all requests are bounded by rows, bytes, and duration.

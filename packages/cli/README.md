@@ -21,6 +21,7 @@ otc read --from md:///absolute/path/orders.md --output-format json
 otc convert --from orders.csv --to - --output-format jsonl
 otc convert --from /absolute/path/orders.csv --to md:///absolute/path/orders.md
 otc import --from orders.csv --to gsheets://SPREADSHEET/Orders --if-exists replace
+otc import --from orders.csv --to https://www.maybe.ai/docs/spreadsheets/d/DOCUMENT --target Orders --if-exists append
 ```
 
 The long-form command is also available:
@@ -74,4 +75,6 @@ scheme. Use bare paths or `file://` for local CSV files, `--from-format csv`
 when the input format must be explicit, and `--output-format csv` or
 `--to-format csv` for CSV output. Use `md://` when Markdown is explicitly part
 of the endpoint; otherwise local-file probing selects the format from the path
-and payload.
+and payload. MaybeSheet uses canonical
+`https://www.maybe.ai/docs/spreadsheets/d/DOCUMENT` URLs rather than a
+provider-specific public URI route.

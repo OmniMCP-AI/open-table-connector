@@ -46,7 +46,17 @@ result = client.materialize(
 
 # The short facade uses the same operations through a lazy default Client.
 result = otc.read("file:///data/orders.csv")
+
+# Remote providers retain their canonical public URLs.
+maybe_orders = client.open(
+    "https://www.maybe.ai/docs/spreadsheets/d/DOCUMENT?table_id=orders"
+).require_value()
 ```
+
+Local CSV and workbook resources use bare paths or canonical `file://` URLs.
+CSV remains a supported format and codec for reads, writes, and conversions,
+but it has no format-specific public connector route. MaybeSheet uses the
+canonical HTTPS document URL shown above.
 
 `Client.materialize()` is create-only. Existing physical tables are mutated
 through explicit operations on `Table`:

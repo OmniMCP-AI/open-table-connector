@@ -70,6 +70,10 @@ otc read --from file:///absolute/path/orders.csv --output-format table
 otc convert --from orders.csv --to orders.jsonl --output-format jsonl
 ```
 
+Local CSV inputs use bare paths or canonical `file://` URLs. CSV remains a
+supported format and codec for reads, writes, and conversion, but its retired
+format-specific URI route is not a public connector endpoint.
+
 The CLI is the quickest path for ordinary table movement, but it is now meant
 to be a thin wrapper over the SDK. The Python SDK is the primary application
 surface for normalized table operations, relational SQL lite, temporal SQL
@@ -216,11 +220,14 @@ otc read --from file:///absolute/path/orders.csv --output-format table
 otc read --from file:///absolute/path/orders.xlsx --sheet Orders
 otc read --from md:///absolute/path/orders.md --output-format json
 otc read --from gsheets://SPREADSHEET/Orders --output-format json
+otc read --from https://www.maybe.ai/docs/spreadsheets/d/DOCUMENT --target Orders --output-format json
 ```
 
 Use `md://` for explicit Markdown routing. Bare paths and `file://` URIs route
 through `local_files`, which probes CSV, XLSX, and Markdown payloads; use the
 CSV format options when an extensionless path needs explicit CSV selection.
+MaybeSheet uses canonical HTTPS document URLs like the one above; it does not
+expose a provider-specific public URI route.
 
 ## Portable time-series storage
 

@@ -12,6 +12,9 @@ The local matrix keeps the concrete `csv`, `excel`, and `md` cases separate
 from the `local_files` compatibility case. Canonical `file://` CSV and Excel
 targets exercise the format-specific implementations, while public discovery
 routes local files through `local_files`; `md://` retains direct routing.
+The `csv` conformance family names the supported codec implementation, not a
+public CSV-specific URI route. Internal managed CSV storage is tested
+separately and does not change this public routing contract.
 
 Each case owns its temporary files, database, recording transport, or process
 client. The suite does not read credentials, call the network, invoke vendor

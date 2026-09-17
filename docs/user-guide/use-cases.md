@@ -46,6 +46,10 @@ otc read --from daily-orders.jsonl --output-format table
 otc inspect --from daily-orders.xlsx --output-format json
 ```
 
+These local examples intentionally use bare paths. Canonical `file://` URLs
+are also accepted; CSV remains a supported input, output, and conversion
+format without a format-specific public connector route.
+
 `inspect` provides the detected schema and source receipt. `convert` keeps the
 workflow local and produces a new destination receipt. Use this path for
 exports, hand-offs, and small data preparation jobs where a transactional
@@ -194,6 +198,9 @@ result = CsvTemporalExecutor(descriptor).execute(request)
 print(result.table)
 print(result.receipt.to_wire())
 ```
+
+`Path.as_uri()` creates the canonical local-file URL while
+`CsvTemporalExecutor` selects the CSV codec.
 
 Run it with the local-file and temporal extras installed:
 

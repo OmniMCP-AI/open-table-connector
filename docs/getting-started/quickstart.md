@@ -29,7 +29,9 @@ otc read --from file://$(pwd)/orders.csv --output-format table
 ```
 
 Use `md://` when you want explicit Markdown routing. Use a bare path or
-`file://` for local format probing, including CSV and Excel files.
+`file://` for local format probing, including CSV and Excel files. CSV remains
+a supported input, output, and conversion format even though it has no
+format-specific public connector route.
 
 ## 4. Convert it
 

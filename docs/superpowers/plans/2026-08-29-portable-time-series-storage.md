@@ -461,7 +461,7 @@ git commit -m "feat: add local connector process protocol"
 **Interfaces:**
 - Produces internal `ManagedSnapshotStore.stage_artifact(...)`, `publish_snapshot(...)`, `resolve_snapshot(target: TableURI, snapshot_reference: str) -> Path`, `read_snapshot(...)`, and `abort_stage(...)` primitives used by every managed local format.
 - Produces `CsvTemporalExecutor` and `CsvManagedTemporalStore`.
-- Defines managed targets as `managed+csv:///absolute/path/to/logical-name`. The logical path is a namespace, not a mutable CSV file.
+- Defines internal managed-storage targets as `managed+csv:///absolute/path/to/logical-name`. This is not a public direct-file route; the logical path is a namespace, not a mutable CSV file.
 - Uses layout `<logical-name>.otc/snapshots/<content-hash>.csv`, `stages/<stage-id>.arrow`, `receipts/<operation-id>.json`, and atomic `current.json`.
 - Adds `open-table-connector-timeseries==0.1.0` as a workspace dependency of `open-table-connector-local-files`.
 

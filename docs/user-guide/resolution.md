@@ -29,6 +29,9 @@ with Client.from_config("/absolute/path/config.toml") as client:
     result = client.collect(latest).require_value()
 ```
 
+The `.csv` suffix selects the CSV format after the canonical `file://` target
+is resolved. CSV remains a supported codec; it is not a separate public route.
+
 The descriptor hash is computed from the descriptor and the exact Arrow schema.
 It excludes the physical URI and credentials. A provider must reject a plan
 whose descriptor hash does not match the opened table.

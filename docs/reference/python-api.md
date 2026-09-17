@@ -15,6 +15,11 @@ frame = table.read().require_value()
 client.close()
 ```
 
+Use bare paths or canonical `file://` URLs for local CSV and workbook files.
+CSV remains available as a format and codec, including conversion output, but
+does not have a format-specific public connector route. MaybeSheet targets use
+canonical `https://www.maybe.ai/docs/spreadsheets/d/DOCUMENT_ID` document URLs.
+
 Main public types include:
 
 - `Client` — routing, open, collect, materialize, SQL, and formula entry point;

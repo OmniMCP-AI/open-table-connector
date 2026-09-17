@@ -59,5 +59,10 @@ with Client.from_config("/absolute/path/config.toml") as client:
     frame = table.read().require_value()
 ```
 
+Local CSV and workbook targets use bare paths or canonical `file://` URLs;
+their formats are detected independently of the public route. For MaybeSheet,
+use a canonical `https://www.maybe.ai/docs/spreadsheets/d/DOCUMENT_ID` URL and
+keep credentials in the configured environment binding.
+
 Provider packages are discovered from installed descriptors. The configuration
 selects and constrains them; it does not import arbitrary modules or commands.
