@@ -16,8 +16,6 @@ from open_table_connector.contract import (
     PROVIDER_CSV,
     PROVIDER_JSON,
     PROVIDER_JSONL,
-    SCHEME_FILE,
-    SCHEME_MANAGED_CSV,
     ConnectorError,
     ConnectorErrorCode,
     ResolveContext,
@@ -141,9 +139,7 @@ def _csv_uri(path: Path) -> TableURI:
 
 
 def _managed_uri(path: Path) -> TableURI:
-    return TableURI(
-        path.absolute().as_uri().replace(f"{SCHEME_FILE}://", f"{SCHEME_MANAGED_CSV}://", 1)
-    )
+    return TableURI(path.absolute().as_uri())
 
 
 def _artifact(root: Path, frame: pl.DataFrame) -> ArrowArtifactReference:

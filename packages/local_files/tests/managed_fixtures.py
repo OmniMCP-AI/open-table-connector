@@ -4,7 +4,6 @@ import hashlib
 from pathlib import Path
 
 import pyarrow as pa
-
 from open_table_connector.contract import TableURI
 from open_table_connector.timeseries import (
     ArrowArtifactReference,
@@ -20,7 +19,7 @@ BOUNDS = ResourceBounds(10_000, 64 * 1024 * 1024, 30_000)
 
 
 def managed_uri(path: Path) -> TableURI:
-    return TableURI(path.as_uri().replace("file://", "managed+csv://", 1))
+    return TableURI(path.absolute().as_uri())
 
 
 def put_artifact(root: Path, table: pa.Table | None = None) -> ArrowArtifactReference:

@@ -8,7 +8,7 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
-from open_table_connector.contract import PROVIDER_CSV, SCHEME_FILE, SCHEME_MANAGED_CSV
+from open_table_connector.contract import PROVIDER_CSV, SCHEME_FILE
 from open_table_connector.local_files import encode_json_table
 from open_table_connector.process import ConnectorProcessEnvelope, ProcessOperation, bootstrap
 from open_table_connector.process.framing import read_frame, write_frame
@@ -38,19 +38,15 @@ def _write_csv_process_config(
     )
 
 
-@pytest.mark.parametrize(
-    ("scheme", "managed"),
-    ((SCHEME_FILE, False), (SCHEME_MANAGED_CSV, True)),
-)
-def test_csv_bootstrap_accepts_file_and_managed_targets(
+@pytest.mark.parametrize("managed", (False, True))
+def test_csv_bootstrap_accepts_file_targets(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    scheme: str,
     managed: bool,
 ) -> None:
     source = tmp_path / "ticks.csv"
-    target = source.as_uri().replace("file://", f"{scheme}://", 1)
-    config = tmp_path / f"{scheme}.json"
+    target = source.as_uri()
+    config = tmp_path / f"{SCHEME_FILE}-{managed}.json"
     _write_csv_process_config(config, target, managed=managed)
     monkeypatch.setattr(bootstrap, "_provider_binding", lambda *args: (object(), None))
 
@@ -59,15 +55,21 @@ def test_csv_bootstrap_accepts_file_and_managed_targets(
     assert registry is not None
 
 
-def test_csv_bootstrap_rejects_retired_direct_csv_target(
+@pytest.mark.parametrize("scheme", ("csv", "managed+csv"))
+def test_csv_bootstrap_rejects_non_file_target_before_binding(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    scheme: str,
 ) -> None:
     source = tmp_path / "ticks.csv"
-    target = source.as_uri().replace("file://", f"{PROVIDER_CSV}://", 1)
-    config = tmp_path / "csv.json"
+    target = source.as_uri().replace("file://", f"{scheme}://", 1)
+    config = tmp_path / f"{scheme}.json"
     _write_csv_process_config(config, target, managed=False)
-    monkeypatch.setattr(bootstrap, "_provider_binding", lambda *args: (object(), None))
+
+    def unexpected_binding(*args):
+        raise AssertionError("provider binding must not run for an invalid CSV target")
+
+    monkeypatch.setattr(bootstrap, "_provider_binding", unexpected_binding)
 
     with pytest.raises(ValueError, match="process target scheme does not match provider"):
         bootstrap.build_process_runtime(config, tmp_path / "artifacts")

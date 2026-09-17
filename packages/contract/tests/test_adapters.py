@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import open_table_connector.contract as contract
 import pytest
 from open_table_connector.contract import (
     CREDENTIAL_ACCESS_TOKEN,
     HOST_GOOGLE_DOCS,
     OPTION_TIMEOUT_SECONDS,
+    PROVIDER_CSV,
     PROVIDER_GOOGLE_SHEETS,
-    SCHEME_MANAGED_CSV,
     SETTING_ENDPOINT,
     AdapterEndpoint,
     AdapterFormat,
@@ -75,11 +76,10 @@ def test_parse_adapter_endpoint_does_not_sanitize_retired_csv_route() -> None:
         parse_adapter_endpoint(retired_route)
 
 
-def test_csv_remains_a_format_and_managed_target_namespace() -> None:
-    managed = parse_adapter_endpoint(f"{SCHEME_MANAGED_CSV}:///tmp/orders")
-
+def test_csv_remains_a_format_and_provider_without_a_managed_scheme() -> None:
     assert parse_adapter_format("csv") is AdapterFormat.CSV
-    assert managed.uri == TableURI(f"{SCHEME_MANAGED_CSV}:///tmp/orders")
+    assert PROVIDER_CSV == "csv"
+    assert not hasattr(contract, "SCHEME_MANAGED_CSV")
 
 
 def test_configuration_error_exposes_only_explicit_safe_details() -> None:
@@ -88,9 +88,7 @@ def test_configuration_error_exposes_only_explicit_safe_details() -> None:
         safe_details={"provider_id": PROVIDER_GOOGLE_SHEETS},
     )
     assert error.code is ConnectorErrorCode.CONFIGURATION
-    assert error.to_wire()["safe_details"] == {
-        "provider_id": PROVIDER_GOOGLE_SHEETS
-    }
+    assert error.to_wire()["safe_details"] == {"provider_id": PROVIDER_GOOGLE_SHEETS}
 
 
 def test_host_constant_remains_a_single_canonical_route_value() -> None:
