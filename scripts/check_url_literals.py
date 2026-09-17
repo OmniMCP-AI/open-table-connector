@@ -53,15 +53,19 @@ def check_url_literals(root: Path) -> list[str]:
                 continue
             for match in _URL.finditer(line):
                 full_scheme = match.group("scheme").casefold()
-                leaf_scheme = full_scheme.rsplit("+", 1)[-1]
-                if (
-                    full_scheme in _ALLOWED_MANAGED_SCHEMES
-                    or leaf_scheme not in _FORBIDDEN_SCHEMES
-                ):
+                forbidden_scheme = next(
+                    (
+                        component
+                        for component in full_scheme.split("+")
+                        if component in _FORBIDDEN_SCHEMES
+                    ),
+                    None,
+                )
+                if full_scheme in _ALLOWED_MANAGED_SCHEMES or forbidden_scheme is None:
                     continue
                 errors.append(
                     f"{relative}:{line_number}: forbidden public URL scheme: "
-                    f"{leaf_scheme}"
+                    f"{forbidden_scheme}"
                 )
     return errors
 

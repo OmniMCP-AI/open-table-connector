@@ -31,14 +31,15 @@ def test_production_python_reuses_canonical_provider_and_route_constants() -> No
     assert check_canonical_literals(ROOT) == []
 
 
-def test_url_literal_checker_rejects_direct_and_arbitrary_composite_csv_urls(
+def test_url_literal_checker_rejects_csv_in_any_composite_scheme_position(
     tmp_path: Path,
 ) -> None:
     direct = "csv" + "://"
-    composite = "foo+csv" + "://"
+    composites = ("foo+csv", "csv+foo", "foo+csv+bar")
     (tmp_path / "README.md").write_text(f"use {direct} for data\n", encoding="utf-8")
     (tmp_path / "composite.md").write_text(
-        f"reject {composite}snapshots/orders\n", encoding="utf-8"
+        "".join(f"reject {scheme}://snapshots/orders\n" for scheme in composites),
+        encoding="utf-8",
     )
     (tmp_path / "managed.md").write_text(
         "managed+csv://snapshots/orders\nmanaged+xlsx://snapshots/orders\n",
@@ -63,6 +64,8 @@ def test_url_literal_checker_rejects_direct_and_arbitrary_composite_csv_urls(
     assert result.stdout.splitlines() == [
         "README.md:1: forbidden public URL scheme: csv",
         "composite.md:1: forbidden public URL scheme: csv",
+        "composite.md:2: forbidden public URL scheme: csv",
+        "composite.md:3: forbidden public URL scheme: csv",
     ]
 
 
