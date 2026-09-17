@@ -159,7 +159,7 @@
 **Files:**
 - No source changes; verification and Git state only.
 
-- [ ] **Step 1: Run focused and repository quality checks**
+- [x] **Step 1: Run focused and repository quality checks**
 
   Run:
 
@@ -171,13 +171,13 @@
 
   Expected: all commands exit 0.
 
-- [ ] **Step 2: Verify the live label against Git**
+- [x] **Step 2: Verify the live label against Git**
 
   Run: `uv run otc --version` and `git log -1 --format='%cs %h'`.
 
   Expected: the date and SHA in the first command match the second command, with the base version `0.1.0`.
 
-- [ ] **Step 3: Confirm only scoped commits are pending**
+- [x] **Step 3: Confirm only scoped commits are pending**
 
   Run: `git status --short --branch` and `git log origin/main..HEAD --oneline`.
 
