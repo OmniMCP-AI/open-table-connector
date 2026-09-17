@@ -9,6 +9,12 @@ Install a released CLI with `uv tool install open-table-connector`, or install
 from this checkout with `uv sync --all-packages --group dev` followed by `source .venv/bin/activate`.
 Then verify the command with `otc --help`.
 
+Show the stable package version and the latest source commit label with:
+
+```console
+otc --version
+```
+
 Examples:
 
 ```console
