@@ -31,12 +31,19 @@ def test_production_python_reuses_canonical_provider_and_route_constants() -> No
     assert check_canonical_literals(ROOT) == []
 
 
-def test_url_literal_checker_rejects_direct_csv_and_allows_managed_and_policy(
+def test_url_literal_checker_rejects_direct_and_arbitrary_composite_csv_urls(
     tmp_path: Path,
 ) -> None:
     direct = "csv" + "://"
+    composite = "foo+csv" + "://"
     (tmp_path / "README.md").write_text(f"use {direct} for data\n", encoding="utf-8")
-    (tmp_path / "managed.md").write_text("managed+csv://snapshots/orders\n", encoding="utf-8")
+    (tmp_path / "composite.md").write_text(
+        f"reject {composite}snapshots/orders\n", encoding="utf-8"
+    )
+    (tmp_path / "managed.md").write_text(
+        "managed+csv://snapshots/orders\nmanaged+xlsx://snapshots/orders\n",
+        encoding="utf-8",
+    )
     forbidden = ", ".join(f"{scheme}://" for scheme in ("csv", "excel", "xlsx"))
     (tmp_path / "AGENTS.md").write_text(
         "Project URL policy: local tabular/workbook files use canonical file:// URLs; "
@@ -53,7 +60,10 @@ def test_url_literal_checker_rejects_direct_csv_and_allows_managed_and_policy(
     )
 
     assert result.returncode == 1
-    assert result.stdout.splitlines() == ["README.md:1: forbidden public URL scheme: csv"]
+    assert result.stdout.splitlines() == [
+        "README.md:1: forbidden public URL scheme: csv",
+        "composite.md:1: forbidden public URL scheme: csv",
+    ]
 
 
 def test_repository_has_no_forbidden_public_url_literals() -> None:

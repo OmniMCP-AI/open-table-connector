@@ -8,10 +8,8 @@ import subprocess
 from pathlib import Path
 
 _FORBIDDEN_SCHEMES = ("csv", "excel", "maybe")
-_FORBIDDEN_URL = re.compile(
-    rf"(?<![A-Za-z0-9_+])(?P<scheme>{'|'.join(_FORBIDDEN_SCHEMES)})" + r"://",
-    re.IGNORECASE,
-)
+_ALLOWED_MANAGED_SCHEMES = frozenset({"managed+csv", "managed+xlsx"})
+_URL = re.compile(r"(?<![A-Za-z0-9_.+-])(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*):\/\/", re.IGNORECASE)
 _AGENTS_POLICY = (
     "Project URL policy: local tabular/workbook files use canonical file:// URLs; "
     "do not introduce "
@@ -53,10 +51,17 @@ def check_url_literals(root: Path) -> list[str]:
         for line_number, line in enumerate(lines, start=1):
             if relative == Path("AGENTS.md") and line == _AGENTS_POLICY:
                 continue
-            for match in _FORBIDDEN_URL.finditer(line):
+            for match in _URL.finditer(line):
+                full_scheme = match.group("scheme").casefold()
+                leaf_scheme = full_scheme.rsplit("+", 1)[-1]
+                if (
+                    full_scheme in _ALLOWED_MANAGED_SCHEMES
+                    or leaf_scheme not in _FORBIDDEN_SCHEMES
+                ):
+                    continue
                 errors.append(
                     f"{relative}:{line_number}: forbidden public URL scheme: "
-                    f"{match.group('scheme').casefold()}"
+                    f"{leaf_scheme}"
                 )
     return errors
 
