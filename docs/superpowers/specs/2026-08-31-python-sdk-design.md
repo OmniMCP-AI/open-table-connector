@@ -336,7 +336,7 @@ Module-level convenience functions delegate to one lazily created,
 thread-safe default Client:
 
 ```python
-result = otc.read("csv:///data/orders.csv")
+result = otc.read("file:///data/orders.csv")
 created = otc.materialize(frame, to="parquet:///data/orders.parquet")
 ```
 

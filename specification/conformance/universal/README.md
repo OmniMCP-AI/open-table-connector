@@ -9,9 +9,9 @@ contracts, discovery, table behavior, database behavior, dbt behavior, CLI
 surfaces, and security invariants without requiring external services.
 
 The local matrix keeps the concrete `csv`, `excel`, and `md` cases separate
-from the `local_files` compatibility case. Explicit `csv://` and `md://`
-endpoints assert direct scheme routing, while bare paths and `file://` URIs
-continue to exercise compatibility autodetection.
+from the `local_files` compatibility case. Canonical `file://` CSV and Excel
+targets exercise the format-specific implementations, while public discovery
+routes local files through `local_files`; `md://` retains direct routing.
 
 Each case owns its temporary files, database, recording transport, or process
 client. The suite does not read credentials, call the network, invoke vendor

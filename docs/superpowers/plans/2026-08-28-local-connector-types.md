@@ -15,7 +15,7 @@
 - Expose concrete connector identities for `csv`, `excel`, and `md`.
 - Preserve the existing `local_files` identity as a compatibility facade.
 - Preserve `file://` URIs and bare local paths through format autodetection.
-- Add explicit URI schemes for direct format selection: `csv://` and `md://`.
+- Use canonical `file://` URLs for CSV and retain `md://` for direct Markdown selection.
 - Keep format-specific behavior behind small, testable connector interfaces.
 - Keep neutral connector code independent of the CLI package.
 - Preserve the existing CLI `--from`/`--to` conversion and import workflows.
@@ -156,7 +156,7 @@ def test_csv_connector_reads_only_csv_scheme(tmp_path: Path) -> None:
     source = tmp_path / "orders.csv"
     source.write_text("id,note\n1,ok\n", encoding="utf8")
     result = CsvConnector().read_arrow(
-        CsvTableReadRequest(TableURI(f"csv://{source}"), ResourceLimits())
+        CsvTableReadRequest(TableURI(source.as_uri()), ResourceLimits())
     )
     assert result.table.to_pylist() == [{"id": "1", "note": "ok"}]
 
@@ -302,7 +302,7 @@ git commit -m "feat: preserve local files as format facade"
 
 **Interfaces:**
 - Consumes: concrete connector classes and manifests from Task 2, `LocalFilesConnector` from Task 3, and the existing `ConnectorAdapter` protocol.
-- Produces: `CsvAdapter`, `MarkdownAdapter`, and the compatibility `LocalAdapter`; `build_adapters()` registers the concrete local identities; `csv://`, `md://`, and `file://` are routable CLI endpoints.
+- Produces: `MarkdownAdapter` and the compatibility `LocalAdapter`; `build_adapters()` registers the public local identities; `md://` and `file://` are routable CLI endpoints while CSV remains a format implementation.
 
 - [x] **Step 1: Write failing registry and CLI tests**
 
@@ -315,7 +315,7 @@ def test_cli_lists_concrete_local_connector_types() -> None:
 
 @pytest.mark.parametrize(
     ("raw", "connector_id"),
-    (("csv:///tmp/orders.csv", "csv"), ("md:///tmp/orders.md", "md")),
+    (("file:///tmp/orders.csv", "local_files"), ("md:///tmp/orders.md", "md")),
 )
 def test_registry_routes_explicit_local_scheme(raw: str, connector_id: str) -> None:
     adapter = build_default_registry().connector_for(parse_endpoint(raw))
@@ -416,7 +416,7 @@ def test_all_current_connectors_have_named_cases() -> None:
     )
 
 
-@pytest.mark.parametrize("raw", ("csv:///tmp/orders.csv", "md:///tmp/orders.md"))
+@pytest.mark.parametrize("raw", ("file:///tmp/orders.csv", "md:///tmp/orders.md"))
 def test_universal_cli_fixture_routes_explicit_local_schemes(raw: str) -> None:
     adapter = build_default_registry().connector_for(parse_endpoint(raw))
     assert adapter.identity.connector_id in {"csv", "md"}

@@ -23,7 +23,7 @@ from open_table_connector.sdk import Client
 from open_table_connector.timeseries import TemporalTableDescriptor
 
 with Client.from_config("/absolute/path/config.toml") as client:
-    table = client.open("csv:///absolute/path/ticks.csv").require_value()
+    table = client.open("file:///absolute/path/ticks.csv").require_value()
     series = table.time_series(descriptor)
     latest = series.latest(at_or_before="2026-08-29T00:10:00.000000000Z")
     result = client.collect(latest).require_value()

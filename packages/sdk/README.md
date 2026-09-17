@@ -45,7 +45,7 @@ result = client.materialize(
 )
 
 # The short facade uses the same operations through a lazy default Client.
-result = otc.read("csv:///data/orders.csv")
+result = otc.read("file:///data/orders.csv")
 ```
 
 `Client.materialize()` is create-only. Existing physical tables are mutated

@@ -18,8 +18,8 @@ name the concrete table formats.
 - Expose concrete connector identities for `csv`, `excel`, and `md`.
 - Preserve the existing `local_files` identity as a compatibility facade.
 - Preserve `file://` URIs and bare local paths through format autodetection.
-- Add explicit URI schemes for direct format selection:
-  `csv://` and `md://`.
+- Use canonical `file://` URLs for CSV and retain `md://` for direct Markdown
+  selection.
 - Keep format-specific behavior behind small, testable connector interfaces.
 - Keep neutral connector code independent of the CLI package.
 - Preserve the existing CLI `--from`/`--to` conversion and import workflows.
@@ -53,7 +53,7 @@ format.
 
 The CLI registry will expose all four identities. Its routing rules are:
 
-1. `csv://` and `md://` select the matching concrete adapter.
+1. `md://` selects the concrete Markdown adapter.
 2. `file://` and bare paths select the `local_files` facade adapter, which
    probes `.xlsx` files and delegates them to the Excel connector.
 3. The facade probes the resource and delegates the operation to the concrete
@@ -90,7 +90,7 @@ not import the CLI package.
 ## Data flow
 
 ```text
-explicit csv:// ───────> CsvAdapter ───────> CsvConnector
+file:// / bare .csv ───> LocalFilesAdapter ─> probe ─> CsvConnector
 file:// / bare .xlsx ──> LocalFilesAdapter ─> probe ─> ExcelConnector
 explicit md:// ────────> MdAdapter ────────> MarkdownConnector
 file:// / bare other ─> LocalFilesAdapter ─> probe ─> concrete connector

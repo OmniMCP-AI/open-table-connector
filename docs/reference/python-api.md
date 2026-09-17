@@ -9,7 +9,7 @@ is Polars-first and returns normalized `OperationResult` values.
 import open_table_connector.sdk as otc
 
 client = otc.Client.from_config("/absolute/path/config.toml")
-table = client.open("csv:///absolute/path/orders.csv").require_value()
+table = client.open("file:///absolute/path/orders.csv").require_value()
 inspection = table.inspect().require_value()
 frame = table.read().require_value()
 client.close()

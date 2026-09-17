@@ -25,11 +25,11 @@ and credential-safe receipt facts.
 ## 3. Read it
 
 ```console
-otc read --from csv://$(pwd)/orders.csv --output-format table
+otc read --from file://$(pwd)/orders.csv --output-format table
 ```
 
-Use `csv://` or `md://` when you want an explicit local format.
-Use a bare path or `file://` for local format probing, including Excel files.
+Use `md://` when you want explicit Markdown routing. Use a bare path or
+`file://` for local format probing, including CSV and Excel files.
 
 ## 4. Convert it
 

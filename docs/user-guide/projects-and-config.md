@@ -55,7 +55,7 @@ must remain credential-free; do not put tokens in a URI or config path.
 from open_table_connector.sdk import Client, ClientConfig
 
 with Client.from_config("/absolute/path/config.toml") as client:
-    table = client.open("csv:///absolute/path/orders.csv").require_value()
+    table = client.open("file:///absolute/path/orders.csv").require_value()
     frame = table.read().require_value()
 ```
 

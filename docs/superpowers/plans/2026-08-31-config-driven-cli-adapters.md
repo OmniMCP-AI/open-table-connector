@@ -113,7 +113,7 @@ def test_adapter_endpoint_rejects_mixed_uri_and_path() -> None:
     with pytest.raises(ValueError, match="cannot have both"):
         AdapterEndpoint(
             raw="orders.csv",
-            uri=TableURI("csv:///tmp/orders.csv"),
+            uri=TableURI("file:///tmp/orders.csv"),
             path=Path("orders.csv"),
         )
 

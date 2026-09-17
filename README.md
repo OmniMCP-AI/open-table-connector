@@ -66,7 +66,7 @@ Read, inspect, and convert a local table:
 
 ```console
 otc inspect --from orders.csv --output-format json
-otc read --from csv:///absolute/path/orders.csv --output-format table
+otc read --from file:///absolute/path/orders.csv --output-format table
 otc convert --from orders.csv --to orders.jsonl --output-format jsonl
 ```
 
@@ -212,15 +212,15 @@ Install the CLI package to use `otc` (or the equivalent
 
 ```console
 otc convert --from orders.csv --to - --output-format jsonl
-otc read --from csv:///absolute/path/orders.csv --output-format table
+otc read --from file:///absolute/path/orders.csv --output-format table
 otc read --from file:///absolute/path/orders.xlsx --sheet Orders
 otc read --from md:///absolute/path/orders.md --output-format json
 otc read --from gsheets://SPREADSHEET/Orders --output-format json
 ```
 
-Use `csv://` or `md://` when the format should be selected directly. Existing
-bare paths and `file://` URIs route through `local_files`, which probes CSV,
-XLSX, and Markdown payloads for compatibility.
+Use `md://` for explicit Markdown routing. Bare paths and `file://` URIs route
+through `local_files`, which probes CSV, XLSX, and Markdown payloads; use the
+CSV format options when an extensionless path needs explicit CSV selection.
 
 ## Portable time-series storage
 

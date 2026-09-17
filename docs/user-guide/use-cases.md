@@ -183,9 +183,7 @@ plan = PortableTemporalPlan(
 )
 
 request = TemporalExecutionRequest(
-    target=TableURI(
-        Path("ticks.csv").absolute().as_uri().replace("file://", "csv://", 1)
-    ),
+    target=TableURI(Path("ticks.csv").absolute().as_uri()),
     plan=plan,
     credential_reference=None,
     operation_id="daily-report-scan",
