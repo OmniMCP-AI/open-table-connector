@@ -17,7 +17,7 @@ def test_table_uri_is_a_value_only_credential_free_reference() -> None:
     [
         "relative/orders.csv",
         "file:///data/orders.csv?access_token=secret",
-        "csv:///data/orders.csv?token=secret",
+        "managed+csv:///data/orders?token=secret",
         "file:///tmp/orders.xlsx#access_token=secret",
         "https://user:password@example.test/table",
         "https://example.test/x?token=",

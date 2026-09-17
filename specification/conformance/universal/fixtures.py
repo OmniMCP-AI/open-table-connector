@@ -15,7 +15,6 @@ import open_table_connector.sdk as otc
 import polars as pl
 import pyarrow as pa
 from open_table_connector.cli.adapters import (
-    CsvAdapter,
     FeishuBitableAdapter,
     GoogleSheetsAdapter,
     LocalAdapter,
@@ -702,7 +701,6 @@ def build_cli_registry_bridge(*case_names: str) -> CliRegistryBridge:
     from .cases import case
 
     names = case_names or (
-        "csv",
         "md",
         "local_files",
         "google_sheets",
@@ -716,9 +714,7 @@ def build_cli_registry_bridge(*case_names: str) -> CliRegistryBridge:
     endpoints: dict[str, Endpoint] = {}
     for name in names:
         connector_case = case(name)
-        if name == "csv":
-            adapter = CsvAdapter(connector_case.connector)
-        elif name == "md":
+        if name == "md":
             adapter = MarkdownAdapter(connector_case.connector)
         elif name == "google_sheets":
             assert connector_case.http_fixture is not None

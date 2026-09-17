@@ -273,7 +273,7 @@ def _binding(
 
 def _csv_case(bundle: UniversalFixtureBundle) -> ConnectorCase:
     connector = CsvConnector()
-    table_uri = TableURI(f"csv://{bundle.csv_path.as_posix()}")
+    table_uri = TableURI(bundle.csv_path.as_uri())
 
     def make_read_request(resource_limits: ResourceLimits) -> CsvTableReadRequest:
         return CsvTableReadRequest(table_uri, resource_limits)

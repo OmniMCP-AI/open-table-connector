@@ -57,7 +57,7 @@ _EXPECTED_METADATA = {
             ("table.read.polars", "1.0"),
         ),
         modes=("sheet",),
-        schemes=("csv",),
+        schemes=("file",),
     ),
     "excel": _ExpectedConnectorMetadata(
         connector_id="excel",
@@ -256,7 +256,7 @@ def test_all_cases_bootstrap_fixtures_without_pytest_configure() -> None:
 @pytest.mark.parametrize(
     ("raw", "expected_connector_id"),
     (
-        ("csv:///tmp/orders.csv", "csv"),
+        ("file:///tmp/orders.csv", "local_files"),
         ("file:///tmp/orders.xlsx", "local_files"),
         ("md:///tmp/orders.md", "md"),
     ),

@@ -17,7 +17,7 @@ def test_csv_bounded_reader_returns_truthful_truncation_receipt(tmp_path) -> Non
 
     result = LocalBoundedReader(connector=CONNECTOR_IDENTITY).read_arrow_bounded(
         BoundedTableReadRequest(
-            TableURI(f"csv://{source}"),
+            TableURI(source.as_uri()),
             max_output_rows=2,
             resource_limits=ResourceLimits(max_bytes=source.stat().st_size),
         )

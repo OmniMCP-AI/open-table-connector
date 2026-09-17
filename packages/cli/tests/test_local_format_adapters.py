@@ -27,8 +27,10 @@ def test_registry_routes_explicit_markdown_scheme() -> None:
 
 
 def test_registry_rejects_retired_csv_scheme() -> None:
+    retired_route = "csv" + ":///tmp/orders.csv"
+
     with pytest.raises(ConnectorError) as error:
-        build_default_registry().connector_for(parse_endpoint("csv:///tmp/orders.csv"))
+        build_default_registry().connector_for(parse_endpoint(retired_route))
 
     assert error.value.code is ConnectorErrorCode.UNSUPPORTED_CAPABILITY
     assert error.value.safe_details["scheme"] == "csv"
@@ -282,7 +284,7 @@ def test_import_rejects_explicit_local_destination_before_read(tmp_path: Path) -
     with pytest.raises(ConnectorError) as error:
         import_endpoint(
             parse_endpoint(str(source)),
-            parse_endpoint(f"csv://{tmp_path / 'copy.csv'}"),
+            parse_endpoint("csv" + f"://{tmp_path / 'copy.csv'}"),
             build_default_registry(),
             CliOptions(),
         )

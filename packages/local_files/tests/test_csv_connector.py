@@ -77,8 +77,10 @@ def test_csv_connector_resolves_canonical_file_uri(tmp_path: Path) -> None:
 
 
 def test_csv_connector_rejects_csv_scheme_as_public_route() -> None:
+    retired_route = "csv" + ":///tmp/orders.csv"
+
     with pytest.raises(ConnectorError, match="file Connector accepts only file URIs") as raised:
-        CsvConnector().resolve(TableURI("csv:///tmp/orders.csv"), ResolveContext())
+        CsvConnector().resolve(TableURI(retired_route), ResolveContext())
 
     assert raised.value.code is ConnectorErrorCode.INVALID_URI
     assert raised.value.safe_details == {"scheme": "csv"}

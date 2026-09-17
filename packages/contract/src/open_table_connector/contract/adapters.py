@@ -238,7 +238,6 @@ def parse_adapter_endpoint(value: str) -> AdapterEndpoint:
             return AdapterEndpoint(raw=value, uri=TableURI(value))
         except ValueError:
             if parsed.scheme.casefold() in {
-                PROVIDER_CSV,
                 PROVIDER_EXCEL,
                 PROVIDER_JSON,
                 PROVIDER_JSONL,

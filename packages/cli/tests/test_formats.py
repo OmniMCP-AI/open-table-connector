@@ -178,65 +178,48 @@ def test_infer_format_keeps_csv_for_file_url() -> None:
 
 
 @pytest.mark.parametrize(
-    ("component", "expected_details", "secret"),
+    ("component", "secret"),
     (
-        ("?view=query-secret&mode=compact", {"query_keys": ["mode", "view"]}, "query-secret"),
-        ("#token=fragment-secret&sheet=Orders", {"fragment_keys": ["sheet", "token"]}, "fragment-secret"),
+        ("?view=query-secret&mode=compact", "query-secret"),
+        ("#token=fragment-secret&sheet=Orders", "fragment-secret"),
     ),
 )
-def test_local_destination_rejects_uri_components_without_leaking_values(
+def test_file_destination_rejects_uri_components_during_parsing_without_leaking_values(
     tmp_path,
     component: str,
-    expected_details: dict[str, list[str]],
     secret: str,
 ) -> None:
     destination = tmp_path / "orders.csv"
-    endpoint = parse_endpoint(f"csv://{destination}{component}")
 
-    with pytest.raises(ConnectorError) as raised:
-        write_local(pa.table({"id": ["1"]}), endpoint, FormatName.CSV)
+    with pytest.raises(ValueError) as raised:
+        parse_endpoint(f"{destination.as_uri()}{component}")
 
-    output = io.StringIO()
-    assert emit_error(raised.value, output) == 2
-    payload = json.loads(output.getvalue())
-    assert raised.value.code is ConnectorErrorCode.INVALID_URI
-    assert payload["safe_details"] == expected_details
-    assert secret not in output.getvalue()
-    assert endpoint.raw not in output.getvalue()
+    assert secret not in str(raised.value)
 
 
 @pytest.mark.parametrize(
-    ("component", "expected_details", "secret"),
+    ("component", "secret"),
     (
-        ("?opaque-query-secret", {"query_keys": []}, "opaque-query-secret"),
-        ("#opaque-fragment-secret", {"fragment_keys": []}, "opaque-fragment-secret"),
+        ("?opaque-query-secret", "opaque-query-secret"),
+        ("#opaque-fragment-secret", "opaque-fragment-secret"),
     ),
 )
-def test_local_destination_rejects_opaque_uri_components_without_leaking_tokens(
+def test_file_destination_rejects_opaque_uri_components_without_leaking_tokens(
     tmp_path,
     component: str,
-    expected_details: dict[str, list[str]],
     secret: str,
 ) -> None:
     destination = tmp_path / "orders.csv"
-    endpoint = parse_endpoint(f"csv://{destination}{component}")
 
-    with pytest.raises(ConnectorError) as raised:
-        write_local(pa.table({"id": ["1"]}), endpoint, FormatName.CSV)
+    with pytest.raises(ValueError) as raised:
+        parse_endpoint(f"{destination.as_uri()}{component}")
 
-    output = io.StringIO()
-    assert emit_error(raised.value, output) == 2
-    payload = json.loads(output.getvalue())
-    assert raised.value.code is ConnectorErrorCode.INVALID_URI
-    assert payload["safe_details"] == expected_details
-    assert secret not in str(raised.value.safe_details)
-    assert secret not in output.getvalue()
-    assert endpoint.raw not in output.getvalue()
+    assert secret not in str(raised.value)
 
 
 def test_local_destination_accepts_localhost_absolute_uri(tmp_path) -> None:
     destination = tmp_path / "orders.csv"
-    endpoint = parse_endpoint(f"csv://localhost{destination}")
+    endpoint = parse_endpoint(f"file://localhost{destination}")
 
     write_local(pa.table({"id": ["1"]}), endpoint, FormatName.CSV)
 
@@ -244,9 +227,5 @@ def test_local_destination_accepts_localhost_absolute_uri(tmp_path) -> None:
 
 
 def test_local_destination_rejects_relative_explicit_uri() -> None:
-    endpoint = parse_endpoint("csv:orders.csv")
-
-    with pytest.raises(ConnectorError) as raised:
-        write_local(pa.table({"id": ["1"]}), endpoint, FormatName.CSV)
-
-    assert raised.value.code is ConnectorErrorCode.INVALID_URI
+    with pytest.raises(ValueError, match="absolute path"):
+        parse_endpoint("file:orders.csv")

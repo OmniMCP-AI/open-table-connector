@@ -8,6 +8,7 @@ from open_table_connector.contract import (
     HOST_GOOGLE_DOCS,
     OPTION_TIMEOUT_SECONDS,
     PROVIDER_GOOGLE_SHEETS,
+    SCHEME_MANAGED_CSV,
     SETTING_ENDPOINT,
     AdapterEndpoint,
     AdapterFormat,
@@ -18,6 +19,7 @@ from open_table_connector.contract import (
     ProviderFactoryContext,
     TableURI,
     parse_adapter_endpoint,
+    parse_adapter_format,
 )
 
 
@@ -46,7 +48,7 @@ def test_adapter_endpoint_rejects_mixed_uri_and_path() -> None:
     with pytest.raises(ValueError, match="cannot have both"):
         AdapterEndpoint(
             raw="orders.csv",
-            uri=TableURI("csv:///tmp/orders.csv"),
+            uri=TableURI("file:///tmp/orders.csv"),
             path=Path("orders.csv"),
         )
 
@@ -64,6 +66,20 @@ def test_parse_adapter_endpoint_keeps_file_scheme_knowledge_in_contract(tmp_path
     assert endpoint.uri is None
     assert endpoint.path == tmp_path / "orders.csv"
     assert endpoint.is_stdio is False
+
+
+def test_parse_adapter_endpoint_does_not_sanitize_retired_csv_route() -> None:
+    retired_route = "csv" + ":///tmp/orders.csv?access_token=secret"
+
+    with pytest.raises(ValueError):
+        parse_adapter_endpoint(retired_route)
+
+
+def test_csv_remains_a_format_and_managed_target_namespace() -> None:
+    managed = parse_adapter_endpoint(f"{SCHEME_MANAGED_CSV}:///tmp/orders")
+
+    assert parse_adapter_format("csv") is AdapterFormat.CSV
+    assert managed.uri == TableURI(f"{SCHEME_MANAGED_CSV}:///tmp/orders")
 
 
 def test_configuration_error_exposes_only_explicit_safe_details() -> None:

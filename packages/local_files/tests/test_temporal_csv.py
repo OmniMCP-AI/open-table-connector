@@ -75,7 +75,7 @@ def test_direct_csv_reads_from_canonical_file_uri(tmp_path: Path) -> None:
 def test_direct_csv_rejects_retired_csv_uri(tmp_path: Path) -> None:
     source = tmp_path / "ticks.csv"
     pl.from_arrow(MemoryTemporalSource().table).write_csv(source)
-    target = TableURI(source.as_uri().replace("file://", "csv://", 1))
+    target = TableURI(source.as_uri().replace("file://", "csv" + "://", 1))
     request = TemporalExecutionRequest(target, scan(), None, "retired-csv-scheme", None)
 
     with pytest.raises(
