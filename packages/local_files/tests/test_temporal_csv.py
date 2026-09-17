@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import polars as pl
 import pytest
-
+from open_table_connector.contract import TableURI
 from open_table_connector.local_files import CsvManagedTemporalStore, CsvTemporalExecutor
 from open_table_connector.timeseries import (
     AggregateFunction,
@@ -14,7 +15,9 @@ from open_table_connector.timeseries import (
     FixedBucket,
     GapFill,
     PolarsTemporalExecutor,
+    TemporalErrorCode,
     TemporalExecutionRequest,
+    TemporalExtensionError,
 )
 
 from packages.timeseries.tests.fixtures import (
@@ -51,6 +54,39 @@ def operations():
     return (scan(), latest(), as_of(), portable(aggregate), portable(gap))
 
 
+def test_direct_csv_reads_from_canonical_file_uri(tmp_path: Path) -> None:
+    source = tmp_path / "ticks.csv"
+    pl.from_arrow(MemoryTemporalSource().table).write_csv(source)
+    plan = scan()
+    request = TemporalExecutionRequest(
+        TableURI(source.as_uri()),
+        plan,
+        None,
+        "direct-file-csv",
+        None,
+    )
+
+    actual = CsvTemporalExecutor(descriptor()).execute(request).table
+    expected = PolarsTemporalExecutor(MemoryTemporalSource()).execute(request).table
+
+    assert actual.equals(expected)
+
+
+def test_direct_csv_rejects_retired_csv_uri(tmp_path: Path) -> None:
+    source = tmp_path / "ticks.csv"
+    pl.from_arrow(MemoryTemporalSource().table).write_csv(source)
+    target = TableURI(source.as_uri().replace("file://", "csv://", 1))
+    request = TemporalExecutionRequest(target, scan(), None, "retired-csv-scheme", None)
+
+    with pytest.raises(
+        TemporalExtensionError,
+        match="CSV temporal executor accepts file and managed\\+csv targets",
+    ) as raised:
+        CsvTemporalExecutor(descriptor()).execute(request)
+
+    assert raised.value.code is TemporalErrorCode.PROTOCOL_INVALID
+
+
 @pytest.mark.parametrize("plan", operations())
 def test_committed_csv_matches_portable_arrow_evaluation(tmp_path: Path, plan) -> None:
     artifact_root = tmp_path / "artifacts"
@@ -65,6 +101,8 @@ def test_committed_csv_matches_portable_arrow_evaluation(tmp_path: Path, plan) -
         f"csv-{type(plan.operation).__name__}",
         committed.snapshot_reference,
     )
+
+    assert request.target.scheme == "managed+csv"
 
     actual = CsvTemporalExecutor(descriptor(), managed).execute(request).table
     expected = PolarsTemporalExecutor(MemoryTemporalSource()).execute(request).table

@@ -7,12 +7,70 @@ import sys
 from io import BytesIO
 from pathlib import Path
 
+import pytest
+from open_table_connector.contract import PROVIDER_CSV, SCHEME_FILE, SCHEME_MANAGED_CSV
 from open_table_connector.local_files import encode_json_table
-from open_table_connector.process import ConnectorProcessEnvelope, ProcessOperation
+from open_table_connector.process import ConnectorProcessEnvelope, ProcessOperation, bootstrap
 from open_table_connector.process.framing import read_frame, write_frame
 
 from packages.local_files.tests.test_temporal_csv import operations
 from packages.timeseries.tests.fixtures import descriptor, ticks_table
+
+
+def _write_csv_process_config(
+    path: Path,
+    target: str,
+    *,
+    managed: bool,
+) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "otc.process-bootstrap/v1",
+                "provider": PROVIDER_CSV,
+                "descriptor": descriptor().to_wire(),
+                "target": target,
+                "managed": managed,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize(
+    ("scheme", "managed"),
+    ((SCHEME_FILE, False), (SCHEME_MANAGED_CSV, True)),
+)
+def test_csv_bootstrap_accepts_file_and_managed_targets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scheme: str,
+    managed: bool,
+) -> None:
+    source = tmp_path / "ticks.csv"
+    target = source.as_uri().replace("file://", f"{scheme}://", 1)
+    config = tmp_path / f"{scheme}.json"
+    _write_csv_process_config(config, target, managed=managed)
+    monkeypatch.setattr(bootstrap, "_provider_binding", lambda *args: (object(), None))
+
+    registry, _ = bootstrap.build_process_runtime(config, tmp_path / "artifacts")
+
+    assert registry is not None
+
+
+def test_csv_bootstrap_rejects_retired_direct_csv_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "ticks.csv"
+    target = source.as_uri().replace("file://", f"{PROVIDER_CSV}://", 1)
+    config = tmp_path / "csv.json"
+    _write_csv_process_config(config, target, managed=False)
+    monkeypatch.setattr(bootstrap, "_provider_binding", lambda *args: (object(), None))
+
+    with pytest.raises(ValueError, match="process target scheme does not match provider"):
+        bootstrap.build_process_runtime(config, tmp_path / "artifacts")
 
 
 def test_configured_json_executable_completes_hello_and_execute(tmp_path: Path) -> None:

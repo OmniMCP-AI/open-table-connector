@@ -6,6 +6,7 @@ from pathlib import Path
 import open_table_connector.sdk as otc
 import polars as pl
 from open_table_connector.local_files import LocalFilesConnector
+from open_table_connector.local_files.sdk_temporal import _csv_uri
 from open_table_connector.timeseries import DuplicatePolicy
 
 from packages.timeseries.tests.fixtures import descriptor as make_descriptor
@@ -20,6 +21,15 @@ def write_captured_csv(path: Path) -> pl.DataFrame:
     frame = pl.from_arrow(ticks_table())
     frame.write_csv(path)
     return frame
+
+
+def test_csv_physical_target_is_canonical_file_uri(tmp_path: Path) -> None:
+    source = tmp_path / "ticks.csv"
+
+    target = _csv_uri(source)
+
+    assert target.value == source.absolute().as_uri()
+    assert target.scheme == "file"
 
 
 def test_real_local_files_sdk_scan_range_reads_captured_csv(tmp_path: Path) -> None:

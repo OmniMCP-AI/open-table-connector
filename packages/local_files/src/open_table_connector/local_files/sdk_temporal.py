@@ -137,7 +137,7 @@ def _as_file_uri(address: object) -> TableURI:
 
 
 def _csv_uri(path: Path) -> TableURI:
-    return TableURI(path.absolute().as_uri().replace(f"{SCHEME_FILE}://", f"{PROVIDER_CSV}://", 1))
+    return TableURI(path.absolute().as_uri())
 
 
 def _managed_uri(path: Path) -> TableURI:

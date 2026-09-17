@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import csv
-from datetime import UTC, datetime
 import io
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 import pyarrow as pa
 import pyarrow.csv as pa_csv
-
-from open_table_connector.contract import PROVIDER_CSV, SCHEME_MANAGED_CSV, TableURI
+from open_table_connector.contract import PROVIDER_CSV, SCHEME_FILE, SCHEME_MANAGED_CSV, TableURI
 from open_table_connector.timeseries import (
     ManagedAbortReceipt,
     ManagedAbortRequest,
@@ -45,8 +44,8 @@ from open_table_connector.timeseries.capabilities import (
     STORAGE_VISIBILITY_ATOMIC,
 )
 
-from .managed_snapshots import ManagedSnapshotStore
 from .identity import CONNECTOR_IDENTITY
+from .managed_snapshots import ManagedSnapshotStore
 
 
 def _encode_csv(table: pa.Table) -> bytes:
@@ -229,7 +228,7 @@ class CsvTemporalExecutor:
                 request.snapshot_reference,
                 request.plan.resource_bounds,
             )
-        elif request.target.scheme == PROVIDER_CSV:
+        elif request.target.scheme == SCHEME_FILE:
             path = _direct_csv_path(request.target)
             if path.stat().st_size > request.plan.resource_bounds.max_bytes:
                 raise TemporalExtensionError(
@@ -241,7 +240,7 @@ class CsvTemporalExecutor:
         else:
             raise TemporalExtensionError(
                 TemporalErrorCode.PROTOCOL_INVALID,
-                "CSV temporal executor accepts " + PROVIDER_CSV + " and " + SCHEME_MANAGED_CSV + " targets",
+                "CSV temporal executor accepts " + SCHEME_FILE + " and " + SCHEME_MANAGED_CSV + " targets",
                 {"scheme": request.target.scheme},
             )
         return PolarsTemporalExecutor(
