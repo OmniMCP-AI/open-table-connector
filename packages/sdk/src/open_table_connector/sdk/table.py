@@ -17,7 +17,7 @@ from .model import (
     SheetModeTableAddress,
     TableMode,
 )
-from .result import CommitState, OperationResult, OTCError, Outcome, VerificationState
+from .result import CommitState, ErrorCode, OperationResult, OTCError, Outcome, VerificationState
 
 if TYPE_CHECKING:
     from open_table_connector.timeseries import TemporalTableDescriptor
@@ -35,6 +35,7 @@ def _required_text(value: str, field_name: str) -> str:
 class CapabilitySet:
     capability_ids: tuple[str, ...]
     modes: tuple[TableMode, ...] = ()
+    details: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         normalized = tuple(_required_text(item, "capability_id") for item in self.capability_ids)
@@ -44,6 +45,7 @@ class CapabilitySet:
         object.__setattr__(
             self, "modes", tuple(TableMode.from_wire(str(mode)) for mode in self.modes)
         )
+        object.__setattr__(self, "details", dict(self.details))
 
     def supports(self, capability_id: str) -> bool:
         return _required_text(capability_id, "capability_id") in self.capability_ids
@@ -53,7 +55,7 @@ class CapabilitySet:
 class TableBinding:
     uri: TableURI
     mode: TableMode
-    schema: pl.Schema
+    schema: pl.Schema | None
     observed_revision: str | None
     connector_id: str
     profile: str | None = None
@@ -61,6 +63,8 @@ class TableBinding:
     schema_fingerprint: str | None = None
     content_fingerprint: str | None = None
     address: ExistingTableAddress | None = None
+    schema_observed: bool = True
+    layout_binding: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.uri, TableURI):
@@ -71,8 +75,16 @@ class TableBinding:
         ):
             raise TypeError("address must be an ExistingTableAddress or None")
         object.__setattr__(self, "mode", TableMode.from_wire(str(self.mode)))
-        if not isinstance(self.schema, pl.Schema):
+        if self.schema is not None and not isinstance(self.schema, pl.Schema):
             object.__setattr__(self, "schema", pl.Schema(self.schema))
+        if type(self.schema_observed) is not bool:
+            raise ValueError("schema_observed must be a boolean")
+        if self.schema_observed and self.schema is None:
+            raise ValueError("schema is required when schema_observed is true")
+        if self.layout_binding is not None:
+            if not isinstance(self.layout_binding, Mapping):
+                raise ValueError("layout_binding must be an object")
+            object.__setattr__(self, "layout_binding", dict(self.layout_binding))
         if self.observed_revision is not None:
             object.__setattr__(
                 self,
@@ -249,24 +261,28 @@ class Table:
 
     def inspect(self):
         self._client._assert_open()
+        self._ensure_data_binding()
         return self._client._deliver(
             self._client._connector_for_binding(self._binding).inspect_table(self._binding)
         )
 
     def capabilities(self):
         self._client._assert_open()
+        self._ensure_data_binding()
         return self._client._deliver(
             self._client._connector_for_binding(self._binding).capabilities_for(self._binding)
         )
 
     def read(self):
         self._client._assert_open()
+        self._ensure_data_binding()
         return self._client._normalize_frame_result(
             self._client._connector_for_binding(self._binding).read_table(self._binding)
         )
 
     def read_page(self, *, limit: int, continuation: str | None = None):
         self._client._assert_open()
+        self._ensure_data_binding()
         return self._client._normalize_frame_result(
             self._client._connector_for_binding(self._binding).read_table(
                 self._binding,
@@ -277,12 +293,14 @@ class Table:
 
     def insert(self, frame: pl.DataFrame):
         self._client._assert_open()
+        self._ensure_data_binding()
         return self._client._deliver(
             self._client._connector_for_binding(self._binding).insert_rows(self._binding, frame)
         )
 
     def update(self, frame: pl.DataFrame, *, keys: tuple[str, ...]):
         self._client._assert_open()
+        self._ensure_data_binding()
         return self._client._deliver(
             self._client._connector_for_binding(self._binding).update_rows(
                 self._binding,
@@ -293,6 +311,7 @@ class Table:
 
     def delete(self, *, where, parameters: Mapping[str, Any] | None = None):
         self._client._assert_open()
+        self._ensure_data_binding()
         return self._client._deliver(
             self._client._connector_for_binding(self._binding).delete_rows(
                 self._binding,
@@ -303,13 +322,58 @@ class Table:
 
     def drop(self):
         self._client._assert_open()
+        self._ensure_data_binding()
         return self._client._deliver(
             self._client._connector_for_binding(self._binding).drop_table(self._binding)
         )
 
     def transaction(self, *, idempotency_key: str | None = None) -> TableTransaction:
         self._client._assert_open()
+        self._ensure_data_binding()
         return TableTransaction(self, idempotency_key=idempotency_key)
+
+    def layout(self):
+        """Open the provider-neutral physical layout session for this Table."""
+
+        self._client._assert_open()
+        from .layout import TableLayoutSession
+
+        connector = self._client._connector_for_binding(self._binding)
+        binder = getattr(connector, "bind_table_layout", None)
+        if callable(binder):
+            payload = binder(self._binding)
+        else:
+            provider_factory = getattr(connector, "spreadsheet_provider", None)
+            if not callable(provider_factory):
+                from .client import _failure
+
+                raise _failure(
+                    "connector does not support physical Table layout",
+                    ErrorCode.UNSUPPORTED_CAPABILITY,
+                    capability="spreadsheet.table.layout",
+                )
+            payload = {
+                "provider": provider_factory(),
+                "workbook_uri": self._binding.uri.value,
+                "worksheet_name": (self._binding.layout_binding or {}).get("worksheet_name"),
+                "descriptor": (self._binding.layout_binding or {}).get("descriptor", {}),
+            }
+        if not isinstance(payload, Mapping):
+            from .client import _failure
+
+            raise _failure("connector returned invalid layout binding", ErrorCode.PROTOCOL_FAILURE)
+        return TableLayoutSession(self, connector, payload)
+
+    def _ensure_data_binding(self) -> None:
+        if self._binding.schema_observed:
+            return
+        result = self._client.open(self._binding.uri)
+        refreshed = result.require_value()
+        if self._binding.schema is not None and refreshed.schema != self._binding.schema:
+            from .client import _failure
+
+            raise _failure("declared schema does not match the opened table", ErrorCode.PROTOCOL_FAILURE)
+        self._binding = refreshed
 
     def time_series(self, descriptor: TemporalTableDescriptor):
         self._client._assert_open()
