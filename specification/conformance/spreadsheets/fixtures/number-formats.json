@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "dialect": "excel",
+  "ooxml_version": "ECMA-376",
+  "locales": ["en-US", "zh-CN", "de-DE"],
+  "date_systems": ["1900", "1904"],
+  "builtins": {
+    "14": {"code": "m/d/yy", "locales": ["en-US"]}
+  },
+  "categories": [
+    "general", "number", "currency", "accounting", "date", "time",
+    "date_time", "duration", "percent", "fraction", "scientific", "text",
+    "special", "custom", "native"
+  ],
+  "custom_codes": [
+    "0.00;[Red](0.00);\"-\";@",
+    "[$€-407] #,##0.00",
+    "[h]:mm:ss",
+    "0.00E+00",
+    "_(* #,##0.00_);_(* (#,##0.00);_(* \"-\"??_);_(@_)"
+  ],
+  "cases": {
+    "render_evidence": "unverified",
+    "source": "Microsoft Excel format code corpus; target application evidence is required by the live gate"
+  }
+}

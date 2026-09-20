@@ -184,21 +184,33 @@ class Client:
         target: str | TableURI | ExistingTableAddress,
         *,
         schema: pl.Schema | None = None,
+        metadata_only: bool = False,
     ):
         self._assert_open()
+        if type(metadata_only) is not bool:
+            raise _failure("metadata_only must be a boolean", ErrorCode.INVALID_TARGET)
         route_target, address = self._normalize_open_target(target)
         connector = self._registry.connector_for(route_target)
-        result = connector.open_table(address)
+        opener = getattr(connector, "open_table_metadata", None) if metadata_only else None
+        if metadata_only and not callable(opener):
+            raise _failure(
+                "connector does not support metadata-only table binding",
+                ErrorCode.UNSUPPORTED_CAPABILITY,
+                capability="table.open.metadata_only",
+            )
+        result = opener(address) if callable(opener) else connector.open_table(address)
         delivered = self._deliver(result)
         binding = delivered.require_value()
         if schema is not None:
             declared_schema = schema if isinstance(schema, pl.Schema) else pl.Schema(schema)
-            if tuple(binding.schema.names()) != tuple(declared_schema.names()):
+            if not metadata_only and binding.schema is not None and tuple(binding.schema.names()) != tuple(declared_schema.names()):
                 raise _failure(
                     "declared schema columns do not match the opened table",
                     ErrorCode.PROTOCOL_FAILURE,
                 )
-            binding = replace(binding, schema=declared_schema)
+            binding = replace(binding, schema=declared_schema, schema_observed=not metadata_only)
+        elif metadata_only:
+            binding = replace(binding, schema_observed=False)
         return replace(delivered, value=self._wrap_binding(binding))
 
     def materialize(

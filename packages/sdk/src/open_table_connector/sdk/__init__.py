@@ -60,6 +60,7 @@ from .materialization import (
     PORTABLE_TABLE_PROFILE_V1,
     MaterializationRequest,
 )
+from .layout import TableLayoutSession
 from .model import (
     BaseModeDestination,
     BaseModeTableAddress,
@@ -212,6 +213,7 @@ __all__ = [
     "TableDestination",
     "TableInspection",
     "TableMode",
+    "TableLayoutSession",
     "TemporalConnectorExtension",
     "TemporalResourceLimits",
     "TemporalTableDescriptor",

@@ -107,18 +107,41 @@ class RangeRef:
 
 @dataclass(frozen=True, slots=True)
 class CellFormat:
-    kind: str
+    kind: str | None = None
     pattern: str | None = None
+    builtin_id: int | None = field(default=None, kw_only=True)
+    locale: str | None = field(default=None, kw_only=True)
+    date_system: str | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
-        kind = _text(self.kind, "kind").casefold()
-        if kind not in {"text", "general", "number", "percent", "currency", "date_time", "native"}:
+        allowed = {
+            "text", "general", "number", "currency", "accounting", "date", "time",
+            "date_time", "duration", "percent", "fraction", "scientific", "special",
+            "custom", "native",
+        }
+        kind = None if self.kind is None else _text(self.kind, "kind").casefold()
+        if kind is None and self.builtin_id is None:
+            raise ValueError("kind or builtin_id is required")
+        if kind is not None and kind not in allowed:
             raise ValueError("unsupported cell format kind")
-        if kind == "native" and not self.pattern:
+        if self.builtin_id is not None and (
+            isinstance(self.builtin_id, bool) or not isinstance(self.builtin_id, int) or self.builtin_id < 0
+        ):
+            raise ValueError("builtin_id must be a non-negative integer")
+        if self.builtin_id is not None and (kind is not None or self.pattern is not None):
+            raise ValueError("builtin_id is mutually exclusive with kind and pattern")
+        if kind in {"accounting", "special", "custom", "native"} and not self.pattern:
             raise ValueError("native cell format requires pattern")
-        object.__setattr__(self, "kind", kind)
+        if kind is not None:
+            object.__setattr__(self, "kind", kind)
         if self.pattern is not None:
-            object.__setattr__(self, "pattern", _text(self.pattern, "pattern"))
+            if not isinstance(self.pattern, str) or not self.pattern:
+                raise ValueError("pattern must be a non-empty string")
+            object.__setattr__(self, "pattern", self.pattern)
+        if self.locale is not None:
+            object.__setattr__(self, "locale", _text(self.locale, "locale"))
+        if self.date_system is not None and self.date_system not in {"1900", "1904"}:
+            raise ValueError("date_system must be 1900 or 1904")
 
 
 @dataclass(frozen=True, slots=True)

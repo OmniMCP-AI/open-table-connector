@@ -349,9 +349,11 @@ class WorkbookSession:
     def worksheet(self):
         return WorksheetCollection(self)
 
-    def write(self, **kwargs):
+    def write(self, *, layout_expectation=None, **kwargs):
         try:
-            value = self._call(lambda: self._session.write(**kwargs))
+            value = self._call(
+                lambda: self._session.write(layout_expectation=layout_expectation, **kwargs)
+            )
         finally:
             self.uri = TableURI(self._session.binding.get("uri", self.uri.value))
         return _adapt(value, self.uri, "workbook.write")
@@ -443,6 +445,19 @@ class Worksheet:
 
     configure = config
 
+    def read_config(self, *, rows, columns, view_fields=None):
+        self._book._assert_generation(self.name, self._generation)
+        value = self._book._call(
+            lambda: self._book._session.observe(
+                "worksheet.config.read",
+                target_key=self.name,
+                rows=list(rows),
+                columns=list(columns),
+                view_fields=None if view_fields is None else list(view_fields),
+            )
+        )
+        return _adapt(value, self._book.uri, "worksheet.config.read")
+
     def merge(self, address):
         return self.range(address).merge()
 
@@ -533,6 +548,18 @@ class Range:
 
         result = self.read()
         return replace(result, value=matrix_table(result.require_value(), header=header))
+
+    def read_style(self, fields=None):
+        self._book._assert_generation(self._sheet, self._generation)
+        value = self._book._call(
+            lambda: self._book._session.observe(
+                "range.style.read",
+                target_key=self._sheet,
+                address=self.address,
+                fields=None if fields is None else list(fields),
+            )
+        )
+        return _adapt(value, self._book.uri, "range.style.read")
 
     def write(self, values, *, format=None, style=None):
         from dataclasses import asdict

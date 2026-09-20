@@ -1,0 +1,40 @@
+{
+  "version": "1.0",
+  "provider_version": "0.29.0",
+  "service_revision": null,
+  "commands": {
+    "mbs_version": "mbs --version -> 0.29.0",
+    "root_help": "mbs --help",
+    "worksheet_help": "mbs worksheet --help",
+    "worksheet_config_help": "mbs worksheet config --help",
+    "range_style_help": "mbs range style --help",
+    "style_format_help": "mbs style format --help",
+    "range_read_help": "mbs range read --help",
+    "raw_help": "mbs raw --help"
+  },
+  "responses": {},
+  "supported_fields": {},
+  "format_dialect": null,
+  "limits": {
+    "max_cells": null,
+    "max_response_bytes": null,
+    "source": "not established by help output"
+  },
+  "gaps": [
+    "range.style.read",
+    "worksheet.config.read",
+    "alignment",
+    "border",
+    "number_format",
+    "text_layout",
+    "default_and_inherited_style_evidence",
+    "stable_sheet_identity_readback",
+    "reopen_persistence_evidence",
+    "metadata_only_sheet_binding"
+  ],
+  "evidence_limits": [
+    "help output proves command presence and option shape only",
+    "no authenticated workbook was used",
+    "no positive read/write/persist evidence is recorded"
+  ]
+}

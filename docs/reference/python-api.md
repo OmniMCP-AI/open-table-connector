@@ -70,3 +70,27 @@ returns an Arrow/Polars result plus a `TemporalReceipt`.
 `Client.formulas(FieldFormulaTarget(...))` return provider capability views.
 Formula activation requires `FormulaExpression`; ordinary table writes are
 value-only.
+
+## Physical layout API
+
+`Client.open(..., metadata_only=True)` creates a `Table` binding without
+materializing rows. `table.layout()` returns `TableLayoutSession`, which is
+client-affine and shares the provider's worksheet identity with the data Table.
+Use `layout.range(address).style(...)`, `.format(...)`,
+`layout.range(address).read_style(fields=None)`,
+`layout.worksheet.config(...)` and
+`layout.worksheet.read_config(rows=..., columns=..., view_fields=None)`.
+
+Style writes are patches: omitted fields and border edges remain unchanged,
+`False` is a real value, and `border: {"top": {"style": "none"}}` explicitly
+clears one edge. `text_layout` maps to the provider's native wrapping flags;
+unknown properties, unsupported modes and incompatible column units fail before
+dispatch. `CellFormat` accepts complete Excel format codes or a built-in ID with
+explicit locale/date-system context.
+
+Read methods return `OperationResult` values containing a versioned physical
+observation. Its coverage, source references, native dimensions and
+`physical_hash` can be independently verified after closing and reopening the
+workbook. A write acknowledgment never substitutes for readback. Providers
+without verified read commands return `unsupported_capability` rather than
+silently dropping a request.

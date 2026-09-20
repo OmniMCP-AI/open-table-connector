@@ -17,13 +17,17 @@ def add_parser(subparsers):
     parser = subparsers.add_parser(
         "spreadsheet", help="buffer, save, read and verify workbook operations"
     )
-    parser.add_argument("action", choices=("batch", "operation", "read", "verify", "inspect"))
+    parser.add_argument("action", choices=("batch", "operation", "read", "style-read", "config-read", "verify", "inspect"))
     parser.add_argument("--uri", required=True)
     parser.add_argument("--commands", help="version 1.0 JSON command file")
     parser.add_argument("--operation", help="existing spreadsheet operation verb")
     parser.add_argument("--arguments", default="{}", help="operation arguments as JSON")
     parser.add_argument("--sheet")
     parser.add_argument("--range")
+    parser.add_argument("--fields", help="style fields as a JSON array")
+    parser.add_argument("--rows", help="row numbers as a JSON array")
+    parser.add_argument("--columns", help="column letters as a JSON array")
+    parser.add_argument("--view-fields", help="view fields as a JSON array")
     parser.add_argument("--create", action="store_true")
     parser.add_argument("--profile", choices=("general/1.0", "literal-artifact/1.0"))
     parser.add_argument("--dry-run", action="store_true")
@@ -123,11 +127,32 @@ def _changes(args):
     return changes
 
 
+def _json_array(text, name):
+    if text is None:
+        return None
+    value = _json(text)
+    if not isinstance(value, list) or not value or any(isinstance(item, (dict, list)) for item in value):
+        raise CliUsageError(f"{name} must be a non-empty JSON array of scalars")
+    return value
+
+
 def run_spreadsheet(args, registry, out, err):
     from open_table_connector.sdk import Client, ConnectorRegistry, OTCError
     from open_table_connector.sdk.workbook import WorkbookSession
 
     changes = _changes(args)
+    requested_fields = _json_array(args.fields, "--fields") if args.action == "style-read" else None
+    requested_rows = _json_array(args.rows, "--rows") if args.action == "config-read" else None
+    requested_columns = _json_array(args.columns, "--columns") if args.action == "config-read" else None
+    requested_view_fields = _json_array(args.view_fields, "--view-fields") if args.action == "config-read" else None
+    if args.action == "style-read" and (not args.sheet or not args.range):
+        raise CliUsageError("style-read requires --sheet and --range")
+    if args.action == "config-read" and (not args.sheet or requested_rows is None or requested_columns is None):
+        raise CliUsageError("config-read requires --sheet, --rows and --columns")
+    if requested_rows is not None and any(type(row) is not int or row < 1 for row in requested_rows):
+        raise CliUsageError("--rows must contain positive integers")
+    if requested_columns is not None and any(not isinstance(column, str) for column in requested_columns):
+        raise CliUsageError("--columns must contain column strings")
     endpoint = parse_endpoint(args.uri)
     if endpoint.is_stdio:
         raise CliUsageError("workbook requires a URI or filesystem path")
@@ -166,6 +191,16 @@ def run_spreadsheet(args, registry, out, err):
                     if not args.sheet or not args.range:
                         raise CliUsageError("read requires --sheet and --range")
                     result = book.worksheet(args.sheet).range(args.range).read()
+                elif args.action == "style-read":
+                    if not args.sheet or not args.range:
+                        raise CliUsageError("style-read requires --sheet and --range")
+                    result = book.worksheet(args.sheet).range(args.range).read_style(fields=requested_fields)
+                elif args.action == "config-read":
+                    if not args.sheet or args.rows is None or args.columns is None:
+                        raise CliUsageError("config-read requires --sheet, --rows and --columns")
+                    result = book.worksheet(args.sheet).read_config(
+                        rows=requested_rows, columns=requested_columns, view_fields=requested_view_fields
+                    )
                 elif args.action == "verify":
                     result = book.verify(expected)
                 else:
