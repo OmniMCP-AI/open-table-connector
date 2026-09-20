@@ -261,9 +261,10 @@ def _color(value):
 
 def _style(cell, changes):
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.styles.numbers import BUILTIN_FORMATS
 
     changes = dict(changes)
-    aliases = {"font_size": "size", "font_family": "family"}
+    aliases = {"font_size": "size", "font_family": "family", "number_format": "format"}
     changes = {aliases.get(k, k): v for k, v in changes.items() if v is not None}
     known = {
         "family",
@@ -275,6 +276,9 @@ def _style(cell, changes):
         "vertical",
         "horizontal",
         "wrap_text",
+        "shrink_to_fit",
+        "text_layout",
+        "format",
         "border",
         "reset",
     }
@@ -293,8 +297,22 @@ def _style(cell, changes):
             Border(),
         )
     font, alignment, border = copy(cell.font), copy(cell.alignment), copy(cell.border)
+    if "text_layout" in changes and ({"wrap_text", "shrink_to_fit"} & changes.keys()):
+        raise _error("style", "text_layout conflicts with raw wrap flags", ConnectorErrorCode.UNSUPPORTED_CAPABILITY)
+    if changes.get("wrap_text") is True and changes.get("shrink_to_fit") is True:
+        raise _error("style", "wrap_text and shrink_to_fit cannot both be true", ConnectorErrorCode.UNSUPPORTED_CAPABILITY)
+    if "text_layout" in changes:
+        mode = changes.pop("text_layout")
+        mapping = {
+            "no_wrap": {"wrap_text": False, "shrink_to_fit": False},
+            "wrap": {"wrap_text": True, "shrink_to_fit": False},
+            "shrink_to_fit": {"wrap_text": False, "shrink_to_fit": True},
+        }
+        if mode not in mapping:
+            raise _error("text_layout", "Text layout mode is unsupported by Excel", ConnectorErrorCode.UNSUPPORTED_CAPABILITY)
+        changes.update(mapping[mode])
     for key, value in changes.items():
-        if key in ("bold", "italic", "wrap_text") and not isinstance(value, bool):
+        if key in ("bold", "italic", "wrap_text", "shrink_to_fit") and type(value) is not bool:
             raise _error("style", "Style flags must be boolean")
         if key == "size" and (
             isinstance(value, bool)
@@ -315,11 +333,24 @@ def _style(cell, changes):
             cell.fill = PatternFill("solid", fgColor=_color(value))
         elif key in ("vertical", "horizontal", "wrap_text"):
             setattr(alignment, key, value)
+        elif key == "shrink_to_fit":
+            alignment.shrink_to_fit = value
+        elif key == "format":
+            if isinstance(value, Mapping):
+                format_value = value
+                value = format_value.get("code") or format_value.get("pattern")
+                if value is None and format_value.get("builtin_id") is not None:
+                    value = BUILTIN_FORMATS.get(format_value["builtin_id"])
+            elif isinstance(value, int) and not isinstance(value, bool):
+                value = BUILTIN_FORMATS.get(value)
+            if not isinstance(value, str) or not value:
+                raise _error("format", "Unsupported cell format", ConnectorErrorCode.UNSUPPORTED_CAPABILITY)
+            cell.number_format = value
         elif key == "border":
             if set(value) - {"left", "right", "top", "bottom"}:
                 raise _error("border", "Unsupported border edge")
             for edge, spec in value.items():
-                if set(spec) - {"style", "color"} or spec.get("style") not in (
+                if not isinstance(spec, Mapping) or set(spec) - {"style", "color"} or spec.get("style") not in (
                     None,
                     "none",
                     "thin",
@@ -330,14 +361,14 @@ def _style(cell, changes):
                     "double",
                 ):
                     raise _error("border", "Unsupported border style")
-                setattr(
-                    border,
-                    edge,
-                    Side(
-                        style=None if spec.get("style") == "none" else spec.get("style"),
-                        color=_color(spec.get("color")),
-                    ),
-                )
+                if not isinstance(spec, Mapping) or "style" not in spec:
+                    raise _error("border", "Border edge requires style", ConnectorErrorCode.UNSUPPORTED_CAPABILITY)
+                edge_style = spec.get("style")
+                old_edge = getattr(border, edge)
+                edge_color = _color(spec.get("color")) if "color" in spec and edge_style != "none" else None
+                if "color" not in spec and edge_style != "none":
+                    edge_color = old_edge.color
+                setattr(border, edge, Side(style=None if edge_style == "none" else edge_style, color=edge_color))
     cell.font, cell.alignment, cell.border = font, alignment, border
 
 
@@ -347,7 +378,11 @@ def _config(sheet, properties, limits):
     known = {
         "row_heights",
         "column_widths",
+        "column_widths_pixels",
+        "column_sizes",
         "show_gridlines",
+        "gridlines",
+        "view",
         "freeze_panes",
         "print_area",
         "orientation",
@@ -364,7 +399,27 @@ def _config(sheet, properties, limits):
             "config", "Unsupported worksheet property", ConnectorErrorCode.UNSUPPORTED_CAPABILITY
         )
     for key, value in properties.items():
-        if key in ("row_heights", "column_widths"):
+        if key in ("row_heights", "column_widths", "column_widths_pixels", "column_sizes"):
+            if key == "column_sizes":
+                if not isinstance(value, Mapping) or len(value) > limits.cells:
+                    raise _error("dimensions", "Invalid dimension mapping")
+                for coordinate, spec in value.items():
+                    if not isinstance(spec, Mapping) or set(spec) - {"value", "unit"} or "value" not in spec:
+                        raise _error("dimensions", "Column size requires value and unit")
+                    unit = spec.get("unit")
+                    if unit != "excel_character":
+                        raise _error("dimensions", "Column width unit is unsupported", ConnectorErrorCode.UNSUPPORTED_CAPABILITY)
+                    value_number = spec["value"]
+                    if isinstance(value_number, bool) or not isinstance(value_number, (int, float)) or not math.isfinite(value_number) or not 0 < value_number <= 255:
+                        raise _error("dimensions", "Dimension outside Excel bounds")
+                    try:
+                        col = column_index_from_string(str(coordinate))
+                    except ValueError:
+                        raise _error("dimensions", "Invalid column") from None
+                    if col > 16384:
+                        raise _error("dimensions", "Invalid column")
+                    sheet.column_dimensions[str(coordinate).upper()].width = value_number
+                continue
             if not isinstance(value, Mapping) or len(value) > limits.cells:
                 raise _error("dimensions", "Invalid dimension mapping")
             for coordinate, size in value.items():
@@ -386,11 +441,33 @@ def _config(sheet, properties, limits):
                         raise _error("dimensions", "Invalid column") from None
                     if col > 16384:
                         raise _error("dimensions", "Invalid column")
+                    if key == "column_widths_pixels":
+                        raise _error("dimensions", "Pixel column widths are unsupported by Excel", ConnectorErrorCode.UNSUPPORTED_CAPABILITY)
                     sheet.column_dimensions[str(coordinate)].width = size
-        elif key == "show_gridlines":
+        elif key in ("show_gridlines", "gridlines"):
             if not isinstance(value, bool):
                 raise _error("config", "Gridline flag must be boolean")
             sheet.sheet_view.showGridLines = value
+        elif key == "view":
+            if not isinstance(value, Mapping):
+                raise _error("config", "View must be an object")
+            if set(value) - {"zoom_percent", "frozen_rows", "frozen_columns"}:
+                raise _error("config", "Unsupported view property", ConnectorErrorCode.UNSUPPORTED_CAPABILITY)
+            if "zoom_percent" in value:
+                zoom = value["zoom_percent"]
+                if isinstance(zoom, bool) or not isinstance(zoom, (int, float)) or not 10 <= zoom <= 400:
+                    raise _error("config", "Invalid zoom percent")
+                sheet.sheet_view.zoomScale = zoom
+            if "frozen_rows" in value or "frozen_columns" in value:
+                frozen_rows = value.get("frozen_rows", 0)
+                frozen_columns = value.get("frozen_columns", 0)
+                if any(isinstance(item, bool) or not isinstance(item, int) or item < 0 for item in (frozen_rows, frozen_columns)):
+                    raise _error("config", "Invalid freeze dimensions")
+                if frozen_rows or frozen_columns:
+                    from openpyxl.utils import get_column_letter
+                    sheet.freeze_panes = f"{get_column_letter(frozen_columns + 1)}{frozen_rows + 1}"
+                else:
+                    sheet.freeze_panes = None
         elif key == "freeze_panes":
             if value is not None:
                 _rect(value, limits)
@@ -670,9 +747,15 @@ def _apply(book, change, binding):
         for cell in cells():
             _style(cell, properties)
     elif op == "range.format":
+        from openpyxl.styles.numbers import BUILTIN_FORMATS
+
         value = args.get("format", args.get("pattern") or args.get("kind"))
         if isinstance(value, Mapping):
-            value = value.get("pattern") or value.get("kind")
+            value = value.get("code") or value.get("pattern")
+            if value is None and args.get("format", {}).get("builtin_id") is not None:
+                value = BUILTIN_FORMATS.get(args["format"]["builtin_id"])
+        elif isinstance(value, int) and not isinstance(value, bool):
+            value = BUILTIN_FORMATS.get(value)
         if not isinstance(value, str) or not value or (literal and value != "@"):
             raise _error("format", "Unsupported cell format for profile")
         for cell in cells():
