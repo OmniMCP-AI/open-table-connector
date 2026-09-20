@@ -1,0 +1,18 @@
+{
+  "version": "1.0",
+  "range": "A1:F40",
+  "intent": {
+    "title": {"range": "A1:F1", "bold": true, "text_layout": "wrap", "horizontal": "center"},
+    "header": {"range": "A3:F3", "bold": true, "fill": "#D9EAF7", "border": {"bottom": {"style": "thin"}}},
+    "body": {"range": "A4:F38", "vertical": "center", "text_layout": "no_wrap"},
+    "amounts": {"range": "D4:F38", "horizontal": "right", "number_format": {"kind": "custom", "pattern": "#,##0.00;[Red](#,##0.00);\"-\";@"}},
+    "total": {"range": "A39:F39", "bold": true, "border": {"top": {"style": "double"}}},
+    "footnote": {"range": "A40:F40", "italic": true, "text_layout": "wrap"},
+    "blank_styled": ["E2", "F2"]
+  },
+  "dimensions": {
+    "rows": {"1": 28, "3": 22, "39": 24, "40": 30},
+    "columns": {"A": {"value": 24, "unit": "excel_character"}, "B": {"value": 16, "unit": "excel_character"}, "C": {"value": 18, "unit": "excel_character"}, "D": {"value": 16, "unit": "excel_character"}, "E": {"value": 16, "unit": "excel_character"}, "F": {"value": 16, "unit": "excel_character"}}
+  },
+  "view": {"gridlines": false, "zoom_percent": 90, "frozen_rows": 3, "frozen_columns": 1}
+}
