@@ -1177,6 +1177,35 @@ class LocalSpreadsheetProvider:
         finally:
             book.close()
 
+    def verify_layout(self, binding, expected):
+        """Compare a layout expectation with a fresh, published XLSX read."""
+        from open_table_connector.spreadsheets.observations import compare_layout
+        from .spreadsheet_observe import observe_xlsx
+
+        if not isinstance(expected, Mapping) or expected.get("kind") != "spreadsheet.financial-layout.expectation/1.0":
+            raise _error("invalid_layout_expectation", "Layout expectation is invalid")
+        target = expected.get("target")
+        coverage = expected.get("coverage", {})
+        if not isinstance(target, Mapping) or not isinstance(coverage, Mapping):
+            raise _error("invalid_layout_expectation", "Layout expectation is incomplete")
+        if "range" in coverage:
+            selector = {"operation": "range.style.read", "address": coverage["range"], "fields": coverage.get("fields")}
+        else:
+            selector = {
+                "operation": "worksheet.config.read",
+                "rows": coverage.get("rows"),
+                "columns": coverage.get("columns"),
+                "view_fields": coverage.get("fields"),
+            }
+        actual = observe_xlsx(
+            data=_bytes(_path(binding["uri"]), _limits(binding)),
+            target=target,
+            selector=selector,
+            limits=_limits(binding),
+        )
+        differences = compare_layout(expected, actual)
+        return {"matched": not differences, "differences": differences, "physical_hash": actual["physical_hash"]}
+
     def _verify_general(self, data, expected, limits):
         from openpyxl import load_workbook
 

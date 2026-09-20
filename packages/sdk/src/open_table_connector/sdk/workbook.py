@@ -349,9 +349,11 @@ class WorkbookSession:
     def worksheet(self):
         return WorksheetCollection(self)
 
-    def write(self, **kwargs):
+    def write(self, *, layout_expectation=None, **kwargs):
         try:
-            value = self._call(lambda: self._session.write(**kwargs))
+            value = self._call(
+                lambda: self._session.write(layout_expectation=layout_expectation, **kwargs)
+            )
         finally:
             self.uri = TableURI(self._session.binding.get("uri", self.uri.value))
         return _adapt(value, self.uri, "workbook.write")

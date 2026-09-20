@@ -45,6 +45,7 @@ class SpreadsheetSession:
         self._lock = Lock()
         self.generations: dict[str, int] = {}
         self.expected = None
+        self.layout_expected = None
         self.provider.preflight(self.binding, ())
 
     def _check(self, *, mutation: bool = False):
@@ -97,6 +98,7 @@ class SpreadsheetSession:
         expected_revision=None,
         idempotency_key=None,
         verify=True,
+        layout_expectation: Mapping[str, Any] | None = None,
     ):
         if any(not isinstance(flag, bool) for flag in (dry_run, allow_partial, verify)):
             raise _error("write flags must be booleans", "invalid_configuration")
@@ -123,15 +125,20 @@ class SpreadsheetSession:
                     }
                 )
             try:
-                result = dict(
-                    self.provider.commit(
-                        self.binding,
-                        self.pending,
-                        allow_partial=allow_partial,
-                        expected_revision=expected_revision,
-                        idempotency_key=idempotency_key,
-                    )
+                commit_kwargs = dict(
+                    allow_partial=allow_partial,
+                    expected_revision=expected_revision,
+                    idempotency_key=idempotency_key,
                 )
+                # Old providers must never receive the new keyword.  A
+                # provider opts in by exposing a layout verification hook.
+                layout_hook = getattr(self.provider, "verify_layout", None)
+                if layout_expectation is not None and callable(layout_hook):
+                    import inspect
+
+                    if "layout_expectation" in inspect.signature(self.provider.commit).parameters:
+                        commit_kwargs["layout_expectation"] = freeze(layout_expectation)
+                result = dict(self.provider.commit(self.binding, self.pending, **commit_kwargs))
             except ConnectorError as exc:
                 if (
                     exc.code in {ConnectorErrorCode.TIMEOUT, ConnectorErrorCode.CANCELLED}
@@ -157,8 +164,32 @@ class SpreadsheetSession:
                 self.expected = freeze(
                     result.get("expected", self.binding.get("expected", self.expected))
                 )
+                if layout_expectation is not None:
+                    self.layout_expected = freeze(layout_expectation)
                 self.pending = ()
                 self.sealed = self.binding["profile"] == "literal-artifact/1.0"
+                if verify and layout_expectation is not None:
+                    if callable(layout_hook):
+                        try:
+                            checked = layout_hook(self.binding, freeze(layout_expectation))
+                            if isinstance(checked, Mapping) and checked.get("matched") is False:
+                                result.update(outcome="failed", verification="failed", layout_verification=checked)
+                            else:
+                                result["layout_verification"] = checked or {"status": "verified"}
+                        except ConnectorError as exc:
+                            result.update(
+                                outcome="failed",
+                                verification="unavailable",
+                                layout_verification={"status": "unavailable", "error": exc.message},
+                            )
+                        except (TimeoutError, OSError) as exc:
+                            result.update(
+                                outcome="failed",
+                                verification="unavailable",
+                                layout_verification={"status": "unavailable", "error": type(exc).__name__},
+                            )
+                    else:
+                        result["layout_verification"] = {"status": "skipped", "reason": "unsupported_capability"}
             self._last = freeze(result)
             return self._last
         finally:
@@ -178,9 +209,13 @@ class SpreadsheetSession:
     def verify(self, expected=None):
         if self.pending:
             raise _error("verification requires a clean committed session", "invalid_configuration")
-        return self.observe(
-            "workbook.verify", expected=self.expected if expected is None else freeze(expected)
-        )
+        selected = self.expected if expected is None else freeze(expected)
+        if isinstance(selected, Mapping) and str(selected.get("kind", "")).endswith("expectation/1.0"):
+            verifier = getattr(self.provider, "verify_layout", None)
+            if not callable(verifier):
+                raise _error("layout verification is unsupported", "unsupported_capability")
+            return verifier(self.binding, selected)
+        return self.observe("workbook.verify", expected=selected)
 
     def reconcile(self):
         result = self.observe("workbook.reconcile")
