@@ -27,11 +27,13 @@ OPERATIONS = (
     "worksheet.delete",
     "worksheet.move",
     "worksheet.config",
+    "worksheet.config.read",
     "worksheet.list",
     "range.read",
     "range.write",
     "range.clear",
     "range.style",
+    "range.style.read",
     "range.format",
     "range.merge",
     "range.unmerge",
@@ -1127,6 +1129,28 @@ class LocalSpreadsheetProvider:
                 "commit": "not_applicable",
                 "receipts": ({"details": value},),
             }
+        if operation in ("range.style.read", "worksheet.config.read"):
+            from .spreadsheet_observe import observe_xlsx
+
+            selector = dict(selector)
+            selector.setdefault("target_key", selector.get("sheet", "1"))
+            target = {
+                "provider": "excel",
+                "resource": binding["uri"],
+                "worksheet_id": str(selector.get("worksheet_id", selector["target_key"])),
+            }
+            try:
+                value = observe_xlsx(
+                    data=_bytes(path, _limits(binding)),
+                    target=target,
+                    selector=selector,
+                    limits=_limits(binding),
+                )
+            except ConnectorError:
+                raise
+            except (ValueError, KeyError, TypeError) as exc:
+                raise _error("observation", "Spreadsheet layout observation failed", ConnectorErrorCode.EXECUTION_FAILED, error_type=type(exc).__name__) from None
+            return {"value": value, "verification": "unavailable", "commit": "not_applicable"}
         book = self._build(binding, selector.get("changes", ()))
         try:
             if operation in ("worksheet.list", "workbook.inspect"):
