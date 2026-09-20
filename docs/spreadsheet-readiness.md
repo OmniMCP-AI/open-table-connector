@@ -35,7 +35,7 @@ following documentation update changes no implementation. Environment: macOS
   layout are checked. General edits preserve supported objects and reject unsafe
   unsupported parts and structural reference changes. Existing pivot/cache parts
   reject before editing because cache-preservation parity is not yet proven.
-- Maybe uses the actual `mbs 0.28.4`, JSON contract `1.0` commands. It validates
+- Maybe uses the actual `mbs 0.29.1`, JSON contract `1.0` commands. It validates
   Sheet engines/gids, preserves Base worksheets, retains known IDs/effects,
   rejects unsupported dirty previews, and requires partial opt-in beyond a
   tested single-command boundary. Reconciliation is observation only.
@@ -87,21 +87,27 @@ service tests account for the four skips. Maybe live acceptance was run separate
 ## Unified Table financial-layout gate
 
 The unified `Table.layout()` implementation is gated separately from the
-existing workbook completion evidence. The installed MaybeSheet CLI is
-`0.29.0`; its help exposes worksheet configuration and style write commands,
-but this checkout has no authenticated workbook response proving independent
-style/config reads, default or inherited style evidence, stable sheet identity,
-or reopen persistence. The recorded qualification manifest is
+existing workbook completion evidence. The refreshed local MaybeSheet CLI is
+`0.29.1`; its help exposes worksheet configuration and style commands. A
+sanitized disposable probe is recorded in
 `packages/maybe_sheet/tests/fixtures/layout-protocol.json`.
 
-Until a disposable authenticated probe supplies versioned command mappings and
-read/write/reopen responses, OTC must not advertise the new MaybeSheet layout
-capabilities. The missing upstream evidence covers `range.style.read`,
-`worksheet.config.read`, alignment, borders, complete Excel number/date/
-currency/accounting formats, text-layout modes, metadata-only sheet binding,
-and persisted physical evidence. This is an explicit external gate; local
-contract and Excel implementation work may proceed, but it is not a positive
-MaybeSheet acceptance result.
+The probe produced independent exported-XLSX physical evidence for font, fill
+and alignment fields (physical hash recorded in the manifest), and CLI
+verification passed for gridlines and freeze panes while preserving values,
+styles and formulas. It also confirmed that number-format writes do not persist
+as OOXML `numFmt`, raw border writes are rejected or ignored, the canonical
+`alignment.wrap` key is dropped while `alignment.wrap_text` persists, and
+row/column style operations are not safe native dimension writes. A request for
+zoom returned `capability.unsupported`.
+
+OTC therefore keeps the new MaybeSheet layout capabilities unadvertised. The
+remaining gate covers provider `range.style.read` and `worksheet.config.read`
+responses, complete Excel number/date/currency/accounting formats, border and
+all text-layout modes, safe native dimensions, stable sheet identity, metadata-
+only binding, and authenticated reopen/application evidence. This is an
+explicit external gate; the local contract and Excel implementation are
+complete, but it is not a positive MaybeSheet acceptance result.
 
 The authorized live probe wrote `[['=literal', ''], ['b', 2]]`. Readback reported
 value types `[['string', 'blank'], ['string', 'string']]` and values
