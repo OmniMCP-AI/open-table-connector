@@ -26,6 +26,7 @@ from .capabilities import (
 )
 from .model import CellFormat, CellStyle, ImageSpec, RangeRef, SpreadsheetTarget, WorksheetRef
 from .formats import normalize_format
+from ._layout import LayoutCapabilityError, normalize_config, normalize_style, prepare_layout, validate_descriptor
 
 __all__ = [
     "ArtifactLimits",
@@ -38,6 +39,11 @@ __all__ = [
     "SpreadsheetProvider",
     "WorksheetRef",
     "normalize_format",
+    "LayoutCapabilityError",
+    "normalize_config",
+    "normalize_style",
+    "prepare_layout",
+    "validate_descriptor",
     "ALL_CAPABILITIES",
     "SPREADSHEET_IMAGE_INSERT",
     "SPREADSHEET_RANGE_READ",
