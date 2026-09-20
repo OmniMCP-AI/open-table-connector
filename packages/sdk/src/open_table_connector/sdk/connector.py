@@ -400,6 +400,14 @@ class LegacyConnectorAdapterBridge:
             raise TypeError("legacy adapter formula extension is invalid")
         return extension
 
+    def spreadsheet_provider(self):
+        factory = getattr(self._adapter, "spreadsheet_provider", None)
+        if not callable(factory):
+            raise _MissingFormulaExtensionError(
+                "legacy adapter does not expose the spreadsheet provider"
+            )
+        return factory()
+
     def close(self) -> None:
         close = getattr(self._adapter, "close", None)
         if callable(close):
