@@ -84,6 +84,25 @@ service tests account for the four skips. Maybe live acceptance was run separate
 
 ## Maybe typed-value gate
 
+## Unified Table financial-layout gate
+
+The unified `Table.layout()` implementation is gated separately from the
+existing workbook completion evidence. The installed MaybeSheet CLI is
+`0.29.0`; its help exposes worksheet configuration and style write commands,
+but this checkout has no authenticated workbook response proving independent
+style/config reads, default or inherited style evidence, stable sheet identity,
+or reopen persistence. The recorded qualification manifest is
+`packages/maybe_sheet/tests/fixtures/layout-protocol.json`.
+
+Until a disposable authenticated probe supplies versioned command mappings and
+read/write/reopen responses, OTC must not advertise the new MaybeSheet layout
+capabilities. The missing upstream evidence covers `range.style.read`,
+`worksheet.config.read`, alignment, borders, complete Excel number/date/
+currency/accounting formats, text-layout modes, metadata-only sheet binding,
+and persisted physical evidence. This is an explicit external gate; local
+contract and Excel implementation work may proceed, but it is not a positive
+MaybeSheet acceptance result.
+
 The authorized live probe wrote `[['=literal', ''], ['b', 2]]`. Readback reported
 value types `[['string', 'blank'], ['string', 'string']]` and values
 `[['=literal', ''], ['b', '2']]`: numeric `2` became text, and readback classified the empty literal
