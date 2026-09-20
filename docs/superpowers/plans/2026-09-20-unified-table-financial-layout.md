@@ -10,6 +10,19 @@
 
 **Spec:** [统一 Table 财务版式 spec](../specs/2026-09-20-unified-table-financial-layout-design.md)，含完整格式与 wrapping 更新，spec revision `972bb5c`。本计划创建于该 revision 之后；代码位置以 spec 的 `ae8e16d` 基线为导航提示，实施前用 graft 校正。
 
+## Execution status (2026-09-20)
+
+| Task | Status |
+| --- | --- |
+| 0 | ✅ OTC protocol fixture and explicit upstream gaps recorded; positive MaybeSheet capability gate remains closed. |
+| 1–6 | ✅ Shared evidence/format/patch contracts, Table facade, Excel writer, and independent reader implemented and verified. |
+| 7 | ✅ MaybeSheet recorded-protocol provider/reader and explicit unsupported-capability paths implemented; no unverified positive advertisement. |
+| 8–10 | ✅ Independent intent verification, CLI reads, and shared Excel/MaybeSheet conformance harness implemented and verified. |
+| 11 | ⚠️ Offline acceptance tests are present and intentionally skipped without authenticated MaybeSheet/Excel application gates; no fabricated pass evidence. |
+| 12 | ✅ Compatibility documentation, readiness evidence, package checks, wheel smoke, and release notes completed. |
+
+The task-level completion ledger is retained in `.superpowers/sdd/2026-09-20-unified-table-financial-layout/progress.md`; the live gate state above is authoritative for external acceptance.
+
 ## Global Constraints
 
 - “两个 provider 均为必需交付”；Google/Base/CSV/SQL 不自动广告新能力。
