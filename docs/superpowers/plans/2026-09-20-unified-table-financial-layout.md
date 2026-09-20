@@ -256,7 +256,7 @@ metadata_only=True 仅解析 workbook/sheet 元数据，不读取数据 frame。
 
 ```python
 def test_layout_binding_does_not_read_data(metadata_client, metadata_connector):
-    table = metadata_client.open("maybe://doc/7", metadata_only=True).require_value()
+    table = metadata_client.open("maybe URI doc/7", metadata_only=True).require_value()
     with table.layout() as layout:
         layout.range("A1:B1").read_style(fields=["bold"]).require_value()
     assert metadata_connector.data_reads == 0

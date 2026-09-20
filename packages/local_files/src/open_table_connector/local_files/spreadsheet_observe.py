@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from typing import Any
 from zipfile import BadZipFile, ZipFile
 
+from open_table_connector.contract import PROVIDER_EXCEL, SCHEME_XLSX
 from open_table_connector.spreadsheets import ArtifactLimits
 from open_table_connector.spreadsheets.observations import decode_observation
 
@@ -185,8 +186,8 @@ def observe_xlsx(*, data: bytes, target: Mapping[str, Any], selector: Mapping[st
     if not isinstance(target, Mapping):
         raise ValueError("observation target must be an object")
     target = dict(target)
-    target.setdefault("provider", "excel")
-    target.setdefault("resource", target.get("uri", "xlsx"))
+    target.setdefault("provider", PROVIDER_EXCEL)
+    target.setdefault("resource", target.get("uri", SCHEME_XLSX))
     target.setdefault("worksheet_id", str(selector.get("worksheet_id", selector.get("sheet", "1"))))
     if not isinstance(selector, Mapping):
         raise ValueError("observation selector must be an object")

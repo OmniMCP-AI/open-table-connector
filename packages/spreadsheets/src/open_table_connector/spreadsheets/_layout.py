@@ -13,6 +13,8 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from open_table_connector.contract import PROVIDER_EXCEL
+
 from ._operations import Change
 from .formats import normalize_format
 
@@ -166,7 +168,7 @@ def _format_descriptor(descriptor: Mapping[str, Any]) -> Mapping[str, Any]:
     # patch is not advertised.  The complete format validator still receives a
     # deterministic, provider-neutral descriptor in that case.
     fallback = {
-        "dialect": descriptor.get("dialect", "excel"),
+        "dialect": descriptor.get("dialect", PROVIDER_EXCEL),
         "version": "1.0",
         "locales": ["en-US", "zh-CN", "de-DE"],
         "builtins": {},

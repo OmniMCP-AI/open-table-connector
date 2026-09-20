@@ -17,7 +17,12 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 from xml.etree import ElementTree as ET
 
-from open_table_connector.contract import SCHEME_FILE, ConnectorError, ConnectorErrorCode
+from open_table_connector.contract import (
+    PROVIDER_EXCEL,
+    SCHEME_FILE,
+    ConnectorError,
+    ConnectorErrorCode,
+)
 from open_table_connector.spreadsheets import ArtifactLimits, RangeRef, SpreadsheetTarget
 
 PROFILE = "literal-artifact/1.0"
@@ -1135,7 +1140,7 @@ class LocalSpreadsheetProvider:
             selector = dict(selector)
             selector.setdefault("target_key", selector.get("sheet", "1"))
             target = {
-                "provider": "excel",
+                "provider": PROVIDER_EXCEL,
                 "resource": binding["uri"],
                 "worksheet_id": str(selector.get("worksheet_id", selector["target_key"])),
             }

@@ -159,3 +159,40 @@ JSON properties and non-finite JSON numbers are rejected. `--allow-partial`,
 the existing session/provider contract. Image insertion arguments encode original bytes as
 `content_base64` alongside `mime_type` and `anchor`. Commands emit existing SDK result JSON;
 failed mutations preserve commit/uncertainty evidence on stderr.
+
+### Unified Table financial layout
+
+Sheet-mode Tables can open a metadata-only layout session without reading the
+data frame. The session is bound to the provider's stable worksheet identity:
+
+```python
+table = client.open("file:///absolute/path/report.xlsx", metadata_only=True).require_value()
+with table.layout() as layout:
+    layout.range("A1:F1").style(bold=True, horizontal="center", text_layout="wrap")
+    layout.range("D4:F38").format(
+        pattern='#,##0.00;[Red](#,##0.00);"-";@'
+    )
+    layout.worksheet.read_config(rows=[1, 3, 40], columns=["A", "D", "F"])
+    result = layout.write(verify=True)
+```
+
+`range.style.read` and `worksheet.config.read` return a complete, bounded
+physical observation with a recomputable `physical_hash`, source references for
+explicit/inherited/default values, native row/column units and the provider
+worksheet identity. Readback is independent of the write acknowledgment;
+reopening with a new client must produce the same hash before a layout write is
+accepted. `fields=None` requests every field advertised by the descriptor.
+
+Number formats preserve the exact Excel format code, including built-in IDs,
+locale/calendar markers, date systems, currency/accounting sections, escapes,
+conditions and text sections. The writer never rewrites the underlying value or
+formula. Text layout modes are `no_wrap`, `wrap`, `shrink_to_fit`, `overflow` and
+`clip`; a provider advertises only modes it can persist without loss. Excel
+supports the first three; unsupported modes and units return an explicit
+`unsupported_capability` error. Column sizes carry their native unit (for
+example `excel_character` for Excel or `px` for a provider that advertises it),
+and character-to-pixel approximation is never performed.
+
+MaybeSheet layout reads remain gated by authenticated protocol evidence. The
+recorded CLI surface does not advertise the new read capabilities, so callers
+receive a capability error rather than an empty or synthesized observation.
