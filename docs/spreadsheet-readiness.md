@@ -185,3 +185,25 @@ This gate owns a disposable Sheet workbook, writes through the CLI independently
 of OTC's guard, checks value types/formulas, and marks the workbook deleted in
 cleanup. Enable OTC typed writes only after deployed readback passes. Native
 Python date/time serialization remains a separate unsupported input.
+
+## Unified financial layout live gates (2026-09-20)
+
+The shared Excel/MaybeSheet layout contract, independent observation decoder,
+Excel physical reader, metadata-only Table facade and CLI read actions are
+implemented and covered by offline tests. External acceptance remains closed
+until a disposable authenticated MaybeSheet workbook and a real Excel
+application/render service are available:
+
+```sh
+OTC_TEST_MBS_LAYOUT_ENABLED=1 uv run --all-packages --frozen python -m pytest \
+  specification/conformance/spreadsheets/test_layout_live.py -k maybe -q
+OTC_TEST_EXCEL_LAYOUT_RENDER_ENABLED=1 uv run --all-packages --frozen python -m pytest \
+  specification/conformance/spreadsheets/test_layout_live.py -k excel -q
+```
+
+In this checkout both environment gates are disabled, so the live tests are
+explicitly skipped and the release status is **not accepted**. No MaybeSheet
+style/config read capability is advertised from the recorded `mbs 0.29.1`
+help surface; unsupported operations return a capability error. No service
+credentials, workbook data or fabricated application-render evidence is stored
+in the repository.
