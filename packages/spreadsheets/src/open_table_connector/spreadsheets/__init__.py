@@ -25,6 +25,7 @@ from .capabilities import (
     SPREADSHEET_WORKSHEET_LIST,
 )
 from .model import CellFormat, CellStyle, ImageSpec, RangeRef, SpreadsheetTarget, WorksheetRef
+from .formats import normalize_format
 
 __all__ = [
     "ArtifactLimits",
@@ -36,6 +37,7 @@ __all__ = [
     "SpreadsheetTarget",
     "SpreadsheetProvider",
     "WorksheetRef",
+    "normalize_format",
     "ALL_CAPABILITIES",
     "SPREADSHEET_IMAGE_INSERT",
     "SPREADSHEET_RANGE_READ",
