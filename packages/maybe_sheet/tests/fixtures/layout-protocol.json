@@ -1,9 +1,9 @@
 {
   "version": "1.0",
-  "provider_version": "0.29.0",
+  "provider_version": "0.29.1",
   "service_revision": null,
   "commands": {
-    "mbs_version": "mbs --version -> 0.29.0",
+    "mbs_version": "mbs --version -> 0.29.1",
     "root_help": "mbs --help",
     "worksheet_help": "mbs worksheet --help",
     "worksheet_config_help": "mbs worksheet config --help",
@@ -12,7 +12,42 @@
     "range_read_help": "mbs range read --help",
     "raw_help": "mbs raw --help"
   },
-  "responses": {},
+  "responses": {
+    "disposable_style_export_observation": {
+      "status": "completed",
+      "readback_mode": "independent exported XLSX observation",
+      "fields": [
+        "bold",
+        "italic",
+        "font_size",
+        "foreground",
+        "fill",
+        "horizontal",
+        "vertical"
+      ],
+      "physical_hash": "sha256:ac054c1a951ce30b3b67d09050e0746903540da77e93d90799399bfc348656bf",
+      "data": "synthetic disposable workbook only"
+    },
+    "disposable_config_verification": {
+      "status": "completed",
+      "verified_fields": [
+        "gridlines",
+        "freeze_rows",
+        "freeze_columns"
+      ],
+      "checks": [
+        "config_read_back",
+        "values_unchanged",
+        "styles_unchanged",
+        "formulas_unchanged"
+      ],
+      "data": "synthetic disposable workbook only"
+    },
+    "unsupported_zoom": {
+      "status": "capability.unsupported",
+      "capability": "worksheet_config:layout.zoom"
+    }
+  },
   "supported_fields": {},
   "format_dialect": null,
   "limits": {
@@ -27,14 +62,33 @@
     "border",
     "number_format",
     "text_layout",
+    "canonical_text_layout_alias",
+    "vertical_alignment_middle",
     "default_and_inherited_style_evidence",
     "stable_sheet_identity_readback",
     "reopen_persistence_evidence",
-    "metadata_only_sheet_binding"
+    "metadata_only_sheet_binding",
+    "safe_native_row_column_dimensions"
   ],
   "evidence_limits": [
     "help output proves command presence and option shape only",
-    "no authenticated workbook was used",
-    "no positive read/write/persist evidence is recorded"
-  ]
+    "positive probe evidence is limited to synthetic disposable workbooks and exported XLSX observation",
+    "provider read responses, complete format persistence and authenticated application/render acceptance are not recorded",
+    "raw responses, workbook identifiers, credentials and financial data are intentionally omitted"
+  ],
+  "probe_evidence": {
+    "observed_at": "2026-09-20",
+    "cli_version": "0.29.1",
+    "lifecycle": "synthetic disposable workbooks were marked deleted after each probe",
+    "style": "font/fill/alignment fields persisted through export and independent observation; provider range.style.read remains unproven",
+    "config": "gridlines and freeze panes passed CLI verification; independent reopen evidence is not yet recorded",
+    "gaps_confirmed": {
+      "number_format": "write acknowledged but no numFmt persisted in exported OOXML",
+      "border": "raw border payload rejected or returned style-required error",
+      "text_layout": "alignment.wrap_text persisted; canonical alignment.wrap was silently dropped",
+      "vertical_alignment": "vertical=middle produced invalid OOXML; center is the supported value observed",
+      "row_column_dimensions": "row style expands a full row and column style timed out; native dimension write is unsafe",
+      "independent_readback": "no provider range.style.read response or stable sheet identity/reopen response"
+    }
+  }
 }
