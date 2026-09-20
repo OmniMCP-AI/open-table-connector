@@ -12,6 +12,7 @@ SPREADSHEET_IMAGE_INSERT = CapabilityIdentity("spreadsheet.image.insert", "1.0")
 SPREADSHEET_WORKBOOK_WRITE = CapabilityIdentity("spreadsheet.workbook.write", "1.0")
 SPREADSHEET_WORKBOOK_VERIFY = CapabilityIdentity("spreadsheet.workbook.verify", "1.0")
 SPREADSHEET_RANGE_SORT = CapabilityIdentity("spreadsheet.range.sort", "1.0")
+SPREADSHEET_FORMULA_SET_RANGE = CapabilityIdentity("spreadsheet.formula.set_range", "1.0")
 SPREADSHEET_RANGE_STYLE_READ = CapabilityIdentity("spreadsheet.range.style.read", "1.0")
 SPREADSHEET_WORKSHEET_CONFIG_READ = CapabilityIdentity("spreadsheet.worksheet.config.read", "1.0")
 SPREADSHEET_RANGE_ALIGNMENT_READ = CapabilityIdentity("spreadsheet.range.alignment.read", "1.0")
@@ -32,6 +33,7 @@ ALL_CAPABILITIES = (
     SPREADSHEET_RANGE_FORMAT,
     SPREADSHEET_IMAGE_INSERT,
     SPREADSHEET_RANGE_SORT,
+    SPREADSHEET_FORMULA_SET_RANGE,
     SPREADSHEET_RANGE_STYLE_READ,
     SPREADSHEET_WORKSHEET_CONFIG_READ,
     SPREADSHEET_RANGE_ALIGNMENT_READ,
@@ -50,6 +52,7 @@ __all__ = [
     "SPREADSHEET_RANGE_STYLE",
     "SPREADSHEET_RANGE_WRITE",
     "SPREADSHEET_RANGE_SORT",
+    "SPREADSHEET_FORMULA_SET_RANGE",
     "SPREADSHEET_RANGE_STYLE_READ",
     "SPREADSHEET_WORKSHEET_CONFIG_READ",
     "SPREADSHEET_RANGE_ALIGNMENT_READ",

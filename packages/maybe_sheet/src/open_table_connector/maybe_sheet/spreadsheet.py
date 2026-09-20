@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, urlsplit
 from open_table_connector.contract import (
     HOST_MAYBE,
     PROVIDER_JSON,
+    PROVIDER_MAYBE_SHEET,
     SCHEME_HTTPS,
     ConnectorError,
     ConnectorErrorCode,
@@ -30,6 +31,14 @@ from open_table_connector.spreadsheets.model import _coordinate
 
 from .connector import _mbs_target
 from .grid_formula import _ENVELOPE_KEYS
+from .spreadsheet_observe import (
+    LAYOUT_DESCRIPTOR,
+    STYLE_FIELDS,
+    column_letter,
+    config_observation,
+    decode_maybe_layout,
+    style_observation,
+)
 
 
 def _reject(message, code=ConnectorErrorCode.UNSUPPORTED_CAPABILITY):
@@ -57,6 +66,79 @@ def _plain(value):
     return value
 
 
+def _bounded_span(address):
+    """Return one inclusive bounded A1 span, rejecting unbounded rectangles."""
+
+    text = RangeRef(address).address
+    first, last = (text.split(":") + [text])[:2]
+    start = _coordinate(first)
+    end = _coordinate(last)
+    if (
+        end[0] < start[0]
+        or end[1] < start[1]
+        or (end[0] - start[0] + 1) * (end[1] - start[1] + 1) > 10000
+    ):
+        raise ValueError("range is unbounded or too large")
+    return (start[0], start[1], end[0], end[1])
+
+
+def _coordinate_bounds(address):
+    """Split a bounded A1 range into inclusive (row, column) start and end."""
+
+    first, last = (str(address).split(":") + [str(address)])[:2]
+    start = _coordinate(first)
+    end = _coordinate(last)
+    if end[0] < start[0] or end[1] < start[1]:
+        raise ValueError("range end precedes start")
+    return start, end
+
+
+def _band_key(key, kind):
+    """Normalize one dimension selector to a comparable index, or None."""
+
+    if kind == "row":
+        if isinstance(key, bool):
+            return None
+        if isinstance(key, int):
+            return key
+        if isinstance(key, str) and key.isdigit():
+            return int(key)
+        return None
+    if isinstance(key, str) and re.fullmatch(r"[A-Za-z]{1,3}", key):
+        return _coordinate(key.upper() + "1")[1]
+    return None
+
+
+def _size_bands(values, *, kind):
+    """Group contiguous dimensions that share one size into inclusive bands.
+
+    The provider's width/height endpoints accept a start and end coordinate, so
+    a band of equal sizes costs one provider call and one workbook version
+    instead of one per row or column.
+    """
+
+    if not isinstance(values, Mapping):
+        _reject("Dimension configuration must be an object")
+    ordered = []
+    for key, size in values.items():
+        index = _band_key(key, kind)
+        if index is None:
+            _reject("Invalid worksheet dimension selector", ConnectorErrorCode.INVALID_URI)
+        if type(size) not in (float, int) or not math.isfinite(size) or size <= 0:
+            _reject("Dimension configuration requires positive sizes")
+        ordered.append((index, size))
+    if len({index for index, _ in ordered}) != len(ordered):
+        _reject("Dimension configuration repeats a selector")
+    ordered.sort()
+    bands = []
+    for index, size in ordered:
+        if bands and bands[-1][1] + 1 == index and bands[-1][2] == size:
+            bands[-1][1] = index
+        else:
+            bands.append([index, index, size])
+    return [tuple(band) for band in bands]
+
+
 class MaybeSpreadsheetProvider:
     capabilities = (
         "worksheet.list",
@@ -66,6 +148,8 @@ class MaybeSpreadsheetProvider:
         "worksheet.move",
         "worksheet.config",
         "range.read",
+        "range.style.read",
+        "worksheet.config.read",
         "range.write",
         "range.clear",
         "range.style",
@@ -76,6 +160,7 @@ class MaybeSpreadsheetProvider:
         "row.height",
         "column.width",
         "formula.set",
+        "formula.set_range",
         "formula.read",
         "image.insert",
         "image.list",
@@ -205,22 +290,28 @@ class MaybeSpreadsheetProvider:
                 _reject(
                     "MaybeSheet configuration supports row heights in points and column widths in pixels only"
                 )
-            for row, height in args.get("row_heights", {}).items():
+            for start, end, height in _size_bands(args.get("row_heights", {}), kind="row"):
                 expanded.append(
                     Change(
                         "row.height",
                         change.capability,
                         change.target_key,
-                        {"row": row, "height_points": height},
+                        {"start_row": start, "end_row": end, "height_points": height},
                     )
                 )
-            for column, width in args.get("column_widths_pixels", {}).items():
+            for start, end, width in _size_bands(
+                args.get("column_widths_pixels", {}), kind="column"
+            ):
                 expanded.append(
                     Change(
                         "column.width",
                         change.capability,
                         change.target_key,
-                        {"column": column, "width_pixels": width},
+                        {
+                            "start_column": column_letter(start),
+                            "end_column": column_letter(end),
+                            "width_pixels": width,
+                        },
                     )
                 )
         return tuple(expanded)
@@ -257,6 +348,7 @@ class MaybeSpreadsheetProvider:
             "row.height",
             "column.width",
             "formula.set",
+            "formula.set_range",
             "image.insert",
             "image.add",
             "image.delete",
@@ -273,15 +365,43 @@ class MaybeSpreadsheetProvider:
             "range.merge": {"address"},
             "range.unmerge": {"address"},
             "range.sort": {"address", "key_column", "header", "reverse"},
-            "row.height": {"row", "height_points"},
-            "column.width": {"column", "width_pixels"},
+            "row.height": {"row", "start_row", "end_row", "height_points"},
+            "column.width": {"column", "start_column", "end_column", "width_pixels"},
             "formula.set": {"address", "cell", "expression", "formula", "dialect"},
+            "formula.set_range": {"address", "formulas", "dialect"},
             "image.delete": {"picture_id"},
         }
         if op in allowed and set(args) - allowed[op]:
             _reject("Operation contains unsupported arguments")
-        if op == "formula.set" and args.get("dialect", "maybe-sheet-a1") != "maybe-sheet-a1":
+        if op in ("formula.set", "formula.set_range") and (
+            args.get("dialect", "maybe-sheet-a1") != "maybe-sheet-a1"
+        ):
             _reject("Formula dialect differs from the MaybeSheet workbook")
+        if op == "formula.set_range":
+            # The batch endpoint rejects an empty slot, so one command can only
+            # carry a fully populated rectangle of formulas.
+            try:
+                start, end = _coordinate_bounds(RangeRef(str(args.get("address"))).address)
+            except (TypeError, ValueError):
+                _reject("Formula range requires one bounded A1 range")
+            matrix = args.get("formulas")
+            rows = end[0] - start[0] + 1
+            columns = end[1] - start[1] + 1
+            if (
+                (rows, columns) == (1, 1)
+                or not isinstance(matrix, (list, tuple))
+                or len(matrix) != rows
+                or any(not isinstance(row, (list, tuple)) or len(row) != columns for row in matrix)
+            ):
+                _reject("Formula range requires one populated formula per cell")
+            for row in matrix:
+                for cell in row:
+                    if (
+                        not isinstance(cell, str)
+                        or not cell.startswith("=")
+                        or len(cell.encode()) > 65536
+                    ):
+                        _reject("Formula range requires bounded Excel expressions")
         if op == "worksheet.create":
             _name(name)
             if any(s.casefold() == name.casefold() for s in sheets):
@@ -314,17 +434,25 @@ class MaybeSpreadsheetProvider:
             sheets.update(items)
         if op.startswith("range.") or op == "formula.set":
             try:
-                address = RangeRef(args.get("address", args.get("cell"))).address
-                start, end = (address.split(":") + [address])[:2]
-                r, c = _coordinate(start)
-                er, ec = _coordinate(end)
-                if er < r or ec < c or (er - r + 1) * (ec - c + 1) > 10000:
-                    raise ValueError()
+                if op in ("range.style", "range.format") and args.get("addresses") is not None:
+                    addresses = args["addresses"]
+                    if (
+                        not isinstance(addresses, (list, tuple))
+                        or not addresses
+                        or len(addresses) > 256
+                    ):
+                        raise ValueError()
+                    span = [_bounded_span(str(item)) for item in addresses][-1]
+                    address = RangeRef(str(addresses[-1])).address
+                else:
+                    address = RangeRef(args.get("address", args.get("cell"))).address
+                    span = _bounded_span(address)
             except (TypeError, ValueError, AttributeError):
                 _reject(
                     "A bounded range of at most 10000 cells is required",
                     ConnectorErrorCode.INVALID_URI,
                 )
+            r, c, er, ec = span
             if op == "range.sort" and (
                 type(args.get("key_column", 1)) is not int
                 or not 1 <= args.get("key_column", 1) <= ec - c + 1
@@ -371,7 +499,7 @@ class MaybeSpreadsheetProvider:
                 style = {k: v for k, v in args.get("style", args).items() if v is not None}
                 if args.get("reset"):
                     _reject("MaybeSheet style reset has no tested dispatch")
-                keys = set(style) - {"address", "reset", "mode"}
+                keys = set(style) - {"address", "addresses", "reset", "mode"}
                 if keys - {
                     "bold",
                     "italic",
@@ -401,13 +529,20 @@ class MaybeSpreadsheetProvider:
             if type(size) not in (float, int) or not math.isfinite(size) or size <= 0:
                 _reject("Dimensions require positive height_points or width_pixels")
             if op == "row.height":
-                if type(args.get("row")) is not int or not 1 <= args["row"] <= 1048576:
-                    _reject("Invalid row")
+                start = args.get("start_row", args.get("row"))
+                end = args.get("end_row", start)
+                if type(start) is not int or type(end) is not int or not 1 <= start <= end <= 1048576:
+                    _reject("Invalid row band")
             else:
+                start = args.get("start_column", args.get("column"))
+                end = args.get("end_column", start)
                 try:
-                    _coordinate(str(args.get("column")) + "1")
-                except ValueError:
-                    _reject("Invalid column")
+                    first = _coordinate(str(start).upper() + "1")[1]
+                    last = _coordinate(str(end).upper() + "1")[1]
+                except (TypeError, ValueError):
+                    _reject("Invalid column band")
+                if first > last:
+                    _reject("Invalid column band")
         if op in ("image.insert", "image.add"):
             if (
                 args.get("mime_type") not in ("image/png", "image/jpeg")
@@ -458,7 +593,10 @@ class MaybeSpreadsheetProvider:
         elif op == "worksheet.move":
             argv += ["--index", str(a["index"])]
         elif op.startswith("range."):
-            argv += ["--range", a["address"]]
+            # `batch_set_cell_style` accepts repeated ranges, so one command
+            # covers every same-specification range of a report.
+            for address in a.get("addresses") or [a["address"]]:
+                argv += ["--range", address]
             if op == "range.merge":
                 response = self._call(
                     (
@@ -573,16 +711,19 @@ class MaybeSpreadsheetProvider:
                 argv += ["--yes"]
             elif op in ("range.style", "range.format"):
                 s = {k: v for k, v in a.get("style", a).items() if v is not None}
+                # The Maybe server only honours `bg_color`; `bgcolor` and
+                # `backgroundColor` are silently dropped, which leaves white
+                # header text on an unpainted (invisible) header row.
                 mapping = {
                     "foreground": "font_color",
-                    "fill": "bgcolor",
+                    "fill": "bg_color",
                     "number_format": "format_code",
                     "pattern": "format_code",
                 }
                 style = {
                     mapping.get(k, k): v
                     for k, v in s.items()
-                    if k not in ("address", "reset", "mode", "kind")
+                    if k not in ("address", "addresses", "reset", "mode", "kind")
                 }
                 if "kind" in s:
                     style["format"] = s["kind"]
@@ -597,23 +738,47 @@ class MaybeSpreadsheetProvider:
                 a.get("expression", a.get("formula")),
                 "--skip-recalculation",
             ]
+        elif op == "formula.set_range":
+            # One `formula/batch_set` request covers every cell in the range;
+            # per-cell `formula.set` costs one provider call and one workbook
+            # version each.
+            operations = [
+                {
+                    "worksheet_name": name,
+                    "range_address": str(a["address"]),
+                    "formulas": [[_plain(cell) for cell in row] for row in a["formulas"]],
+                }
+            ]
+            return (
+                [
+                    "mbs",
+                    "range",
+                    "set-formula",
+                    "--uri",
+                    uri,
+                    "--operations",
+                    file(operations),
+                    "--skip-recalculation",
+                ],
+                "range.set-formula",
+            )
         elif op == "row.height":
             argv[1:3] = ["style", "rows-height"]
             op = "style.rows-height"
             argv += [
                 "--start-row",
-                str(a["row"]),
+                str(a.get("start_row", a.get("row"))),
                 "--end-row",
-                str(a["row"]),
+                str(a.get("end_row", a.get("row"))),
                 "--height",
                 f"{a['height_points'] * 96 / 72:g}px",
             ]
         elif op == "column.width":
             argv += [
                 "--start-column",
-                a["column"],
+                a.get("start_column", a.get("column")),
                 "--end-column",
-                a["column"],
+                a.get("end_column", a.get("column")),
                 "--width",
                 f"{a['width_pixels']:g}px",
             ]
@@ -776,6 +941,8 @@ class MaybeSpreadsheetProvider:
         name = selector.get("target_key", selector.get("sheet"))
         if name not in sheets or sheets[name]["engine"] not in ("sheet", "worksheet"):
             _reject("Observation requires an explicitly identified Sheet worksheet")
+        if operation in ("range.style.read", "worksheet.config.read"):
+            return self._observe_layout(binding, name, sheets[name], selector, operation)
         if operation not in ("range.read", "formula.read", "image.list", "image.read"):
             _reject("Unsupported MaybeSheet observation")
         group, verb = operation.split(".")
@@ -807,3 +974,109 @@ class MaybeSpreadsheetProvider:
             verification="unavailable",
             receipts=(),
         )
+
+    def _read_layout(self, binding, name, address):
+        """Read the model once; every layout observation is built from this."""
+
+        payload = self._call(
+            (
+                "mbs",
+                "range",
+                "read",
+                "--uri",
+                _mbs_target(TableURI(binding["uri"])),
+                "--worksheet-name",
+                name,
+                "--range",
+                address,
+            ),
+            "range.read",
+        )
+        result = payload["result"]
+        if not isinstance(result, Mapping):
+            _reject("Invalid MaybeSheet layout read evidence", ConnectorErrorCode.EXECUTION_FAILED)
+        return result
+
+    def _observe_layout(self, binding, name, sheet, selector, operation):
+        """Read back persisted physical layout, never a write acknowledgement."""
+
+        target = {
+            "provider": PROVIDER_MAYBE_SHEET,
+            "resource": binding["uri"],
+            "worksheet_id": str(sheet["gid"]),
+        }
+        if operation == "range.style.read":
+            try:
+                address = RangeRef(selector["address"]).address
+                start, end = _coordinate_bounds(address)
+            except (KeyError, TypeError, ValueError):
+                _reject("Observation requires a bounded A1 range")
+            requested = selector.get("fields")
+            fields = list(STYLE_FIELDS if requested is None else requested)
+            if (
+                not fields
+                or len(set(fields)) != len(fields)
+                or any(not isinstance(field, str) or field not in STYLE_FIELDS for field in fields)
+            ):
+                _reject("MaybeSheet cannot read that style field")
+            if (end[0] - start[0] + 1) * (end[1] - start[1] + 1) > 10000:
+                _reject("Observation range exceeds 10000 cells")
+            result = self._read_layout(binding, name, address)
+            try:
+                observation = style_observation(
+                    target=target,
+                    address=address,
+                    start=start,
+                    end=end,
+                    result=result,
+                    fields=fields,
+                )
+            except (TypeError, ValueError) as exc:
+                _reject(
+                    f"MaybeSheet style observation failed: {exc}",
+                    ConnectorErrorCode.EXECUTION_FAILED,
+                )
+        else:
+            try:
+                rows = sorted({int(row) for row in selector["rows"]})
+                columns = sorted(
+                    {str(column).upper() for column in selector["columns"]},
+                    key=lambda item: _coordinate(item + "1")[1],
+                )
+            except (KeyError, TypeError, ValueError):
+                _reject("Configuration observation requires rows and columns")
+            if not rows or not columns or any(not 1 <= row <= 1048576 for row in rows):
+                _reject("Configuration observation rows are invalid")
+            for column in columns:
+                if not re.fullmatch(r"[A-Z]{1,3}", column):
+                    _reject("Configuration observation columns are invalid")
+                _coordinate(column + "1")
+            address = (
+                f"{columns[0]}{rows[0]}:{columns[-1]}{rows[-1]}"
+            )
+            if rows[0] < 1 or _coordinate(columns[-1] + "1")[1] > 16384:
+                _reject("Configuration observation is outside the worksheet bounds")
+            start = (rows[0], _coordinate(columns[0] + "1")[1])
+            end = (rows[-1], _coordinate(columns[-1] + "1")[1])
+            if (end[0] - start[0] + 1) * (end[1] - start[1] + 1) > 10000:
+                _reject("Observation range exceeds 10000 cells")
+            result = self._read_layout(binding, name, address)
+            try:
+                observation = config_observation(
+                    target=target, rows=rows, columns=columns, result=result
+                )
+            except (TypeError, ValueError) as exc:
+                _reject(
+                    f"MaybeSheet configuration observation failed: {exc}",
+                    ConnectorErrorCode.EXECUTION_FAILED,
+                )
+        try:
+            decoded = decode_maybe_layout(
+                observation, target=target, selector=selector, descriptor=LAYOUT_DESCRIPTOR
+            )
+        except (TypeError, ValueError) as exc:
+            _reject(
+                f"MaybeSheet layout observation failed: {exc}",
+                ConnectorErrorCode.EXECUTION_FAILED,
+            )
+        return dict(value=decoded, verification="unavailable", receipts=())

@@ -586,3 +586,293 @@ def test_live_typed_raw_range_contract(tmp_path):
             )
         except Exception:
             pytest.fail(f"Typed RAW disposable workbook cleanup failed: {uri}", pytrace=False)
+
+
+class StyleRecording(Recording):
+    """Recording double that keeps every style payload handed to `mbs`."""
+
+    def __init__(self):
+        super().__init__()
+        self.styles = []
+
+    def run(self, argv, **kwargs):
+        if "--style" in argv:
+            self.styles.append(json.loads(Path(argv[argv.index("--style") + 1]).read_text()))
+        return super().run(argv, **kwargs)
+
+
+class BatchRecording(Recording):
+    """Recording double that keeps the batch payload handed to `mbs`."""
+
+    def __init__(self):
+        super().__init__()
+        self.operations = None
+
+    def run(self, argv, **kwargs):
+        if "--operations" in argv:
+            self.operations = json.loads(Path(argv[argv.index("--operations") + 1]).read_text())
+        return super().run(argv, **kwargs)
+
+
+class LayoutRecording(Recording):
+    """Provider double that answers a real `mbs range read` layout payload."""
+
+    def run(self, argv, **kwargs):
+        argv = (argv[0], *argv[3:]) if argv[1:3] == ("--contract-version", "1.0") else argv
+        self.calls.append(argv)
+        op = ".".join(argv[1:3])
+        if op == "worksheet.list":
+            return env(op, {"worksheets": deepcopy(self.sheets)})
+        if op == "range.read":
+            return env(
+                op,
+                {
+                    "values": [["Header", "Total"]],
+                    "styles": [[1, 2]],
+                    "style_map": {
+                        "1": {"font": 1, "fill": 1, "alignment": 1},
+                        "2": {"font": 2, "fill": 2},
+                    },
+                    "fonts": {"1": {"bold": True, "color": "FFFFFF"}, "2": {"size": 14}},
+                    "fills": {
+                        "1": {"pattern": 0, "type": "pattern"},
+                        "2": {"color": ["1F2329"], "pattern": 1, "type": "pattern"},
+                    },
+                    "alignments": {"1": {"horizontal": "center", "wrap_text": True}},
+                    "formatting": {
+                        "column_widths": {"A": 180},
+                        "row_heights": {"1": 32},
+                        "default_row_height": 15,
+                        "show_gridlines": False,
+                    },
+                },
+            )
+        raise AssertionError(f"unexpected provider command: {argv}")
+
+
+def test_range_style_read_serves_persisted_layout_evidence():
+    process = LayoutRecording()
+    p, b = provider(process)
+    value = p.observe(
+        b, {"operation": "range.style.read", "target_key": "Report", "address": "A1:B1"}
+    )["value"]
+    assert value["kind"] == "spreadsheet.range.style.observation/1.0"
+    assert value["physical_hash"].startswith("sha256:")
+    header, total = value["physical"]["cells"]
+    assert header["fields"]["bold"]["effective"] is True
+    assert header["fields"]["foreground"]["effective"] == {"type": "rgb", "value": "#FFFFFF"}
+    assert header["fields"]["horizontal"]["effective"] == "center"
+    # The white header font only reads as visible when its dark fill survives.
+    assert total["fields"]["fill"]["effective"] == {"type": "rgb", "value": "#1F2329"}
+    assert total["fields"]["bold"]["effective"] is False
+    style_reads = [call for call in process.calls if call[1:3] == ("range", "read")]
+    assert len(style_reads) == 1
+    assert style_reads[0][style_reads[0].index("--range") + 1] == "A1:B1"
+
+
+def test_worksheet_config_read_serves_persisted_dimensions():
+    process = LayoutRecording()
+    p, b = provider(process)
+    value = p.observe(
+        b,
+        {
+            "operation": "worksheet.config.read",
+            "target_key": "Report",
+            "rows": [1, 2],
+            "columns": ["A", "B"],
+        },
+    )["value"]
+    assert value["kind"] == "spreadsheet.worksheet.config.observation/1.0"
+    assert value["physical"]["columns"]["A"]["width_pixels"] == 180
+    assert value["physical"]["columns"]["B"]["width_pixels"] is None
+    # `mbs` reports row heights in pixels; the facade states them in points.
+    assert value["physical"]["rows"]["1"]["height"] == 24
+    assert value["physical"]["rows"]["2"]["height"] is None
+    assert value["physical"]["view"]["show_gridlines"] is False
+    assert value["coverage"]["fields"] == [
+        "row_heights",
+        "column_sizes",
+        "gridlines",
+        "default_row_height",
+    ]
+    config_reads = [call for call in process.calls if call[1:3] == ("range", "read")]
+    assert len(config_reads) == 1
+    assert config_reads[0][config_reads[0].index("--range") + 1] == "A1:B2"
+
+
+def test_unreadable_style_field_is_rejected():
+    process = LayoutRecording()
+    p, b = provider(process)
+    with pytest.raises(ConnectorError):
+        p.observe(
+            b,
+            {
+                "operation": "range.style.read",
+                "target_key": "Report",
+                "address": "A1",
+                "fields": ["border"],
+            },
+        )
+    assert [call for call in process.calls if call[1:3] == ("range", "read")] == []
+
+
+def test_formula_range_is_one_provider_call():
+    process = BatchRecording()
+    p, b = provider(process)
+    result = p.commit(
+        b,
+        [
+            change(
+                "formula.set_range",
+                address="B2:D2",
+                formulas=[["=1+1", "=2+2", "=3+3"]],
+            )
+        ],
+        allow_partial=True,
+        expected_revision=None,
+        idempotency_key=None,
+    )
+    assert result["commit"] == "committed"
+    assert len(process.mutations) == 1
+    argv = process.mutations[0]
+    assert argv[1:3] == ("range", "set-formula")
+    assert process.operations == [
+        {
+            "worksheet_name": "Report",
+            "range_address": "B2:D2",
+            "formulas": [["=1+1", "=2+2", "=3+3"]],
+        }
+    ]
+
+
+def test_formula_range_rejects_empty_slots_and_single_cells():
+    process = Recording()
+    p, b = provider(process)
+    with pytest.raises(ConnectorError):
+        p.preflight(b, [change("formula.set_range", address="B2:C2", formulas=[["=1+1", ""]])])
+    with pytest.raises(ConnectorError):
+        p.preflight(b, [change("formula.set_range", address="B2", formulas=[["=1+1"]])])
+    assert not process.mutations
+
+
+def test_style_batch_merges_many_ranges_into_one_provider_call():
+    process = Recording()
+    p, b = provider(process)
+    result = p.commit(
+        b,
+        [change("range.style", addresses=["A1:E1", "A24:E24"], bold=True, fill="#1F2329")],
+        allow_partial=True,
+        expected_revision=None,
+        idempotency_key=None,
+    )
+    assert result["commit"] == "committed"
+    assert len(process.mutations) == 1
+    argv = process.mutations[0]
+    assert argv[1:3] == ("style", "format")
+    assert [item for item in argv if item == "--range"] == ["--range", "--range"]
+    assert argv[argv.index("--range") + 1] == "A1:E1"
+    assert argv[argv.index("--range", argv.index("--range") + 1) + 1] == "A24:E24"
+
+
+def test_equal_sized_dimensions_collapse_into_single_band_calls():
+    process = Recording()
+    p, b = provider(process)
+    result = p.commit(
+        b,
+        [
+            change(
+                "worksheet.config",
+                row_heights={1: 24, 2: 24},
+                column_widths_pixels={"A": 16, "B": 16, "C": 16, "D": 16, "E": 16},
+            )
+        ],
+        allow_partial=True,
+        expected_revision=None,
+        idempotency_key=None,
+    )
+    assert result["commit"] == "committed"
+    assert len(process.mutations) == 2
+    height, width = process.mutations
+    assert height[1:3] == ("style", "rows-height")
+    assert height[height.index("--start-row") + 1] == "1"
+    assert height[height.index("--end-row") + 1] == "2"
+    assert width[1:3] == ("column", "width")
+    assert width[width.index("--start-column") + 1] == "A"
+    assert width[width.index("--end-column") + 1] == "E"
+
+
+def test_representative_publish_stays_within_a_bounded_provider_call_count():
+    """A multi-cell, multi-style, multi-formula report costs 5 provider calls.
+
+    Every provider call saves one workbook version, so this bound is the
+    version budget of one publish.
+    """
+
+    process = Recording()
+    p, b = provider(process)
+    result = p.commit(
+        b,
+        [
+            # values: one range write for the whole block
+            change(
+                "range.write",
+                address="A1:E3",
+                values=[
+                    ["项目", "1店", "2店", "3店", "合计"],
+                    ["毛利", "1", "2", "3", "6"],
+                    ["净利", "1", "2", "3", "6"],
+                ],
+            ),
+            # 4 formulas: one batch request instead of four single-cell requests
+            change(
+                "formula.set_range",
+                address="B3:E3",
+                formulas=[["=B2-B1", "=C2-C1", "=D2-D1", "=E2-E1"]],
+            ),
+            # two header/total bands sharing one style: one batch request
+            change("range.style", addresses=["A1:E1", "A3:E3"], bold=True, fill="#1F2329"),
+            # body band with a different style: one further request
+            change("range.style", address="A2:E2", italic=True),
+            # 3 equal row heights plus 5 equal column widths: two band requests
+            change(
+                "worksheet.config",
+                row_heights={1: 24, 2: 24, 3: 24},
+                column_widths_pixels={"A": 16, "B": 16, "C": 16, "D": 16, "E": 16},
+            ),
+        ],
+        allow_partial=True,
+        expected_revision=None,
+        idempotency_key=None,
+    )
+    assert result["commit"] == "committed"
+    assert [call[1:3] for call in process.mutations] == [
+        ("range", "write"),
+        ("range", "set-formula"),
+        ("style", "format"),
+        ("style", "format"),
+        ("style", "rows-height"),
+        ("column", "width"),
+    ]
+    # Six provider calls, hence six workbook versions, for the whole report.
+    assert len(process.mutations) == 6
+    assert [call for call in process.mutations if call[1:3] == ("formula", "set")] == []
+    assert [call for call in process.mutations if call[1:3] == ("column", "width")] == [
+        process.mutations[-1]
+    ]
+
+
+def test_solid_fill_uses_the_key_the_server_honours():
+    """`bgcolor` and `backgroundColor` are dropped; only `bg_color` persists."""
+
+    process = StyleRecording()
+    p, b = provider(process)
+    p.commit(
+        b,
+        [change("range.style", address="A1", bold=True, foreground="#FFFFFF", fill="#1F2329")],
+        allow_partial=True,
+        expected_revision=None,
+        idempotency_key=None,
+    )
+    assert process.styles == [
+        {"bold": True, "font_color": "#FFFFFF", "bg_color": "#1F2329"}
+    ]
