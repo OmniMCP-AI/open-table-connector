@@ -78,3 +78,16 @@ def test_sheet_range_source_requires_an_explicit_schema_policy_contract() -> Non
             schema=pl.Schema({"order_id": pl.Int64}),
             schema_policy=otc.SchemaPolicy.INFER_COMPLETE,
         )
+
+
+def test_wire_dtype_decoder_accepts_bare_temporal_names() -> None:
+    from open_table_connector.sdk.model import _dtype_from_wire
+
+    assert _dtype_from_wire("Datetime") == pl.Datetime("us", None)
+    assert _dtype_from_wire("Duration") == pl.Duration("us")
+    assert _dtype_from_wire("Date") == pl.Date
+    assert _dtype_from_wire("Time") == pl.Time
+    assert _dtype_from_wire("Datetime(time_unit='ns', time_zone='UTC')") == pl.Datetime("ns", "UTC")
+
+    with pytest.raises(ValueError, match="unsupported schema dtype"):
+        _dtype_from_wire("NotARealDtype")

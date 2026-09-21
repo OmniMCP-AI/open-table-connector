@@ -1,0 +1,288 @@
+{
+  "_capture": {
+    "note": "Field names and wire types captured from a live 36-field Maybe base table read. Rows are synthetic; no source data is reproduced.",
+    "captured_from": "maybe base-mode table read (finclaw deployment shim payload shape)",
+    "field_count": 36
+  },
+  "contract_version": "1.0",
+  "ok": true,
+  "operation": "db-table.read",
+  "target": {
+    "doc_id": "doc",
+    "gid": 4,
+    "table_id": "tbl_orders"
+  },
+  "warnings": [],
+  "request_id": "req-1",
+  "result": {
+    "schema": {
+      "fields": [
+        {
+          "name": "order_details_id",
+          "type": "String"
+        },
+        {
+          "name": "period",
+          "type": "String"
+        },
+        {
+          "name": "platform",
+          "type": "String"
+        },
+        {
+          "name": "sub_entity_id",
+          "type": "String"
+        },
+        {
+          "name": "order_id",
+          "type": "String"
+        },
+        {
+          "name": "order_status",
+          "type": "String"
+        },
+        {
+          "name": "sku",
+          "type": "String"
+        },
+        {
+          "name": "standard_sku",
+          "type": "String"
+        },
+        {
+          "name": "item_quantity",
+          "type": "Float64"
+        },
+        {
+          "name": "valid_cancelled_order_line_count",
+          "type": "Float64"
+        },
+        {
+          "name": "effective_item_quantity",
+          "type": "Float64"
+        },
+        {
+          "name": "sales_quantity",
+          "type": "Float64"
+        },
+        {
+          "name": "sales_quantity_source_reference",
+          "type": "String"
+        },
+        {
+          "name": "service_provider",
+          "type": "String"
+        },
+        {
+          "name": "cost_route_id",
+          "type": "String"
+        },
+        {
+          "name": "catalog_source_worksheet",
+          "type": "String"
+        },
+        {
+          "name": "catalog_source_row",
+          "type": "Float64"
+        },
+        {
+          "name": "cost_route_assignment_basis",
+          "type": "String"
+        },
+        {
+          "name": "cost_route_assignment_source_reference",
+          "type": "String"
+        },
+        {
+          "name": "source_reference",
+          "type": "String"
+        },
+        {
+          "name": "reporting_currency",
+          "type": "String"
+        },
+        {
+          "name": "purchase_unit_cost_reporting",
+          "type": "Float64"
+        },
+        {
+          "name": "domestic_freight_unit_cost_reporting",
+          "type": "Float64"
+        },
+        {
+          "name": "first_mile_unit_cost_reporting",
+          "type": "Float64"
+        },
+        {
+          "name": "duty_unit_cost_reporting",
+          "type": "Float64"
+        },
+        {
+          "name": "inspection_unit_cost_reporting",
+          "type": "String"
+        },
+        {
+          "name": "purchase_cost_reporting",
+          "type": "Float64"
+        },
+        {
+          "name": "first_mile_cost_reporting",
+          "type": "Float64"
+        },
+        {
+          "name": "duty_cost_reporting",
+          "type": "Float64"
+        },
+        {
+          "name": "exception_flag",
+          "type": "Boolean"
+        },
+        {
+          "name": "exception_reason",
+          "type": "String"
+        },
+        {
+          "name": "order_created_at",
+          "type": "Datetime"
+        },
+        {
+          "name": "required_pickup_at",
+          "type": "String"
+        },
+        {
+          "name": "required_ship_at",
+          "type": "Datetime"
+        },
+        {
+          "name": "final_order_status",
+          "type": "String"
+        },
+        {
+          "name": "entity_id",
+          "type": "String"
+        }
+      ]
+    },
+    "rows": [
+      [
+        "od-1",
+        "2026-07",
+        "SHEIN",
+        "1店",
+        null,
+        null,
+        null,
+        null,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        null,
+        null,
+        null,
+        null,
+        1.0,
+        null,
+        null,
+        null,
+        null,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        null,
+        1.0,
+        1.0,
+        1.0,
+        false,
+        null,
+        "2026-07-01T10:00:00",
+        null,
+        "2026-07-01T10:00:00",
+        null,
+        null
+      ],
+      [
+        "od-2",
+        "2026-07",
+        "SHEIN",
+        "2店",
+        null,
+        null,
+        null,
+        null,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        null,
+        null,
+        null,
+        null,
+        2.0,
+        null,
+        null,
+        null,
+        null,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        null,
+        2.0,
+        2.0,
+        2.0,
+        false,
+        null,
+        "2026-07-02T11:30:00",
+        null,
+        "2026-07-02T11:30:00",
+        null,
+        null
+      ],
+      [
+        "od-3",
+        "2026-07",
+        "SHEIN",
+        "3店",
+        null,
+        null,
+        null,
+        null,
+        3.0,
+        3.0,
+        3.0,
+        3.0,
+        null,
+        null,
+        null,
+        null,
+        3.0,
+        null,
+        null,
+        null,
+        null,
+        3.0,
+        3.0,
+        3.0,
+        3.0,
+        null,
+        3.0,
+        3.0,
+        3.0,
+        false,
+        null,
+        "2026-07-03T12:45:00",
+        null,
+        "2026-07-03T12:45:00",
+        null,
+        null
+      ]
+    ],
+    "source_revision": "sha256:fixture",
+    "complete": true,
+    "pages": 1
+  },
+  "verification": {},
+  "trace": null
+}

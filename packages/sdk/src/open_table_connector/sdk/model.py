@@ -22,6 +22,8 @@ _DTYPES_BY_NAME = {
     "Binary": pl.Binary,
     "Boolean": pl.Boolean,
     "Date": pl.Date,
+    "Datetime": pl.Datetime,
+    "Duration": pl.Duration,
     "Float32": pl.Float32,
     "Float64": pl.Float64,
     "Int8": pl.Int8,

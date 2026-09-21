@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import re
 import math
 import tempfile
 from collections.abc import Mapping
@@ -42,6 +43,7 @@ from .identity import (
     SHEET_READ_CAPABILITY,
     TABLE_WRITE_CAPABILITY,
 )
+from .process import scrub_secrets
 
 
 class ProcessClient(Protocol):
@@ -115,16 +117,28 @@ def _payload_table(payload: Mapping[str, Any]) -> pa.Table:
     ):
         fields = schema["fields"]
         if all(set(field) == {"name", "type"} and isinstance(field["name"], str) and isinstance(field["type"], str) for field in fields):
-            try:
-                from open_table_connector.sdk.model import _dtype_from_wire
+            from open_table_connector.sdk.model import _dtype_from_wire
 
-                return pl.DataFrame(
+            try:
+                frame = pl.DataFrame(
                     typed_rows,
                     schema={field["name"]: _dtype_from_wire(field["type"]) for field in fields},
                     orient="row",
-                ).to_arrow()
-            except Exception:
-                return pa.table({})
+                )
+            except Exception as exc:
+                # A typed payload that cannot be decoded is a provider contract
+                # violation. Returning an empty table here used to masquerade as a
+                # successful zero-row read, so fail closed instead.
+                raise ConnectorError(
+                    ConnectorErrorCode.PROTOCOL_INVALID,
+                    "MaybeSheet typed read payload cannot be decoded",
+                    {
+                        "reason": f"{type(exc).__name__}: {exc}",
+                        "field_count": len(fields),
+                        "row_count": len(typed_rows),
+                    },
+                ) from None
+            return frame.to_arrow()
     rows = result.get("rows")
     if isinstance(rows, list) and rows and all(isinstance(row, Mapping) for row in rows):
         names: list[str] = []
@@ -139,6 +153,52 @@ def _payload_table(payload: Mapping[str, Any]) -> pa.Table:
         records = [list(row) for row in values[1:]]
         return pa.Table.from_arrays([pa.array([_cell(row[index]) if index < len(row) else None for row in records], type=pa.large_string()) for index in range(len(names))], names=names)
     return pa.table({})
+
+
+_PROVIDER_LIMIT_CEILING = re.compile(r"limit must be (\d+) or less", re.IGNORECASE)
+
+
+def _provider_limit_ceiling(details: Mapping[str, Any]) -> int | None:
+    """Return the provider's stated read-limit ceiling, when it named one."""
+    stderr = details.get("stderr")
+    if not isinstance(stderr, str):
+        return None
+    match = _PROVIDER_LIMIT_CEILING.search(stderr)
+    return int(match.group(1)) if match else None
+
+
+def _diagnostic_details(
+    exc: BaseException, *, reason: str, credentials: Mapping[str, str] | None = None
+) -> dict[str, Any]:
+    """Describe an unexpected failure without collapsing its cause.
+
+    The connector used to reduce every non-ConnectorError failure to a single
+    opaque message, which made distinct provider and transport faults
+    indistinguishable to callers.
+    """
+    return {
+        "reason": reason,
+        "exception": type(exc).__name__,
+        "message": scrub_secrets(" ".join(str(exc).split()), credentials)[:400],
+    }
+
+
+def _read_limit_error(request: "MaybeSheetReadRequest", exc: ConnectorError) -> ConnectorError | None:
+    """Reclassify a provider limit rejection as a resource-limit failure."""
+    requested = request.resource_limits.max_rows
+    ceiling = _provider_limit_ceiling(exc.safe_details)
+    if ceiling is None or requested is None or requested <= ceiling:
+        return None
+    return ConnectorError(
+        ConnectorErrorCode.RESOURCE_LIMIT_EXCEEDED,
+        "MaybeSheet read limit exceeds the provider maximum",
+        {
+            "limit": requested,
+            "maximum": ceiling,
+            "provider": CONNECTOR_IDENTITY.connector_id,
+            "provider_message": exc.safe_details.get("stderr", ""),
+        },
+    )
 
 
 def _mbs_target(uri: TableURI) -> str:
@@ -255,11 +315,13 @@ class MaybeSheetConnector:
                 response = self._run_process(argv, credentials=credentials)
         except ConnectorError:
             raise
-        except Exception:
+        except Exception as exc:
             raise ConnectorError(
                 ConnectorErrorCode.EXECUTION_FAILED,
                 "MaybeSheet process operation failed",
-                {"reason": "unexpected process-client exception"},
+                _diagnostic_details(
+                    exc, reason="unexpected process-client exception", credentials=credentials
+                ),
             ) from None
         revision = "sha256:" + sha256(json.dumps(response, sort_keys=True, default=str).encode()).hexdigest()
         table = request.frame.to_arrow()
@@ -345,13 +407,18 @@ class MaybeSheetConnector:
                 credentials=request.credentials,
                 timeout=request.resource_limits.timeout_seconds,
             )
-        except ConnectorError:
+        except ConnectorError as exc:
+            limit_error = _read_limit_error(request, exc)
+            if limit_error is not None:
+                raise limit_error from None
             raise
-        except Exception:
+        except Exception as exc:
             raise ConnectorError(
                 ConnectorErrorCode.EXECUTION_FAILED,
                 "MaybeSheet process operation failed",
-                {"reason": "unexpected process-client exception"},
+                _diagnostic_details(
+                    exc, reason="unexpected process-client exception", credentials=request.credentials
+                ),
             ) from None
         table = _payload_table(payload)
         if request.resource_limits.max_rows is not None:

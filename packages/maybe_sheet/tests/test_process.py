@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from open_table_connector.maybe_sheet.process import SubprocessProcessClient
+from open_table_connector.maybe_sheet.process import SubprocessProcessClient, scrub_secrets
 
 
 def test_process_environment_is_explicit_and_scoped(monkeypatch) -> None:
@@ -36,3 +36,14 @@ def test_absolute_binary_replaces_canonical_argv_program(monkeypatch):
     monkeypatch.setattr("open_table_connector.maybe_sheet.process.subprocess.run", fake_run)
     SubprocessProcessClient(binary="/opt/bin/mbs").run(("mbs", "worksheet", "list"))
     assert captured == [["/opt/bin/mbs", "worksheet", "list"]]
+
+
+def test_scrub_secrets_removes_raw_values_and_assignments() -> None:
+    assert scrub_secrets("token secret-value rejected", {"access_token": "secret-value"}) == (
+        "token <redacted> rejected"
+    )
+    assert scrub_secrets("Authorization: Bearer abc123") == "Authorization: <redacted>"
+    assert scrub_secrets("plain diagnostic text") == "plain diagnostic text"
+    # Short values are not treated as credential material; matching every 1-3
+    # character substring would corrupt unrelated diagnostics.
+    assert scrub_secrets("code 12 rejected", {"access_token": "12"}) == "code 12 rejected"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import stat
 import subprocess
 from collections.abc import Mapping
@@ -11,6 +12,48 @@ from pathlib import Path
 from typing import Any
 
 from open_table_connector.contract import ConnectorError, ConnectorErrorCode
+
+
+_SECRET_ASSIGNMENT = re.compile(
+    r"(?i)\b(access[_-]?token|api[_-]?key|apikey|credential|password|secret|token)"
+    r"(\s*[=:]\s*)(\S+)"
+)
+# An authorization header carries an optional scheme word before the value, so
+# redacting a single token would leave the credential behind.
+_AUTHORIZATION_ASSIGNMENT = re.compile(r"(?i)\b(authorization)(\s*[=:]\s*)(?:\S+\s+)?\S+")
+
+
+def scrub_secrets(text: str, credentials: Mapping[str, str] | None = None) -> str:
+    """Remove credential material from diagnostic text.
+
+    Diagnostic messages are carried through to callers so failures stay
+    distinguishable, which means any credential that leaked into a provider or
+    transport message has to be removed before it can be reported.
+    """
+    scrubbed = text
+    for value in (credentials or {}).values():
+        if isinstance(value, str) and len(value) >= 4:
+            scrubbed = scrubbed.replace(value, "<redacted>")
+    scrubbed = _AUTHORIZATION_ASSIGNMENT.sub(
+        lambda match: f"{match.group(1)}{match.group(2)}<redacted>", scrubbed
+    )
+    return _SECRET_ASSIGNMENT.sub(lambda match: f"{match.group(1)}{match.group(2)}<redacted>", scrubbed)
+
+
+_STDERR_EXCERPT_LIMIT = 400
+
+
+def _stderr_excerpt(stderr: object, credentials: Mapping[str, str] | None = None) -> str:
+    """Return a bounded, whitespace-collapsed diagnostic from a failed process.
+
+    Callers (and the connector) need the provider's own message to classify and
+    explain a failure; the exit code alone collapses every distinct cause into
+    one indistinguishable error.
+    """
+    if not isinstance(stderr, str):
+        return ""
+    collapsed = " ".join(stderr.split())
+    return scrub_secrets(collapsed, credentials)[:_STDERR_EXCERPT_LIMIT]
 
 
 def _credential_environment(credentials: Mapping[str, str]) -> dict[str, str]:
@@ -91,7 +134,10 @@ class SubprocessProcessClient:
             raise ConnectorError(
                 ConnectorErrorCode.EXECUTION_FAILED,
                 "MaybeSheet process failed",
-                {"returncode": completed.returncode},
+                {
+                    "returncode": completed.returncode,
+                    "stderr": _stderr_excerpt(completed.stderr, credentials),
+                },
             )
         try:
             payload = json.loads(completed.stdout)
@@ -110,4 +156,9 @@ class SubprocessProcessClient:
         return payload
 
 
-__all__ = ["SubprocessProcessClient", "_absolute_executable", "_credential_environment"]
+__all__ = [
+    "SubprocessProcessClient",
+    "_absolute_executable",
+    "_credential_environment",
+    "scrub_secrets",
+]
