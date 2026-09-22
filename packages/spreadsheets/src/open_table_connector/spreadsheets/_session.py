@@ -27,9 +27,17 @@ class SpreadsheetSession:
         profile: str = "general/1.0",
         limits: ArtifactLimits | None = None,
         failure_directory: Any = None,
+        copy_from: str | None = None,
+        copy_title: str | None = None,
     ):
         if profile not in {"general/1.0", "literal-artifact/1.0"}:
             raise _error("unsupported workbook profile", "unsupported_capability")
+        if copy_from is not None and (
+            not isinstance(copy_from, str) or not copy_from.strip() or copy_from != copy_from.strip()
+        ):
+            raise _error("copy source must be one canonical workbook URI", "invalid_configuration")
+        if new and copy_from is not None:
+            raise _error("a session cannot both create and copy a workbook", "invalid_configuration")
         self.provider = provider
         self.binding = dict(provider.bind(target))
         self.binding.update(
@@ -37,6 +45,8 @@ class SpreadsheetSession:
             profile=profile,
             limits=limits or ArtifactLimits(),
             failure_directory=failure_directory,
+            copy_from=copy_from,
+            copy_title=copy_title,
         )
         self.pending: tuple[Change, ...] = ()
         self.closed = self.sealed = False

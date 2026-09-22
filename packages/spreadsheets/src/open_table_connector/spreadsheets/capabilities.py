@@ -9,6 +9,7 @@ SPREADSHEET_RANGE_WRITE = CapabilityIdentity("spreadsheet.range.write", "1.0")
 SPREADSHEET_RANGE_STYLE = CapabilityIdentity("spreadsheet.range.style", "1.0")
 SPREADSHEET_RANGE_FORMAT = CapabilityIdentity("spreadsheet.range.format", "1.0")
 SPREADSHEET_IMAGE_INSERT = CapabilityIdentity("spreadsheet.image.insert", "1.0")
+SPREADSHEET_WORKBOOK_COPY = CapabilityIdentity("spreadsheet.workbook.copy", "1.0")
 SPREADSHEET_WORKBOOK_WRITE = CapabilityIdentity("spreadsheet.workbook.write", "1.0")
 SPREADSHEET_WORKBOOK_VERIFY = CapabilityIdentity("spreadsheet.workbook.verify", "1.0")
 SPREADSHEET_RANGE_SORT = CapabilityIdentity("spreadsheet.range.sort", "1.0")
@@ -25,6 +26,7 @@ SPREADSHEET_RANGE_TEXT_LAYOUT_WRITE = CapabilityIdentity("spreadsheet.range.text
 ALL_CAPABILITIES = (
     SPREADSHEET_WORKBOOK_INSPECT,
     SPREADSHEET_WORKSHEET_LIST,
+    SPREADSHEET_WORKBOOK_COPY,
     SPREADSHEET_WORKBOOK_WRITE,
     SPREADSHEET_WORKBOOK_VERIFY,
     SPREADSHEET_RANGE_READ,
@@ -61,6 +63,7 @@ __all__ = [
     "SPREADSHEET_RANGE_BORDER_WRITE",
     "SPREADSHEET_RANGE_TEXT_LAYOUT_READ",
     "SPREADSHEET_RANGE_TEXT_LAYOUT_WRITE",
+    "SPREADSHEET_WORKBOOK_COPY",
     "SPREADSHEET_WORKBOOK_INSPECT",
     "SPREADSHEET_WORKBOOK_VERIFY",
     "SPREADSHEET_WORKBOOK_WRITE",

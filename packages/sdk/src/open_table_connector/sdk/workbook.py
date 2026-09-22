@@ -22,6 +22,12 @@ if TYPE_CHECKING:
     from .client import Client
 
 
+#: Providers advertise either the full ``spreadsheet.<op>/<version>`` reference
+#: or the bare operation id, depending on the transport.
+_WORKBOOK_COPY_SPELLINGS = frozenset(
+    {"workbook.copy", "spreadsheet.workbook.copy/1.0"}
+)
+
 class WorkbookAccess:
     def __init__(self, client: Client) -> None:
         self._client = client
@@ -56,6 +62,45 @@ class WorkbookAccess:
         if isinstance(session, RemoteWorkbookSession):
             session._client = self._client
         return session
+
+    def copy(
+        self,
+        source: str | TableURI,
+        *,
+        to: str | TableURI | None = None,
+        title: str | None = None,
+        limits: Any = None,
+    ):
+        """Copy ``source`` into a new workbook and return a session on the copy.
+
+        The provider allocates the copied document, so the session binds to the
+        URI the provider returns rather than to ``to``; ``to`` only names the
+        destination for transports that can address one, and supplies the copy
+        title otherwise.  A provider that does not advertise the copy
+        capability is rejected instead of silently degrading to a write against
+        the source.
+        """
+
+        self._client._assert_open()
+        origin = source.value if isinstance(source, TableURI) else source
+        destination = (to.value if isinstance(to, TableURI) else to) or origin
+        connector = self._client._registry.connector_for(origin)
+        provider = getattr(connector, "spreadsheet_provider", None)
+        if not callable(provider):
+            raise self._client._unsupported_workbook(origin, ErrorCode.UNSUPPORTED_CAPABILITY)
+        instance = provider()
+        advertised = {str(item) for item in (getattr(instance, "capabilities", ()) or ())}
+        if not advertised & _WORKBOOK_COPY_SPELLINGS:
+            raise self._client._unsupported_workbook(origin, ErrorCode.UNSUPPORTED_CAPABILITY)
+        return WorkbookSession(
+            self._client,
+            instance,
+            destination,
+            copy_from=origin,
+            copy_title=title,
+            limits=limits,
+            profile="general/1.0",
+        )
 
     def __call__(self, uri: str | TableURI, *, limits: Any = None, profile: str = "general/1.0"):
         """Open an existing workbook using the concise ``client.workbook(uri)`` form."""

@@ -530,6 +530,19 @@ class Client:
         self._assert_open()
         return self._workbook_access
 
+    def copy_workbook(
+        self,
+        source: str | TableURI,
+        *,
+        to: str | TableURI | None = None,
+        title: str | None = None,
+        limits: Any = None,
+    ):
+        """Open a session whose workbook is a provider copy of ``source``."""
+
+        self._assert_open()
+        return self._workbook_access.copy(source, to=to, title=title, limits=limits)
+
     def close(self) -> None:
         if self._closed:
             return

@@ -1,5 +1,6 @@
 import pytest
 from open_table_connector.sdk import OTCError
+from open_table_connector.sdk.client import Client as OtcClient
 from open_table_connector.sdk.workbook import WorkbookSession
 
 
@@ -35,6 +36,73 @@ class Provider:
                 {"details": {"source": "pending" if selector["changes"] else "committed"}}
             ],
         }
+
+
+SOURCE = "https://www.maybe.ai/docs/spreadsheets/d/source"
+DESTINATION = "https://www.maybe.ai/docs/spreadsheets/d/destination"
+
+
+class CopyProvider(Provider):
+    """Provider that advertises (or withholds) the copy capability."""
+
+    def __init__(self, capabilities=("workbook.copy",)):
+        super().__init__()
+        self.capabilities = capabilities
+
+    def bind(self, target):
+        return {
+            "uri": target.uri,
+            "profile": "general/1.0",
+            "capabilities": self.capabilities,
+        }
+
+
+class _Connector:
+    def __init__(self, provider):
+        self.spreadsheet_provider = (lambda: provider) if provider is not None else None
+
+
+class _Registry:
+    def __init__(self, provider):
+        self._provider = provider
+
+    def connector_for(self, _uri):
+        return _Connector(self._provider)
+
+
+def _copy_client(provider):
+    return OtcClient(registry=_Registry(provider))
+
+
+def test_copy_workbook_carries_the_source_into_the_buffered_session():
+    provider = CopyProvider()
+    client = _copy_client(provider)
+    book = client.copy_workbook(SOURCE, to=DESTINATION, title="report copy")
+    binding = book._session.binding
+    assert binding["copy_from"] == SOURCE
+    assert binding["copy_title"] == "report copy"
+    # The session binds to the requested destination until the provider returns
+    # the document id it actually allocated.
+    assert binding["uri"] == DESTINATION
+    assert "workbook.copy" in book.capabilities
+
+
+def test_copy_workbook_fails_closed_without_the_capability():
+    client = _copy_client(CopyProvider(capabilities=()))
+    with pytest.raises(OTCError):
+        client.copy_workbook(SOURCE, to=DESTINATION)
+
+
+def test_copy_workbook_fails_closed_when_the_transport_is_absent():
+    client = _copy_client(None)
+    with pytest.raises(OTCError):
+        client.copy_workbook(SOURCE, to=DESTINATION)
+
+
+def test_copy_workbook_accepts_the_versioned_capability_spelling():
+    client = _copy_client(CopyProvider(capabilities=("spreadsheet.workbook.copy/1.0",)))
+    book = client.workbook.copy(SOURCE, to=DESTINATION)
+    assert book._session.binding["copy_from"] == SOURCE
 
 
 def test_buffered_sdk_captures_results_and_previews():

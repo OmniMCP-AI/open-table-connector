@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- Added `spreadsheet.workbook.copy/1.0`: `Client.copy_workbook` opens a session on a provider copy of a source workbook, rebinds to the document the provider allocates, and fails closed when the copy capability is not advertised.
 - Completed critical-review correctness, safety, conformance, and packaging remediation.
 - Finalized the OTC Python SDK architecture around `Client`, physical `Table`,
   `Query`, and Polars `DataFrame`, with normalized `base-mode` and

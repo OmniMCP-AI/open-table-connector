@@ -200,6 +200,132 @@ def test_create_is_buffered_and_retains_workbook_id():
     assert b["uri"] == "https://www.maybe.ai/docs/spreadsheets/d/created-doc"
 
 
+SOURCE_URI = "https://www.maybe.ai/docs/spreadsheets/d/source"
+
+
+class CopyRecording(Recording):
+    """Recorded `mbs workbook copy` behavior (contract 1.0)."""
+
+    def __init__(self, *, result=None, fail=False):
+        super().__init__()
+        self.copied = 0
+        self._copy_result = result
+        self._fail = fail
+
+    def run(self, argv, **kwargs):
+        if argv[1:3] == ("--contract-version", "1.0"):
+            argv = (argv[0], *argv[3:])
+        if argv[1:3] == ("workbook", "copy"):
+            self.calls.append(argv)
+            self.mutations.append(argv)
+            self.copied += 1
+            if self._fail:
+                raise ConnectorError(ConnectorErrorCode.TIMEOUT, "timed out", {})
+            result = self._copy_result
+            if result is None:
+                result = {
+                    "original_uri": SOURCE_URI,
+                    "new_uri": "https://www.maybe.ai/docs/spreadsheets/d/copied",
+                    "new_document_id": "copied",
+                    "spreadsheet_id": "copied",
+                    "public_version": 1,
+                    "sheets": ["Report", "Base"],
+                    "source_info": {"engine_strategy": "preserve_topology"},
+                }
+            return env("workbook.copy", result)
+        return super().run(argv, **kwargs)
+
+
+def copy_binding(*, title=None, destination="https://www.maybe.ai/docs/spreadsheets/d/dest"):
+    return dict(
+        uri=destination,
+        profile="general/1.0",
+        revision=None,
+        worksheets=None,
+        dialect="maybe-sheet-a1",
+        capabilities=(),
+        new=False,
+        copy_from=SOURCE_URI,
+        copy_title=title,
+    )
+
+
+def test_copy_is_advertised_and_runs_as_one_workbook_command():
+    process = CopyRecording()
+    p = MaybeSheetConnector(process).spreadsheet_provider()
+    assert "workbook.copy" in p.capabilities
+    binding = copy_binding(title="June profit statement")
+    # A copy is its own command, so it can never ride an atomic batch.
+    p.preflight(binding, [])
+    result = p.commit(binding, [], allow_partial=False, expected_revision=None, idempotency_key=None)
+    assert result["commit"] == "committed"
+    assert result["value"]["created_ids"]["workbook"] == "copied"
+    assert binding["uri"] == "https://www.maybe.ai/docs/spreadsheets/d/copied"
+    assert binding["copy_from"] is None
+    assert [call for call in process.calls if call[1:3] == ("workbook", "copy")] == [
+        (
+            "mbs",
+            "workbook",
+            "copy",
+            "--target",
+            SOURCE_URI,
+            "--title",
+            "June profit statement",
+            "--output",
+            "json",
+        )
+    ]
+    receipt = result["receipts"][0]
+    assert receipt["operation"] == "workbook.copy"
+    assert receipt["result"]["source_info"]["engine_strategy"] == "preserve_topology"
+
+
+def test_copy_titles_the_new_workbook_from_the_requested_destination():
+    process = CopyRecording()
+    p = MaybeSheetConnector(process).spreadsheet_provider()
+    binding = copy_binding(destination="https://www.maybe.ai/docs/spreadsheets/d/6aad4d4b4209f94d6997d291")
+    p.commit(binding, [], allow_partial=False, expected_revision=None, idempotency_key=None)
+    call = next(call for call in process.calls if call[1:3] == ("workbook", "copy"))
+    assert call[call.index("--title") + 1] == "6aad4d4b4209f94d6997d291"
+
+
+def test_copy_validates_targets_against_the_preserved_source_topology():
+    process = CopyRecording()
+    p, _ = provider(process)
+    binding = copy_binding()
+    # `Report` survives the copy, so it preflights; `Base` is a base tab the
+    # dispatch below never accepts, and an unknown name fails closed before the
+    # provider is asked to allocate anything.
+    p.preflight(binding, [change("range.write", "Report", address="A1", values=[["x"]])])
+    assert not process.copied
+    with pytest.raises(ConnectorError):
+        p.preflight(binding, [change("range.write", "Missing", address="A1", values=[["x"]])])
+    assert not process.copied
+
+
+def test_copy_never_adopts_the_source_identity_when_the_provider_is_silent():
+    process = CopyRecording(result={"original_uri": SOURCE_URI, "sheets": ["Report"]})
+    p, _ = provider(process)
+    binding = copy_binding()
+    result = p.commit(binding, [], allow_partial=False, expected_revision=None, idempotency_key=None)
+    assert result["commit"] == "unknown"
+    assert result["outcome"] == "unknown"
+    assert result["value"]["unknown_operation"] == "workbook.copy"
+    assert result["value"]["requires_rebind"] is True
+    # The requested destination must not be adopted as evidence of a copy.
+    assert binding["uri"] == "https://www.maybe.ai/docs/spreadsheets/d/dest"
+
+
+def test_copy_transport_failure_is_unknown_and_requires_rebind():
+    process = CopyRecording(fail=True)
+    p, _ = provider(process)
+    binding = copy_binding()
+    result = p.commit(binding, [], allow_partial=False, expected_revision=None, idempotency_key=None)
+    assert result["commit"] == "unknown"
+    assert result["value"]["unknown_operation"] == "workbook.copy"
+    assert result["value"]["created_ids"] == {}
+
+
 def test_stable_sort_requires_partial_and_preserves_ties_blanks_header():
     class SortRecording(Recording):
         def run(self, argv, **kwargs):

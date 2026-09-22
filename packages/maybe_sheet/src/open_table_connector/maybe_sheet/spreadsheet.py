@@ -167,6 +167,7 @@ class MaybeSpreadsheetProvider:
         "image.read",
         "image.delete",
         "workbook.create",
+        "workbook.copy",
         "workbook.write",
         "workbook.verify",
     )
@@ -320,14 +321,26 @@ class MaybeSpreadsheetProvider:
         changes = self._expand(changes)
         if binding.get("profile") != "general/1.0":
             _reject("MaybeSheet supports the general workbook profile only")
-        sheets = {} if binding.get("new") else self._checked_sheets(binding)
+        # A created workbook has no worksheets to validate against until the
+        # provider has allocated it.  A copied workbook does: the copy
+        # preserves the source names, gids and engines, so the source list is
+        # the exact set of targets the queued changes may name -- validated
+        # on a copy of the binding because the destination identity is only
+        # known once the provider returns it.
+        origin = bool(binding.get("new") or binding.get("copy_from"))
+        if binding.get("copy_from"):
+            sheets = self._checked_sheets(dict(binding, uri=str(binding["copy_from"])))
+        elif binding.get("new"):
+            sheets = {}
+        else:
+            sheets = self._checked_sheets(binding)
         for change in changes:
             self._validate(change, sheets)
         return dict(
             supported=True,
-            atomic=len(changes) + bool(binding.get("new")) <= 1
+            atomic=len(changes) + origin <= 1
             and not any(c.operation_id == "range.sort" for c in changes),
-            command_count=len(changes) + bool(binding.get("new")),
+            command_count=len(changes) + origin,
             observation="committed",
         )
 
@@ -809,6 +822,61 @@ class MaybeSpreadsheetProvider:
         sheets = {name: dict(row) for name, row in (binding.get("worksheets") or {}).items()}
         receipts = []
         created = {}
+        if binding.get("copy_from"):
+            # `mbs workbook copy` preserves worksheet engine topology: the new
+            # workbook starts with the source's sheet tabs, base-table tabs,
+            # names, gids and base-table ids, and it is a snapshot -- writes to
+            # the source afterwards are not visible through it.  The copy's
+            # first write re-materialises its own base tables, so base-table
+            # ids change at that point; only names, gids and engines stay
+            # stable.  The provider allocates the copy's document id, so the
+            # session rebinds to the URI it returns rather than to the
+            # requested destination.
+            copy_source = str(binding["copy_from"])
+            requested = str(binding.get("uri") or "")
+            title = binding.get("copy_title")
+            if not isinstance(title, str) or not title.strip():
+                parts = [part for part in urlsplit(requested).path.split("/") if part]
+                title = parts[-1] if parts else "workbook copy"
+            try:
+                payload = self._call(
+                    ("mbs", "workbook", "copy", "--target", copy_source, "--title", title),
+                    "workbook.copy",
+                )
+                result = payload["result"]
+                receipts.append(
+                    dict(
+                        operation="workbook.copy",
+                        request_id=payload["request_id"],
+                        result=_plain(result),
+                    )
+                )
+                document_id = result.get("new_document_id", result.get("spreadsheet_id"))
+                if not isinstance(document_id, str) or not document_id:
+                    raise ValueError("Copied workbook identity is missing")
+                new_uri = result.get("new_uri")
+                if not isinstance(new_uri, str) or not new_uri:
+                    new_uri = f"{SCHEME_HTTPS}://{HOST_MAYBE}/docs/spreadsheets/d/{document_id}"
+                created["workbook"] = document_id
+                binding["uri"] = new_uri
+                binding["copy_from"] = None
+                binding["copy_title"] = None
+                sheets = self._list(binding)
+                binding["worksheets"] = sheets
+            except Exception:
+                # The copy may or may not have landed; the caller must reconcile
+                # or rebind instead of repeating the mutation blindly.
+                return dict(
+                    outcome="unknown",
+                    commit="unknown",
+                    verification="unavailable",
+                    receipts=tuple(receipts),
+                    value=dict(
+                        created_ids=created,
+                        unknown_operation="workbook.copy",
+                        requires_rebind=True,
+                    ),
+                )
         if binding.get("new"):
             try:
                 payload = self._call(
