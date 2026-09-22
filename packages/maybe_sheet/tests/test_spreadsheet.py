@@ -1002,3 +1002,27 @@ def test_solid_fill_uses_the_key_the_server_honours():
     assert process.styles == [
         {"bold": True, "font_color": "#FFFFFF", "bg_color": "#1F2329"}
     ]
+
+
+def test_copy_topology_reads_the_pending_source_before_the_copy_lands():
+    """A copy's destination does not exist until the copy commits.
+
+    ``mbs workbook copy`` allocates the document id, so before the commit the
+    topology question ("which worksheets does this workbook have?") can only be
+    answered by the source whose names, gids and engines the copy preserves.
+    Reading the destination fails against the provider and used to make every
+    observation -- including the SDK's open-time worksheet list -- unusable.
+    """
+
+    process = CopyRecording()
+    p = MaybeSheetConnector(process).spreadsheet_provider()
+    binding = copy_binding(
+        destination="https://www.maybe.ai/docs/spreadsheets/d/not-created-yet"
+    )
+    observed = p.observe(binding, {"operation": "worksheet.list"})
+    assert {row["name"] for row in observed["value"]["worksheets"]} == {"Report", "Base"}
+    listed = [call for call in process.calls if call[1:3] == ("worksheet", "list")]
+    assert listed, "topology observation must query the provider"
+    assert SOURCE_URI in listed[-1]
+    assert not any("not-created-yet" in argument for argument in listed[-1])
+    assert process.copied == 0

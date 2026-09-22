@@ -317,6 +317,18 @@ class MaybeSpreadsheetProvider:
                 )
         return tuple(expanded)
 
+    def _topology_binding(self, binding):
+        """Bind topology reads to a pending copy's source.
+
+        ``mbs workbook copy`` allocates the copy's document id itself, so before
+        the copy commits the destination identity in the binding does not exist
+        yet.  The copy preserves the source's worksheet names, gids and engines,
+        so reads that answer "what worksheets does this workbook have" must ask
+        the source until the copy lands.
+        """
+        source = binding.get("copy_from")
+        return dict(binding, uri=str(source)) if source else binding
+
     def preflight(self, binding, changes: Iterable[Change]):
         changes = self._expand(changes)
         if binding.get("profile") != "general/1.0":
@@ -329,7 +341,7 @@ class MaybeSpreadsheetProvider:
         # known once the provider returns it.
         origin = bool(binding.get("new") or binding.get("copy_from"))
         if binding.get("copy_from"):
-            sheets = self._checked_sheets(dict(binding, uri=str(binding["copy_from"])))
+            sheets = self._checked_sheets(self._topology_binding(binding))
         elif binding.get("new"):
             sheets = {}
         else:
@@ -995,7 +1007,7 @@ class MaybeSpreadsheetProvider:
                 verification="unavailable",
                 receipts=(),
             )
-        sheets = self._checked_sheets(binding)
+        sheets = self._checked_sheets(self._topology_binding(binding))
         if operation in ("worksheet.list", "workbook.verify", "verify", "reconcile"):
             return dict(
                 value=dict(
