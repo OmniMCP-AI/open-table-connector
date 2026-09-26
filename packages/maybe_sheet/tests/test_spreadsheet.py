@@ -25,6 +25,35 @@ def env(op, result):
     )
 
 
+class FlakyWorksheetList:
+    """A provider whose worksheet discovery process dies transiently."""
+
+    def __init__(self, failures: int, *, details: dict[str, object] | None = None):
+        self.failures = failures
+        self.details = {"returncode": 6, "stderr": ""} if details is None else details
+        self.calls: list[tuple[str, ...]] = []
+        self.list_attempts = 0
+
+    def run(self, argv, **kwargs):
+        argv = (
+            (argv[0], *argv[3:])
+            if argv[1:3] == ("--contract-version", "1.0")
+            else tuple(argv)
+        )
+        self.calls.append(argv)
+        op = ".".join(argv[1:3])
+        if op == "worksheet.list":
+            self.list_attempts += 1
+            if self.list_attempts <= self.failures:
+                raise ConnectorError(
+                    ConnectorErrorCode.EXECUTION_FAILED,
+                    "MaybeSheet process failed",
+                    dict(self.details),
+                )
+            return env(op, {"worksheets": [{"gid": "1", "name": "Report", "data_engine": "sheet"}]})
+        raise AssertionError(f"unexpected process call: {argv}")
+
+
 class Recording:
     def __init__(self, fail=None):
         self.calls = []
@@ -79,6 +108,37 @@ def test_reject_atomic_batch_without_dispatch():
             idempotency_key=None,
         )
     assert not process.mutations
+
+
+def test_preflight_retries_transient_topology_process_failure(monkeypatch):
+    sleeps: list[float] = []
+    monkeypatch.setattr(
+        "open_table_connector.maybe_sheet.spreadsheet.time.sleep",
+        sleeps.append,
+    )
+    process = FlakyWorksheetList(1)
+    p, b = provider(process)
+
+    p.preflight(
+        b,
+        [change("range.format", address="A1", pattern="0.000000")],
+    )
+
+    assert process.list_attempts == 2
+    assert sleeps == [0.25]
+
+
+def test_preflight_does_not_retry_non_process_read_rejection():
+    process = FlakyWorksheetList(
+        5,
+        details={},
+    )
+    p, b = provider(process)
+
+    with pytest.raises(ConnectorError):
+        p.preflight(b, [change("range.clear", address="A1")])
+
+    assert process.list_attempts == 1
 
 
 def test_preflight_mixed_base_and_bad_sheet_rejects_before_mutations():

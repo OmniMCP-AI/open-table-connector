@@ -12,6 +12,7 @@ import json
 import math
 import re
 import tempfile
+import time
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -39,6 +40,21 @@ from .spreadsheet_observe import (
     decode_maybe_layout,
     style_observation,
 )
+
+
+_READ_ATTEMPTS = 3
+_READ_RETRY_DELAY_SECONDS = 0.25
+
+
+def _retryable_read_error(error: ConnectorError) -> bool:
+    """Return whether a failed read can be safely issued again unchanged."""
+
+    if error.code is ConnectorErrorCode.TIMEOUT:
+        return True
+    return (
+        error.code is ConnectorErrorCode.EXECUTION_FAILED
+        and "returncode" in error.safe_details
+    )
 
 
 def _reject(message, code=ConnectorErrorCode.UNSUPPORTED_CAPABILITY):
@@ -240,10 +256,21 @@ class MaybeSpreadsheetProvider:
         )
 
     def _list(self, binding):
-        response = self._call(
-            ("mbs", "worksheet", "list", "--uri", _mbs_target(TableURI(binding["uri"]))),
-            "worksheet.list",
-        )
+        # Topology discovery is read-only and idempotent.  A killed or transiently
+        # failed mbs process must not abort a later write stage before that stage
+        # has emitted any command; retry only this read and keep mutations under
+        # the session's normal commit-state discipline.
+        for attempt in range(1, _READ_ATTEMPTS + 1):
+            try:
+                response = self._call(
+                    ("mbs", "worksheet", "list", "--uri", _mbs_target(TableURI(binding["uri"]))),
+                    "worksheet.list",
+                )
+                break
+            except ConnectorError as error:
+                if not _retryable_read_error(error) or attempt == _READ_ATTEMPTS:
+                    raise
+                time.sleep(_READ_RETRY_DELAY_SECONDS * attempt)
         rows = response["result"].get("worksheets")
         if not isinstance(rows, list):
             _reject("Invalid worksheet discovery response", ConnectorErrorCode.EXECUTION_FAILED)
