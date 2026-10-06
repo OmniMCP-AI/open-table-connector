@@ -39,6 +39,14 @@ from .execution import (
     StepExecutor,
 )
 from .identity import CapabilityIdentity, ConnectorIdentity
+from .json_input import JsonInputError, read_json_input
+from .operations import (
+    CapabilityObservation,
+    ExecutionOptions,
+    OperationDescriptor,
+    OperationRequest,
+    TargetSelector,
+)
 from .inspect import InspectRequest, TableInspection, TableInspector
 from .names import (
     CAPABILITY_TABLE_MATERIALIZE_CREATE,
