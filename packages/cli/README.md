@@ -120,3 +120,7 @@ See the [CLI reference](../../docs/user-guide/cli.md), [spreadsheet operations
 guide](../../docs/user-guide/spreadsheet-operations.md), and [agent
 workflows](../../docs/user-guide/agent-workflows.md) for the complete command
 and evidence contracts.
+
+The complete behavior manual is the [CLI manual](../../docs/user-guide/cli-manual.md);
+the generated [option inventory](../../docs/reference/cli-options.md) is the
+parser-level reference.

@@ -1,6 +1,9 @@
 # Reference
 
 - [Python API](python-api.md)
+- [Generated API inventory](api-inventory.md)
+- [Generated CLI option inventory](cli-options.md)
+- [Generated spreadsheet schemas](spreadsheet-schemas.md)
 - [Configuration](configuration.md)
 - [Error codes](error-codes.md)
 - [Compatibility](compatibility.md)
@@ -8,3 +11,5 @@
 - [Spreadsheet operations](../user-guide/spreadsheet-operations.md)
 - [Office artifact readiness](../office-artifact-readiness.md)
 - [Rich spreadsheet readiness](../spreadsheet-rich-readiness.md)
+- [SDK manual](../user-guide/sdk-manual.md)
+- [Components manual](../user-guide/components.md)

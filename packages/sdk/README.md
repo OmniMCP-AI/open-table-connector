@@ -219,6 +219,10 @@ applied = apply_recipe(client, uri, recipe_result.require_value(), options)
 
 ## Optional artifacts and MCP
 
+For the complete SDK construction and result lifecycle reference, see the
+[SDK manual](../../docs/user-guide/sdk-manual.md), [components manual](../../docs/user-guide/components.md),
+and generated [Python API inventory](../../docs/reference/api-inventory.md).
+
 `client.artifacts()` is a lazy facade over optional artifact adapters. The
 OfficeCLI adapter can export native DOCX/PPTX table snapshots from qualified
 sources. It never authors XLSX. The SDK also carries bounded HTML, PNG, text,

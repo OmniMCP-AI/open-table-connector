@@ -224,21 +224,21 @@ git commit -m "feat: qualify artifact renderer and watch runtime state"
 
 **Interfaces:** Generator supports `--check`, deterministic output, optional-package absence, stable source links, and complete parser/catalog/export inventories. Manuals link every generated inventory and every package README to the appropriate behavior section.
 
-- [ ] **Step 1: Add generator tests and manual link checks**
+- [x] **Step 1: Add generator tests and manual link checks**
 
 Test that all parser commands appear in `cli-manual.md`, all spreadsheet descriptors appear in `spreadsheet-schemas.md`, public exports are present in `api-inventory.md`, and every manual/package README link resolves to a tracked file.
 
-- [ ] **Step 2: Run generator checks red**
+- [x] **Step 2: Run generator checks red**
 
 Run: `uv run --all-packages python scripts/generate_reference_manuals.py --check`
 
 Expected: failure until the generated inventories and manual links are synchronized.
 
-- [ ] **Step 3: Complete manuals with verified examples**
+- [x] **Step 3: Complete manuals with verified examples**
 
 Use the local provider fixture for runnable SDK examples. Include the exact CLI examples from the parser, commit/verification output interpretation, canonical URL rules, provider prerequisites, capability gates, and error/reconciliation behavior. Mark remote/live and renderer-dependent examples with explicit setup requirements.
 
-- [ ] **Step 4: Generate and verify references**
+- [x] **Step 4: Generate and verify references**
 
 Run:
 
@@ -250,7 +250,7 @@ uv run --all-packages python scripts/check_cli_reference.py
 
 Expected: generated files are stable and CLI reference parity passes.
 
-- [ ] **Step 5: Commit manuals and generated references**
+- [x] **Step 5: Commit manuals and generated references**
 
 ```bash
 git add scripts/generate_reference_manuals.py docs/reference docs/user-guide README.md CHANGELOG.md packages/*/README.md

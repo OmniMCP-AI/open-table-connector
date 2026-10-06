@@ -15,3 +15,7 @@ qualified OfficeCLI binary and renderer are required for live rendering. When
 the runtime is absent, callers receive `unsupported_capability` instead of a
 synthetic output. View/watch files are disposable snapshots and are never
 published as authoritative workbook content.
+
+See the [components manual](../../docs/user-guide/components.md) for runtime
+qualification and the [CLI manual](../../docs/user-guide/cli-manual.md) for
+artifact command behavior.
