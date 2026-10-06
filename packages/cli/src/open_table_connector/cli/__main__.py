@@ -156,6 +156,9 @@ def build_parser() -> argparse.ArgumentParser:
     from .spreadsheet_commands import add_parser
 
     add_parser(subparsers)
+    from .artifact_commands import add_parser as add_artifact_parser
+
+    add_artifact_parser(subparsers)
     return parser
 
 

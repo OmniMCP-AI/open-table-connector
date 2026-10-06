@@ -93,6 +93,7 @@ from .discovery import (
 )
 from .operations import discover_operation_handlers, execute_operation, register_operation_handler
 from .snapshots import capture_workbook_snapshot
+from .artifacts import ArtifactAccess
 from .result import (
     CommitState,
     ErrorCode,
@@ -147,6 +148,7 @@ __all__ = [
     "register_operation_handler",
     "discover_operation_handlers",
     "capture_workbook_snapshot",
+    "ArtifactAccess",
     "CredentialLease",
     "CredentialBinding",
     "CredentialResolver",

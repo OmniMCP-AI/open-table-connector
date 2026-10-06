@@ -145,6 +145,10 @@ def _emit_json(payload: Any, out: TextIO) -> None:
 def run_command(args: Namespace, registry: ConnectorRegistry, out: TextIO, err: TextIO) -> int:
     try:
         command = getattr(args, "command", None)
+        if command == "artifact":
+            from .artifact_commands import run_artifact
+
+            return run_artifact(args, out, err)
         if command in {"help", "capabilities"}:
             from .discovery_commands import run_discovery_command
 
