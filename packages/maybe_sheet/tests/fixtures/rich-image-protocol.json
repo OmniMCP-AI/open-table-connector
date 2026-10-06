@@ -1,0 +1,5 @@
+{
+  "contract_version": "1.0",
+  "operations": ["image.insert", "image.list", "image.read", "image.delete"],
+  "sizing": "anchor-only"
+}
