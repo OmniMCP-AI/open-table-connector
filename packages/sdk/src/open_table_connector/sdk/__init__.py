@@ -92,6 +92,7 @@ from .discovery import (
     resolve_capabilities,
 )
 from .operations import discover_operation_handlers, execute_operation, register_operation_handler
+from .snapshots import capture_workbook_snapshot
 from .result import (
     CommitState,
     ErrorCode,
@@ -145,6 +146,7 @@ __all__ = [
     "execute_operation",
     "register_operation_handler",
     "discover_operation_handlers",
+    "capture_workbook_snapshot",
     "CredentialLease",
     "CredentialBinding",
     "CredentialResolver",
