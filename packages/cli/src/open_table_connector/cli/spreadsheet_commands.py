@@ -18,8 +18,9 @@ def add_parser(subparsers):
     parser = subparsers.add_parser(
         "spreadsheet", help="buffer, save, read and verify workbook operations"
     )
-    parser.add_argument("action", choices=("batch", "operation", "read", "style-read", "config-read", "verify", "inspect", "style", "format", "write", "worksheet"))
+    parser.add_argument("action", choices=("batch", "operation", "read", "style-read", "config-read", "verify", "inspect", "style", "format", "write", "worksheet", "recipe", "apply"))
     parser.add_argument("worksheet_action", nargs="?", choices=("create", "rename", "delete"))
+    parser.add_argument("recipe_action", nargs="?", choices=("export",))
     parser.add_argument("--uri", required=True)
     parser.add_argument("--commands", help="version 1.0 JSON command file")
     parser.add_argument("--operation", help="existing spreadsheet operation verb")
@@ -39,13 +40,16 @@ def add_parser(subparsers):
     parser.add_argument("--columns", help="column letters as a JSON array")
     parser.add_argument("--view-fields", help="view fields as a JSON array")
     parser.add_argument("--create", action="store_true")
-    parser.add_argument("--profile", choices=("general/1.0", "literal-artifact/1.0"))
+    parser.add_argument("--profile", choices=("general/1.0", "literal-artifact/1.0", "rich-artifact/1.0"))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--allow-partial", action="store_true")
     parser.add_argument("--expected", help="retained independent expected intent JSON file")
     parser.add_argument("--expected-revision")
     parser.add_argument("--idempotency-key")
     parser.add_argument("--failure-directory")
+    parser.add_argument("--selectors")
+    parser.add_argument("--spec")
+    parser.add_argument("--allow-incomplete", action="store_true")
     parser.add_argument("--credential-key", action="append", default=[])
 
 

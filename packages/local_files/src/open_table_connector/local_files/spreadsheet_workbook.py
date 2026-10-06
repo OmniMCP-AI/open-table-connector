@@ -26,6 +26,7 @@ from open_table_connector.contract import (
 from open_table_connector.spreadsheets import ArtifactLimits, RangeRef, SpreadsheetTarget
 
 PROFILE = "literal-artifact/1.0"
+RICH_PROFILE = "rich-artifact/1.0"
 OPERATIONS = (
     "worksheet.create",
     "worksheet.rename",
@@ -1050,7 +1051,7 @@ class LocalSpreadsheetProvider:
 
         path = _path(binding["uri"])
         limits = _limits(binding)
-        if binding.get("profile") not in (PROFILE, "general/1.0"):
+        if binding.get("profile") not in (PROFILE, RICH_PROFILE, "general/1.0"):
             raise _error(
                 "profile", "Unsupported workbook profile", ConnectorErrorCode.UNSUPPORTED_CAPABILITY
             )
@@ -1185,6 +1186,7 @@ class LocalSpreadsheetProvider:
     def verify_layout(self, binding, expected):
         """Compare a layout expectation with a fresh, published XLSX read."""
         from open_table_connector.spreadsheets.observations import compare_layout
+
         from .spreadsheet_observe import observe_xlsx
 
         if not isinstance(expected, Mapping) or expected.get("kind") != "spreadsheet.financial-layout.expectation/1.0":
