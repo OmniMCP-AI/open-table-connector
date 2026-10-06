@@ -144,8 +144,8 @@ fail closed.
 
 ## 7. `local_files`: local codecs and workbook provider
 
-`local_files` owns bare-path and `file://` routing for CSV, JSON, JSONL,
-Markdown, and XLSX. CSV remains a format/codec, not a public `csv://` route.
+`local_files` owns bare-path and `file://` routing for delimited text, JSON, JSONL,
+Markdown, and XLSX. Delimited text remains a format/codec, not a public URL route.
 The workbook provider uses the existing Excelize-backed implementation.
 
 Use `rich-artifact/1.0` only for the currently qualified image subset:
