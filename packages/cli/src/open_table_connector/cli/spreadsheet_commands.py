@@ -19,7 +19,7 @@ def add_parser(subparsers):
         "spreadsheet", help="buffer, save, read and verify workbook operations"
     )
     parser.add_argument("action", choices=("batch", "operation", "read", "style-read", "config-read", "verify", "inspect", "style", "format", "write", "worksheet", "recipe", "apply"))
-    parser.add_argument("worksheet_action", nargs="?", choices=("create", "rename", "delete"))
+    parser.add_argument("worksheet_action", nargs="?", choices=("create", "rename", "delete", "export"))
     parser.add_argument("recipe_action", nargs="?", choices=("export",))
     parser.add_argument("--uri", required=True)
     parser.add_argument("--commands", help="version 1.0 JSON command file")

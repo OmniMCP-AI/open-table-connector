@@ -75,25 +75,25 @@ git commit -m "fix: commit spreadsheet shortcut mutations"
 
 **Interfaces:** Accept `otc spreadsheet recipe export --uri URI --selectors FILE [--allow-incomplete]` without positional ambiguity. `export_recipe(client, target, selectors, *, allow_incomplete=False)` must bind the target and return an `OperationResult[LayoutRecipe]` based on a fresh local snapshot/provider observation. `apply_recipe(...)` must close its session after commit or failure.
 
-- [ ] **Step 1: Write parser, freshness, and omission tests**
+- [x] **Step 1: Write parser, freshness, and omission tests**
 
 Add parser coverage for the exact command form and ambiguous forms. Add local tests that export a recipe only after creating a workbook, reject a missing/stale observation by default, report omissions with `allow_incomplete=True`, and prove exported operations contain no values/formulas/assets.
 
-- [ ] **Step 2: Run recipe tests to verify failure**
+- [x] **Step 2: Run recipe tests to verify failure**
 
 Run: `uv run --all-packages pytest -q packages/cli/tests/test_recipe_commands.py packages/sdk/tests/test_recipes.py`
 
 Expected: parser export and fresh-observation tests fail against the current positional parser and selector-only implementation.
 
-- [ ] **Step 3: Fix parser ownership and target observation**
+- [x] **Step 3: Fix parser ownership and target observation**
 
 Give `recipe` a dedicated nested parser or normalize `export` before the shared positional choices are evaluated. In `export_recipe`, resolve the target through the client, capture a local `WorkbookSnapshot` or provider observation, validate each selector against that observation, and return explicit `OperationWarning` omissions only when allowed.
 
-- [ ] **Step 4: Harden apply lifecycle and recipe validation**
+- [x] **Step 4: Harden apply lifecycle and recipe validation**
 
 Ensure `apply_recipe` uses a context-managed workbook session or an explicit close/finalize path after `write()`; preserve committed/unknown receipts. Keep the schema’s forbidden keys and recomputed requirements checks.
 
-- [ ] **Step 5: Run recipe tests and commit**
+- [x] **Step 5: Run recipe tests and commit**
 
 Run the tests from Step 2 plus `uv run --all-packages pytest -q packages/spreadsheets/tests/test_recipes.py`.
 

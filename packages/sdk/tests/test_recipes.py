@@ -32,3 +32,39 @@ def test_recipe_publishes_once_and_can_be_read_back(tmp_path):
         observed = load_workbook(tmp_path / "recipe.xlsx")
         assert observed["Report"]["A1"].font.bold is True
         observed.close()
+
+
+def test_export_recipe_requires_fresh_target_observation(tmp_path):
+    from open_table_connector.local_files import LocalFilesConnector
+    from open_table_connector.sdk import Client, ConnectorRegistry
+    from open_table_connector.sdk.recipes import export_recipe
+
+    selectors = [{"operation_id": "range.style", "target_key": "Report", "arguments": {"address": "A1"}}]
+    missing = tmp_path / "missing.xlsx"
+    with Client(registry=ConnectorRegistry([LocalFilesConnector()])) as client:
+        result = export_recipe(client, missing.as_uri(), selectors)
+    assert result.outcome.value == "rejected"
+    assert result.error is not None
+
+
+def test_export_recipe_records_incomplete_observation_explicitly(tmp_path):
+    from open_table_connector.local_files import LocalFilesConnector
+    from open_table_connector.sdk import Client, ConnectorRegistry
+    from open_table_connector.sdk.recipes import export_recipe
+
+    uri = (tmp_path / "recipe.xlsx").as_uri()
+    with Client(registry=ConnectorRegistry([LocalFilesConnector()])) as client:
+        book = client.workbook.create(uri)
+        book.worksheet.create("Report").range("A1").write([["literal"]])
+        book.write()
+        result = export_recipe(
+            client,
+            uri,
+            [
+                {"operation_id": "range.style", "target_key": "Report", "arguments": {"address": "A1"}},
+                {"operation_id": "unsupported", "target_key": "Report", "arguments": {}},
+            ],
+            allow_incomplete=True,
+        )
+    assert result.outcome.value == "succeeded"
+    assert result.warnings
