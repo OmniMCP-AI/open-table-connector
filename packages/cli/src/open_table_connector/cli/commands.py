@@ -150,6 +150,10 @@ def run_command(args: Namespace, registry: ConnectorRegistry, out: TextIO, err: 
 
             return run_discovery_command(args, out, err, registry=registry)
         if command == "spreadsheet":
+            if getattr(args, "action", None) in {"recipe", "apply"}:
+                from .recipe_commands import run_recipe_command
+
+                return run_recipe_command(args, registry, out, err)
             from .spreadsheet_commands import run_spreadsheet
 
             return run_spreadsheet(args, registry, out, err)
