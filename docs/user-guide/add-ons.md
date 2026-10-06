@@ -1,5 +1,9 @@
 # Add-ons
 
+Use this page for the short add-on overview. The [components manual](components.md)
+has the complete package/dependency matrix, and the [SDK manual](sdk-manual.md)
+has end-to-end examples for formulas, workbooks, artifacts, and MCP.
+
 OTC add-ons are independently released provider packages. They contribute a
 connector descriptor, URI schemes, table modes, capabilities, and optional
 provider-specific operations. The neutral contract, time-series, and formula

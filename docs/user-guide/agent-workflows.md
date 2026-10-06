@@ -1,5 +1,9 @@
 # Agent Workflows
 
+For the full command/API reference, use the [CLI manual](cli-manual.md),
+[SDK manual](sdk-manual.md), and [components manual](components.md). This page
+keeps the shortest discovery-first workflow for agents.
+
 Agents should begin with static discovery and keep execution explicit.
 
 ```sh

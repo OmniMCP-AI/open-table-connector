@@ -1,5 +1,11 @@
 # Python API
 
+This page is the concise API orientation. The complete progressive guide is the
+[SDK manual](../user-guide/sdk-manual.md); the exhaustive generated export and
+signature catalog is the [Python API inventory](api-inventory.md). Use all
+three together: this page for vocabulary, the manual for workflows, and the
+inventory for exact reference.
+
 The public application surface is `open_table_connector.sdk`. The namespace
 is Polars-first and returns normalized `OperationResult` values.
 

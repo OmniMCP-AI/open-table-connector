@@ -1,5 +1,10 @@
 # Configuration reference
 
+Configuration is part of the CLI/SDK deployment surface. Start with the
+[components manual](../user-guide/components.md) for provider ownership and
+the [SDK manual](../user-guide/sdk-manual.md) for client construction; this
+page defines the closed TOML fields and validation rules.
+
 OTC CLI configuration is TOML with schema version `otc.cli-config/v1`.
 
 ## Top-level document
