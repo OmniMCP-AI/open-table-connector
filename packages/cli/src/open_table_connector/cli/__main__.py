@@ -176,6 +176,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         from .credentials import parse_credential_overrides
 
+        if args.command == "spreadsheet" and getattr(args, "commands", None) == "-":
+            args._stdin = sys.stdin.buffer
+
         overrides = parse_credential_overrides(getattr(args, "credential_key", ()))
         registry = build_default_registry(env=os.environ, credential_overrides=overrides)
         result = run_command(args, registry, sys.stdout, sys.stderr)

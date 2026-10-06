@@ -55,12 +55,12 @@ The spreadsheet catalog starts with every currently dispatched operation and rea
 
 **Interfaces:** `compile_shortcut(args: Namespace) -> OperationRequest`; `style`, `format`, `write`, `worksheet create|rename|delete` map exactly as spec 6.1. Boolean flags use tri-state `None/True/False`. `--values-file` calls D1 parser; range dimensions validate before dispatch. Existing batch `_read_json` delegates to D1 parser while preserving its usage-error interface. Main supplies `sys.stdin.buffer` only when explicit `--commands -`; programmatic/MCP execution uses structured requests and no implicit stdin.
 
-- [ ] Add `test_shortcut_equals_generic_operation` parameterized over style/format/write/create/rename/delete: compare normalized request, receipts/commit semantics and persisted readback with generic command. Add `test_omitted_bold_differs_from_no_bold` and `test_values_stay_literal_and_typed` using the D1 edge values.
-- [ ] Add `test_conflicting_boolean_flags_reject`, `test_ragged_or_wrong_size_range_rejects_before_dispatch`, `test_worksheet_delete_keeps_reference_guard`, `test_unsupported_revision_rejected` and assert no mutation on rejection.
-- [ ] Add `test_file_stdin_identical`, `test_10000_changes_accepted_10001_rejected`, `test_stdin_limit_16777216`, `test_empty_stdin_rejected`, `test_batch_mcp_without_stdin_raises_usage`: exact bounds, zero provider calls on invalid input. Retain existing unknown-envelope-key tests.
-- [ ] Run the three affected test modules; expect new flag/stdin failures.
-- [ ] Implement parser/compiler and shared dispatch. Use schema field enums from D2; preserve generic commands and output defaults. Restrict flags to the spec's initial style set.
-- [ ] Run new tests plus existing `test_commands.py`, `test_cli_e2e.py`; expect all pass. Commit D3 files: `feat: add typed spreadsheet shortcuts and bounded stdin batches`.
+- [x] Add `test_shortcut_equals_generic_operation` parameterized over style/format/write/create/rename/delete: compare normalized request, receipts/commit semantics and persisted readback with generic command. Add `test_omitted_bold_differs_from_no_bold` and `test_values_stay_literal_and_typed` using the D1 edge values.
+- [x] Add `test_conflicting_boolean_flags_reject`, `test_ragged_or_wrong_size_range_rejects_before_dispatch`, `test_worksheet_delete_keeps_reference_guard`, `test_unsupported_revision_rejected` and assert no mutation on rejection.
+- [x] Add `test_file_stdin_identical`, `test_10000_changes_accepted_10001_rejected`, `test_stdin_limit_16777216`, `test_empty_stdin_rejected`, `test_batch_mcp_without_stdin_raises_usage`: exact bounds, zero provider calls on invalid input. Retain existing unknown-envelope-key tests.
+- [x] Run the three affected test modules; initial run failed on the intentionally missing shortcut module.
+- [x] Implement parser/compiler and shared dispatch. Use schema field enums from D2; preserve generic commands and output defaults. Restrict flags to the spec's initial style set.
+- [x] Run new tests plus existing `test_commands.py`, `test_cli_e2e.py`; all pass. Commit D3 files: `feat: add typed spreadsheet shortcuts and bounded stdin batches`.
 
 ## Task D4: Safe Errors, Command Index and Agent Guide
 
