@@ -195,7 +195,7 @@ def run_spreadsheet(args, registry, out, err):
             ) as book:
                 for change in changes:
                     book._queue(change["operation_id"], change["target_key"], change["arguments"])
-                if args.action in {"batch", "operation"}:
+                if args.action in {"batch", "operation", "style", "format", "write", "worksheet"}:
                     result = book.write(
                         dry_run=args.dry_run,
                         allow_partial=args.allow_partial,

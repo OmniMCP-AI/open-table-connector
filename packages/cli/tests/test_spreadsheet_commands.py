@@ -126,3 +126,60 @@ def test_standalone_create_commits_and_verify_uses_retained_intent(tmp_path, cap
         == 5
     )
     assert json.loads(capsys.readouterr().err)["error"]["code"]
+
+
+def _create_report(destination, capsys):
+    assert main(
+        [
+            "spreadsheet",
+            "operation",
+            "--uri",
+            destination.as_uri(),
+            "--create",
+            "--operation",
+            "worksheet.create",
+            "--sheet",
+            "Report",
+        ]
+    ) == 0
+    capsys.readouterr()
+
+
+def test_style_shortcut_commits_and_persists(tmp_path, capsys):
+    destination = tmp_path / "style.xlsx"
+    _create_report(destination, capsys)
+    assert main(["spreadsheet", "write", "--uri", destination.as_uri(), "--sheet", "Report", "--range", "A1", "--values", '[["value"]]']) == 0
+    assert json.loads(capsys.readouterr().out)["commit"] == "committed"
+    assert main(["spreadsheet", "style", "--uri", destination.as_uri(), "--sheet", "Report", "--range", "A1", "--bold"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["commit"] == "committed"
+    assert payload["verification"] == "passed"
+
+
+def test_format_shortcut_commits_and_persists(tmp_path, capsys):
+    destination = tmp_path / "format.xlsx"
+    _create_report(destination, capsys)
+    assert main(["spreadsheet", "format", "--uri", destination.as_uri(), "--sheet", "Report", "--range", "A1", "--pattern", "#,##0.00"]) == 0
+    assert json.loads(capsys.readouterr().out)["commit"] == "committed"
+
+
+def test_worksheet_shortcut_commits_and_persists(tmp_path, capsys):
+    destination = tmp_path / "worksheet.xlsx"
+    assert main(["spreadsheet", "worksheet", "create", "--uri", destination.as_uri(), "--create", "--sheet", "Report", "--name", "Summary"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["commit"] == "committed"
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(destination, read_only=True)
+    assert "Summary" in workbook.sheetnames
+    workbook.close()
+
+
+def test_shortcut_dry_run_does_not_mutate(tmp_path, capsys):
+    destination = tmp_path / "dry-run.xlsx"
+    _create_report(destination, capsys)
+    before = destination.read_bytes()
+    assert main(["spreadsheet", "style", "--uri", destination.as_uri(), "--sheet", "Report", "--range", "A1", "--bold", "--dry-run"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["outcome"] == "planned"
+    assert destination.read_bytes() == before
