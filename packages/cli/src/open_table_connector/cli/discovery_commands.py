@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from difflib import get_close_matches
 from typing import TextIO
 
 from open_table_connector.contract import FORMAT_TABLE, PROVIDER_JSON
@@ -21,6 +22,14 @@ def _emit(payload, output_format: str, out: TextIO) -> None:
     out.write("operation_id\tversion\tcapability\teffects\n")
     for item in payload.get("operations", ()):
         out.write(f"{item['operation_id']}\t{item['version']}\t{item['capability']}\t{','.join(item['effects'])}\n")
+
+
+def suggest_argument(name: str, descriptor) -> tuple[str, ...]:
+    """Suggest only declared schema properties, never values or provider text."""
+
+    candidate = str(name).split("=", 1)[0].removeprefix("--")
+    properties = tuple(str(item) for item in descriptor.arguments_schema.get("properties", {}))
+    return tuple(get_close_matches(candidate, properties, n=3, cutoff=0.5))
 
 
 def run_discovery_command(args, out: TextIO, err: TextIO, *, catalog: OperationCatalog | None = None, registry=None) -> int:
@@ -49,4 +58,4 @@ def run_discovery_command(args, out: TextIO, err: TextIO, *, catalog: OperationC
     return 0
 
 
-__all__ = ["run_discovery_command"]
+__all__ = ["run_discovery_command", "suggest_argument"]

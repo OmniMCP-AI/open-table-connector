@@ -12,6 +12,9 @@ The canonical commands are `otc` and `open-table-connector`. The deprecated
 | `read` | Read one endpoint and emit rows |
 | `convert` | Read once and write a local file or stdout |
 | `import` | Read once and write a writable connector |
+| `help` | Describe a versioned operation without opening a target |
+| `capabilities` | Resolve endpoint operation support and evidence |
+| `spreadsheet` | Buffer, inspect, verify and publish workbook operations |
 
 ## Common options
 
@@ -40,6 +43,8 @@ otc inspect --from orders.csv --output-format json
 otc read --from orders.csv --output-format jsonl
 otc convert --from orders.csv --to orders.xlsx --to-format excel --sheet Orders
 otc import --from orders.csv --to gsheets://ID/Orders --if-exists replace
+otc help spreadsheet range.style --output-format json
+otc capabilities --uri file:///absolute/path/report.xlsx --output-format json
 ```
 
 Success output uses the selected format. Errors are one safe JSON object on

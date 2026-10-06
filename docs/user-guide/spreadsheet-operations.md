@@ -126,6 +126,15 @@ for release gates.
 
 ## CLI
 
+Typed shortcuts compile to the same versioned requests as generic operations:
+
+```sh
+otc spreadsheet style --uri file:///absolute/path/report.xlsx --sheet Report --range A1:F1 --bold --no-italic
+otc spreadsheet format --uri file:///absolute/path/report.xlsx --sheet Report --range D4:F38 --pattern '#,##0.00'
+otc spreadsheet write --uri file:///absolute/path/report.xlsx --sheet Report --range A1:B2 --values-file values.json
+otc spreadsheet worksheet create --uri file:///absolute/path/report.xlsx --sheet Report --name Detail
+```
+
 `otc spreadsheet` uses the same SDK session. A standalone mutation queues its one
 operation and commits once:
 

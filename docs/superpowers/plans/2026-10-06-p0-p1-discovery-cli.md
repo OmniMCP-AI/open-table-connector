@@ -68,10 +68,10 @@ The spreadsheet catalog starts with every currently dispatched operation and rea
 
 **Interfaces:** `suggest_argument(name: str, descriptor: OperationDescriptor) -> tuple[str, ...]` uses only declared schema names and deterministic ordering, never values or provider exception text. `check_cli_reference(root: Path) -> list[str]` compares parser command/action inventory and generated reference markers without credentials or network. Exit codes stay exactly as spec 6.3.
 
-- [ ] Add `test_suggestion_does_not_dispatch_or_correct`, `test_suggestion_redacts_secret_value`, `test_spreadsheet_otc_error_remains_exit_five`, `test_table_legacy_category_codes_unchanged`, `test_partial_result_keeps_receipts`.
-- [ ] Add `test_cli_reference_contains_every_action` and `test_agent_examples_parse_and_validate`: guide examples must cover file, MaybeSheet HTTPS, formulas, partial effects, capability errors and delivery checks using fake/disposable providers.
-- [ ] Run the two new modules; expect missing reference/suggestion failures.
-- [ ] Implement suggestion/reference checker and docs. Keep examples bounded; no automatic installation commands or claims that proposed P2 commands already exist before their release.
-- [ ] Run all `packages/cli/tests`, `scripts/check_cli_reference.py`, and `git diff --check`; expect all pass. Commit D4 files: `docs: publish complete CLI discovery and agent workflows`.
+- [x] Add `test_suggestion_does_not_dispatch_or_correct`, `test_suggestion_redacts_secret_value`, `test_spreadsheet_otc_error_remains_exit_five`, `test_table_legacy_category_codes_unchanged`, `test_partial_result_keeps_receipts`.
+- [x] Add `test_cli_reference_contains_every_action` and `test_agent_examples_parse_and_validate`: guide examples cover file, MaybeSheet HTTPS, formulas, partial effects, capability errors and delivery checks using fake/disposable providers.
+- [x] Run the two new modules; initial run failed on the intentionally missing reference/suggestion implementations.
+- [x] Implement suggestion/reference checker and docs. Examples remain bounded and do not install clients automatically.
+- [x] Run all `packages/cli/tests`, `scripts/check_cli_reference.py`, and `git diff --check`; all pass. Commit D4 files: `docs: publish complete CLI discovery and agent workflows`.
 
 **Handoff:** D1-D4 complete A1-A6. RICH/DOC/MCP implementations consume D1/D2 APIs, not CLI private helpers. Record current test counts, versions and any allowed skips in the release evidence ledger.
