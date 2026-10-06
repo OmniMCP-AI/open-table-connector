@@ -20,6 +20,7 @@ _ORDER = {
     "open-table-connector-maybe-sheet": 2,
     "open-table-connector-sdk": 2,
     "open-table-connector-officecli": 2,
+    "open-table-connector-mcp": 3,
     "open-table-connector-conformance": 3,
     "open-table-connector-process": 4,
     "open-table-connector-dbt": 4,

@@ -27,6 +27,9 @@ _PUBLIC_IMPORTS = {
     "open-table-connector-conformance": f"{PACKAGE_NAMESPACE}.conformance",
     "open-table-connector-process": f"{PACKAGE_NAMESPACE}.process",
     "open-table-connector-dbt": f"{PACKAGE_NAMESPACE}.dbt",
+    "open-table-connector-artifacts": f"{PACKAGE_NAMESPACE}.artifacts",
+    "open-table-connector-officecli": f"{PACKAGE_NAMESPACE}.officecli",
+    "open-table-connector-mcp": f"{PACKAGE_NAMESPACE}.mcp",
     "open-table-connector": f"{PACKAGE_NAMESPACE}.cli",
 }
 _PROVIDER_MODULES = (
@@ -44,13 +47,53 @@ _DISTRIBUTION_MODULES = {
     "open-table-connector-google-sheets": "open_table_connector.google_sheets",
     "open-table-connector-feishu-bitable": "open_table_connector.feishu_bitable",
     "open-table-connector-maybe-sheet": "open_table_connector.maybe_sheet",
+    "open-table-connector-artifacts": "open_table_connector.artifacts",
+    "open-table-connector-officecli": "open_table_connector.officecli",
+    "open-table-connector-mcp": "open_table_connector.mcp",
 }
+
+
+def _entry_point_errors(wheels: tuple[Path, ...]) -> list[str]:
+    """Reject duplicate adapter names in the installed wheel set."""
+
+    groups: dict[tuple[str, str], list[str]] = {}
+    for wheel in wheels:
+        try:
+            with zipfile.ZipFile(wheel) as archive:
+                metadata = next(
+                    (
+                        name
+                        for name in archive.namelist()
+                        if name.endswith(".dist-info/entry_points.txt")
+                    ),
+                    None,
+                )
+                if metadata is None:
+                    continue
+                group = None
+                for line in archive.read(metadata).decode("utf-8").splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith("[") and line.endswith("]"):
+                        group = line[1:-1]
+                    elif group and "=" in line:
+                        name = line.split("=", 1)[0].strip()
+                        groups.setdefault((group, name), []).append(wheel.name)
+        except (OSError, zipfile.BadZipFile, UnicodeDecodeError) as exc:
+            return [f"{wheel.name}: entry point metadata unreadable ({exc})"]
+    return [
+        f"duplicate entry point {group}/{name}: {', '.join(sorted(wheels_for_name))}"
+        for (group, name), wheels_for_name in groups.items()
+        if len(wheels_for_name) > 1
+    ]
 
 
 def _cli_provider_matrix_check(wheels: tuple[Path, ...]) -> list[str]:
     """Verify CLI discovery remains usable with one provider wheel at a time."""
 
     errors: list[str] = []
+    errors.extend(_entry_point_errors(wheels))
     provider_distributions = (
         "open-table-connector-local-files",
         "open-table-connector-google-sheets",

@@ -13,3 +13,10 @@ MaybeSheet. Preserve formulas as explicit formula operations; ordinary writes
 keep strings beginning with `=` literal. A rejected request has no mutation.
 Partial or unknown results retain receipts and must be reconciled before retry.
 Use disposable targets for examples and verify persisted readback before delivery.
+
+For report artifacts, finish the authoritative Excelize write and independent
+readback before requesting an OfficeCLI HTML, PNG, or watch preview. Preview
+outputs are disposable and do not become the XLSX source of truth. Native
+DOCX/PPTX table exports are presentation snapshots, not live connector-backed
+tables. When using MCP, discover the operation first and pass typed request
+objects through the policy-gated `otc_inspect` or `otc_execute` tool.

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
+from open_table_connector.contract import PROVIDER_LOCAL_FILES, PROVIDER_MAYBE_SHEET
+
 
 def _freeze(value: Any) -> Any:
     if isinstance(value, Mapping):
@@ -90,9 +92,9 @@ class RichQualification:
 
 
 _QUALIFICATIONS = {
-    ("local_files", "image.insert"): RichQualification("local_files", "image.insert", {"type": "object"}, "qualified", ("local image roundtrip",)),
-    ("maybe_sheet", "image.insert"): RichQualification("maybe_sheet", "image.insert", {"type": "object"}, "blocked", (), "live disposable evidence required"),
-    ("maybe_sheet", "chart.create"): RichQualification("maybe_sheet", "chart.create", {"type": "object"}, "blocked", (), "no admitted protocol operation"),
+    (PROVIDER_LOCAL_FILES, "image.insert"): RichQualification(PROVIDER_LOCAL_FILES, "image.insert", {"type": "object"}, "qualified", ("local image roundtrip",)),
+    (PROVIDER_MAYBE_SHEET, "image.insert"): RichQualification(PROVIDER_MAYBE_SHEET, "image.insert", {"type": "object"}, "blocked", (), "live disposable evidence required"),
+    (PROVIDER_MAYBE_SHEET, "chart.create"): RichQualification(PROVIDER_MAYBE_SHEET, "chart.create", {"type": "object"}, "blocked", (), "no admitted protocol operation"),
 }
 
 

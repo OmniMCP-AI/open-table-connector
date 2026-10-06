@@ -8,6 +8,12 @@ import sys
 import zipfile
 from pathlib import Path
 
+_EXPECTED_DISTRIBUTIONS = {
+    "open-table-connector-artifacts",
+    "open-table-connector-officecli",
+    "open-table-connector-mcp",
+}
+
 
 def build_all_wheels(root: Path, dist: Path | None = None) -> tuple[Path, ...]:
     output = dist or (root / "dist")
@@ -22,7 +28,11 @@ def build_all_wheels(root: Path, dist: Path | None = None) -> tuple[Path, ...]:
 
 def smoke_wheels(dist: Path) -> list[str]:
     errors: list[str] = []
-    for wheel in sorted(dist.glob("*.whl")):
+    wheels = tuple(sorted(dist.glob("*.whl")))
+    found = {wheel.name.split("-", 1)[0].replace("_", "-") for wheel in wheels}
+    for missing in sorted(_EXPECTED_DISTRIBUTIONS - found):
+        errors.append(f"missing optional wheel: {missing}")
+    for wheel in wheels:
         try:
             with zipfile.ZipFile(wheel) as archive:
                 names = archive.namelist()

@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-from open_table_connector.contract import TargetSelector
+from open_table_connector.contract import SCHEME_FILE, TargetSelector
 from open_table_connector.spreadsheets import WorkbookSnapshot
 
 from .result import CommitState, ErrorCode, ErrorInfo, OperationResult, Outcome, VerificationState
@@ -22,7 +22,7 @@ def capture_workbook_snapshot(client, target: TargetSelector | str, directory) -
     parsed = urlsplit(selector.uri)
     data: bytes
     revision = None
-    if parsed.scheme == "file":
+    if parsed.scheme == SCHEME_FILE:
         path = Path(unquote(parsed.path))
         try:
             data = path.read_bytes()
