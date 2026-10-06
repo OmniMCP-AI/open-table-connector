@@ -162,8 +162,8 @@ def cli_reference() -> str:
 
 
 def operation_reference() -> str:
-    from open_table_connector.spreadsheets.operation_catalog import (
-        operation_catalog,  # type: ignore[import-not-found]
+    from open_table_connector.spreadsheets.operation_catalog import (  # type: ignore[import-not-found]
+        operation_catalog,
     )
 
     descriptors = sorted(operation_catalog(), key=lambda item: (item.operation_id, item.version))
