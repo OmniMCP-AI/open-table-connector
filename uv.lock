@@ -5,6 +5,7 @@ requires-python = ">=3.11, <3.15"
 [manifest]
 members = [
     "open-table-connector",
+    "open-table-connector-artifacts",
     "open-table-connector-conformance",
     "open-table-connector-contract",
     "open-table-connector-dbt",
@@ -13,6 +14,7 @@ members = [
     "open-table-connector-google-sheets",
     "open-table-connector-local-files",
     "open-table-connector-maybe-sheet",
+    "open-table-connector-officecli",
     "open-table-connector-postgres",
     "open-table-connector-process",
     "open-table-connector-sdk",
@@ -280,6 +282,17 @@ requires-dist = [
 provides-extras = ["local", "providers"]
 
 [[package]]
+name = "open-table-connector-artifacts"
+version = "0.1.0"
+source = { editable = "packages/artifacts" }
+dependencies = [
+    { name = "open-table-connector-contract" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "open-table-connector-contract", editable = "packages/contract" }]
+
+[[package]]
 name = "open-table-connector-conformance"
 version = "0.1.0"
 source = { editable = "packages/conformance" }
@@ -436,6 +449,17 @@ requires-dist = [
     { name = "polars", specifier = ">=1,<2" },
     { name = "pyarrow", specifier = ">=14,<24" },
 ]
+
+[[package]]
+name = "open-table-connector-officecli"
+version = "0.1.0"
+source = { editable = "packages/officecli" }
+dependencies = [
+    { name = "open-table-connector-artifacts" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "open-table-connector-artifacts", editable = "packages/artifacts" }]
 
 [[package]]
 name = "open-table-connector-postgres"
