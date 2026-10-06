@@ -1,5 +1,10 @@
 # Error codes
 
+Use the [CLI manual](../user-guide/cli-manual.md) for exit status and retry
+behavior, and the [SDK manual](../user-guide/sdk-manual.md) for
+`OperationResult`/`OTCError` handling. This table is the stable machine-facing
+code reference.
+
 Errors are stable structured evidence. CLI callers receive one JSON object on
 stderr; SDK callers receive an `OTCError` whose `result.error` contains the
 code, safe message, and safe details.

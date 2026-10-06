@@ -1,5 +1,10 @@
 # Compatibility
 
+The [components manual](../user-guide/components.md) explains package and
+provider boundaries; the [CLI manual](../user-guide/cli-manual.md) and [SDK
+manual](../user-guide/sdk-manual.md) show the supported entry points. This page
+records version and capability compatibility constraints.
+
 ## Runtime
 
 | Component | Supported boundary |
