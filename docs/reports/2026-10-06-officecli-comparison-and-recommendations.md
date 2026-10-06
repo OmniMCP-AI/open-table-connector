@@ -114,7 +114,7 @@ otc import --from orders.csv --to gsheets://ID/Orders --if-exists replace
 
 Keep `--from` and `--to`: they express direction clearly in a connector product. Keep `--to-format` separate from `--output-format`: destination codec and stdout representation are different choices. Existing CLI import conflict policies also should not be casually equated with SDK create-only materialization semantics. [T1, T3, T4]
 
-Local CSV and workbook endpoints remain bare-path conveniences normalized to canonical `file://` URLs. MaybeSheet remains a canonical HTTPS document URL. Do not introduce `csv://`, `managed+csv://`, `excel://`, `xlsx://`, or `maybe://` examples or aliases.
+Local CSV and workbook endpoints remain bare-path conveniences normalized to canonical `file://` URLs. MaybeSheet remains a canonical HTTPS document URL. Do not introduce the retired local-format or provider URI aliases.
 
 ### Add a small ergonomic spreadsheet layer
 
