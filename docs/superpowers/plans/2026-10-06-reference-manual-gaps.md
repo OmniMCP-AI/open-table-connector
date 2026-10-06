@@ -189,21 +189,21 @@ git commit -m "feat: wire MCP tools to an explicit SDK host"
 
 **Interfaces:** Extend `OfficeCliCapability` with renderer/browser modes and `check_officecli(binary, renderer=...)`. `OfficeCliAdapter.render(snapshot_path, request)` must either return bounded output evidence or a capability error. `ArtifactAccess.watch(WatchRequest)` must preserve owned session identity, snapshot hash, state, URL, editability, and discard persistence.
 
-- [ ] **Step 1: Write fake-runtime and lifecycle tests**
+- [x] **Step 1: Write fake-runtime and lifecycle tests**
 
 Add tests for missing binary/renderer, nonblank HTML/PNG fake output, source hash immutability, asset-path rejection, occupied-port selection, stale PID protection, crash status, refresh replacement, and stop-without-publish.
 
-- [ ] **Step 2: Run artifact/runtime tests to verify failure**
+- [x] **Step 2: Run artifact/runtime tests to verify failure**
 
 Run: `uv run --all-packages pytest -q packages/officecli/tests packages/sdk/tests/test_artifact_views.py packages/sdk/tests/test_preview_sessions.py`
 
 Expected: renderer remains an unconditional unavailable error and watch records lack runtime state.
 
-- [ ] **Step 3: Implement bounded runtime adapter state**
+- [x] **Step 3: Implement bounded runtime adapter state**
 
 Use argv-only subprocess execution with capped output, owned disposable snapshot paths, source hash before/after, loopback-only URLs, process creation identity, and explicit capability errors. Never edit or publish the authoritative XLSX and never poll in the background.
 
-- [ ] **Step 4: Run focused artifact tests and commit**
+- [x] **Step 4: Run focused artifact tests and commit**
 
 Run the tests from Step 2 plus `uv run --all-packages pytest -q packages/artifacts/tests`.
 
