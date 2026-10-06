@@ -1,11 +1,13 @@
 # OTC CLI and Office Artifacts: P0-P2 Specification
 
 Date: 2026-10-06 (Asia/Shanghai).
-Status: proposed specification for review; no implementation or release acceptance is implied.
-OTC source baseline: `0ef07b2327800375c7782eb1d4dc18a132cd1e2e`.
+Status: implemented in PR #8; source-level acceptance is recorded, with live
+OfficeCLI/browser and MaybeSheet gates explicitly pending.
+OTC source baseline: `0ef07b2327800375c7782eb1d4dc18a132cd1e2e`; merged source:
+`e37bb5027d8475dace0322b1110af71b4c4a9476`.
 Research: [OfficeCLI comparison and recommendations](../../reports/2026-10-06-officecli-comparison-and-recommendations.md).
 
-Implementation: [P0-P2 plan index and workstreams](../plans/2026-10-06-cli-and-office-artifacts-p0-p2.md). Plans are prepared; execution has not started.
+Implementation: [P0-P2 plan index and workstreams](../plans/2026-10-06-cli-and-office-artifacts-p0-p2.md). The workstreams are executed and their status is recorded in the acceptance ledger.
 
 ## 1. Objective and Decisions
 
@@ -23,7 +25,10 @@ This specification selects an additive design: shared operation discovery, thin 
 
 The scope spans independent subsystems. Sections 5-11 are workstream specifications with separate acceptance gates; section 13 establishes dependencies. Follow-on implementation plans should be split by workstream rather than making one oversized change.
 
-All new command/API/schema names below are proposed normative targets, not claims about existing commands. Existing public commands and result contracts remain authoritative until implementation is released.
+The command/API/schema names below are the normative target and are now
+implemented where the acceptance ledger marks them complete. Existing public
+commands and result contracts remain authoritative; unsupported or runtime-
+dependent paths continue to return explicit capability results.
 
 ## 2. Scope and Traceability
 
@@ -378,7 +383,12 @@ Run relevant focused suites per workstream, then package-boundary/independence a
 
 ## 14. Current Evidence and Implementation Handoff
 
-The research recorded 37 focused existing CLI tests passing in a clean frozen environment. That is baseline evidence only; it does not validate any feature proposed here. Local Excelize object method presence was inspected, not an object round-trip qualification. OfficeCLI was source-reviewed, not run. MaybeSheet's current adapter/protocol was inspected; no new live acceptance or server backend inspection occurred.
+The research recorded 37 focused existing CLI tests passing in a clean frozen
+environment. The implementation and release acceptance are recorded in the
+[P0-P2 acceptance report](../../reports/2026-10-06-p0-p2-acceptance.md). Local
+Excelize object method presence is not treated as round-trip qualification;
+OfficeCLI was source-reviewed but its live runtime was unavailable, and
+MaybeSheet live acceptance remains gated by authorized disposable credentials.
 
 Before implementing an object family, freeze its concrete request/option schema from existing engine APIs and current provider commands, then test the common semantics and provider restrictions. Do not claim or fill a missing capability by analogy with another engine/provider. This qualification is part of RICH-1/RICH-2, not an unbounded engine-development task.
 

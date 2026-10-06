@@ -15,8 +15,11 @@ Partial or unknown results retain receipts and must be reconciled before retry.
 Use disposable targets for examples and verify persisted readback before delivery.
 
 For report artifacts, finish the authoritative Excelize write and independent
-readback before requesting an OfficeCLI HTML, PNG, or watch preview. Preview
-outputs are disposable and do not become the XLSX source of truth. Native
-DOCX/PPTX table exports are presentation snapshots, not live connector-backed
-tables. When using MCP, discover the operation first and pass typed request
-objects through the policy-gated `otc_inspect` or `otc_execute` tool.
+readback before requesting an OfficeCLI HTML, PNG, or watch preview through the
+SDK artifact contract. The current CLI exposes the contract but returns an
+explicit capability error for view/watch until a qualified renderer is
+configured. Preview outputs are disposable and do not become the XLSX source
+of truth. Native DOCX/PPTX table exports are presentation snapshots, not live
+connector-backed tables. When using MCP, discover the operation first and pass
+typed request objects through the policy-gated `otc_inspect` or `otc_execute`
+tool.

@@ -1,8 +1,11 @@
 # OfficeCLI and OTC: CLI Design Research and Recommendations
 
-Research date: 2026-10-06 (Asia/Shanghai). Status: research and proposed direction, not an approved implementation specification.
+Research date: 2026-10-06 (Asia/Shanghai). Status: research baseline and
+recommendations implemented through the P0-P2 surface; live OfficeCLI/browser
+and MaybeSheet acceptance gates remain pending.
 
-Follow-on: [P0-P2 specification](../superpowers/specs/2026-10-06-cli-and-office-artifacts-p0-p2-design.md), proposed for review.
+Follow-on: [P0-P2 specification](../superpowers/specs/2026-10-06-cli-and-office-artifacts-p0-p2-design.md)
+and [acceptance report](2026-10-06-p0-p2-acceptance.md).
 
 ## 1. Recommendation
 
@@ -126,7 +129,9 @@ otc spreadsheet operation --uri file:///absolute/path/report.xlsx \
   --arguments '{"address":"A1:F1","bold":true}'
 ```
 
-**Proposed syntax only; none of the following additions exists today:**
+The following was the proposed syntax at research time. The implemented
+shortcuts are now available; see the [CLI reference](../user-guide/cli.md) for
+the current parser and capability limits:
 
 ```sh
 otc spreadsheet style --uri file:///absolute/path/report.xlsx \
@@ -402,7 +407,10 @@ Describe support as tuples of Excelize binding version, operation, options, and 
 
 ### 9.6 Public surface and result contract
 
-The following are **proposed OTC commands, not implemented commands**. A separate `artifact` namespace makes the output-document scope explicit and avoids overloading table materialization:
+The following section records the original proposed OTC commands. The released
+subset uses the separate `artifact` namespace and is documented in the [CLI
+reference](../user-guide/cli.md); renderer-dependent view/watch paths remain
+capability-gated:
 
 ```sh
 # Export an OTC data snapshot as editable native tables.

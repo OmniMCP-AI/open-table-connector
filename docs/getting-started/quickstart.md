@@ -70,3 +70,26 @@ provider I/O where possible.
 Continue with [First time series](first-timeseries.md) for the typed temporal
 API, [OTC use cases](../user-guide/use-cases.md) for complete workflows, or
 [CLI reference](../user-guide/cli.md) for all commands.
+
+## Optional workbook and artifact paths
+
+After the basic table workflow is working, use static discovery before a
+workbook mutation:
+
+```console
+otc help spreadsheet range.style --output-format json
+otc capabilities --uri file:///absolute/path/report.xlsx --output-format json
+```
+
+Buffered workbook changes use `otc spreadsheet` and commit through the same
+verified SDK session. Local rich XLSX creation is explicit:
+
+```console
+otc spreadsheet operation --uri file:///absolute/path/report.xlsx \
+  --create --profile rich-artifact/1.0 --operation image.insert \
+  --sheet Report --arguments '{"content_base64":"...","mime_type":"image/png","anchor":"B2"}'
+```
+
+Install the optional artifact packages when a native DOCX/PPTX snapshot is
+needed. OfficeCLI is isolated from XLSX authoring, and renderer-dependent
+HTML/PNG/watch views remain capability-gated until their runtime is available.
