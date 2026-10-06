@@ -148,25 +148,25 @@ git commit -m "fix: finalize generic spreadsheet operation sessions"
 
 **Interfaces:** `create_server(*, host: MpcHost | None = None, policy: AccessPolicy | None = None) -> FastMCP` accepts an explicit host exposing `client`. `otc_inspect` and `otc_execute` route through `execute_operation(host.client, request, ExecutionOptions)` after catalog and policy validation. `main()` remains fail-closed without `OTC_MCP_CONFIG` and may load a host from a deployment-owned adapter.
 
-- [ ] **Step 1: Write failing official-client and host tests**
+- [x] **Step 1: Write failing official-client and host tests**
 
 Add a fake host with a local `Client`, verify official MCP initialize/list exposes exactly three tools, call `otc_discover`, call read-only `otc_inspect`, call typed local `otc_execute`, and assert no-host inspect/execute return configuration errors. Add policy rejection tests for credentials, unauthorized roots/origins, and unknown operations.
 
-- [ ] **Step 2: Run MCP tests to verify failure**
+- [x] **Step 2: Run MCP tests to verify failure**
 
 Run: `uv run --all-packages pytest -q packages/mcp/tests/test_tools.py packages/mcp/tests/test_stdio.py packages/mcp/tests/test_policy.py`
 
 Expected: host-backed inspect/execute fail with the current hard-coded configuration response.
 
-- [ ] **Step 3: Implement host injection and shared dispatch**
+- [x] **Step 3: Implement host injection and shared dispatch**
 
 Add the minimal host protocol/dataclass, pass it into the three closures, reuse `OperationCatalog`, `OperationRequest.from_wire`, `authorize`, and `ExecutionOptions`, and preserve structured `isError` result mapping. Do not add tools or accept shell/module/credential fields.
 
-- [ ] **Step 4: Run MCP tests and official SDK smoke**
+- [x] **Step 4: Run MCP tests and official SDK smoke**
 
 Run the tests from Step 2 and the repository’s official-client smoke fixture. Expected: exactly three tools, successful discovery/host-backed read/execute, and fail-closed no-host behavior.
 
-- [ ] **Step 5: Commit MCP host wiring**
+- [x] **Step 5: Commit MCP host wiring**
 
 ```bash
 git add packages/mcp/src packages/mcp/tests

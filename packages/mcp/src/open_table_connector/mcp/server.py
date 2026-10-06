@@ -5,15 +5,24 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
 from .policy import load_policy
-from .tools import otc_discover
+from .policy import AccessPolicy
+from .tools import otc_discover, otc_execute, otc_inspect
 
 
-def create_server() -> FastMCP:
+@dataclass(frozen=True, slots=True)
+class MCPHost:
+    """Explicit SDK host supplied by an embedding deployment."""
+
+    client: object
+
+
+def create_server(*, host: MCPHost | None = None, policy: AccessPolicy | None = None) -> FastMCP:
     """Build a fresh server with exactly the three public OTC tools."""
 
     server = FastMCP(
@@ -35,6 +44,8 @@ def create_server() -> FastMCP:
         structured_output=True,
     )
     def inspect(request: dict[str, object]) -> dict[str, object]:
+        if host is not None:
+            return otc_inspect(request, host.client, policy)
         return {
             "isError": True,
             "structuredContent": {
@@ -49,6 +60,8 @@ def create_server() -> FastMCP:
         structured_output=True,
     )
     def execute(request: dict[str, object]) -> dict[str, object]:
+        if host is not None:
+            return otc_execute(request, host.client, policy)
         return {
             "isError": True,
             "structuredContent": {
@@ -60,7 +73,7 @@ def create_server() -> FastMCP:
     return server
 
 
-def handle_request(request):
+def handle_request(request, *, host: MCPHost | None = None, policy: AccessPolicy | None = None):
     if not isinstance(request, dict) or request.get("method") != "tools/call":
         return {"isError": True, "structuredContent": {"code": "invalid_request", "message": "expected tools/call"}}
     params = request.get("params")
@@ -70,6 +83,9 @@ def handle_request(request):
     arguments = params.get("arguments", {})
     if name == "otc_discover":
         return otc_discover(arguments)
+    if host is not None:
+        tool = otc_inspect if name == "otc_inspect" else otc_execute
+        return tool(arguments, host.client, policy)
     return {"isError": True, "structuredContent": {"code": "configuration", "message": "MCP server requires an SDK host"}}
 
 
@@ -87,4 +103,4 @@ def main() -> int:
     return 0
 
 
-__all__ = ["create_server", "handle_request", "main"]
+__all__ = ["MCPHost", "create_server", "handle_request", "main"]
