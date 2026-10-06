@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import PurePosixPath
@@ -69,7 +69,7 @@ class ViewRequest:
     source: TargetSelector
     mode: str
     destination_uri: str | None = None
-    selector: Mapping[str, object] = MappingProxyType({})
+    selector: Mapping[str, object] = field(default_factory=lambda: MappingProxyType({}))
 
     def __post_init__(self):
         if self.mode not in {"html", "screenshot", "text", "outline", "stats", "issues"}:
@@ -105,7 +105,7 @@ class ViewValue:
     outputs: tuple[Mapping[str, object], ...]
     source_uri: str
     source_hash: str
-    renderer: Mapping[str, object] = MappingProxyType({})
+    renderer: Mapping[str, object] = field(default_factory=lambda: MappingProxyType({}))
 
 
 @dataclass(frozen=True, slots=True)

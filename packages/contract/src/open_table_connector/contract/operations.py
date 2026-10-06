@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
 
@@ -101,9 +101,9 @@ class OperationDescriptor:
     arguments_schema: Mapping[str, Any]
     capability: str
     effects: tuple[str, ...]
-    limits: Mapping[str, Any] = MappingProxyType({})
+    limits: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
     examples: tuple[Mapping[str, Any], ...] = ()
-    result_schema: Mapping[str, Any] = MappingProxyType({})
+    result_schema: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
 
     def __post_init__(self) -> None:
         for name in ("schema", "operation_id", "version", "target_kind", "capability"):

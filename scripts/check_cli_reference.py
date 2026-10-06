@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from importlib import import_module
 from pathlib import Path
+from typing import Any, cast
 
 
 def check_cli_reference(root: Path) -> list[str]:
-    from open_table_connector.cli.__main__ import build_parser
+    build_parser = cast(Any, import_module("open_table_connector.cli.__main__").build_parser)
 
     parser = build_parser()
     actions = parser._subparsers._group_actions[0].choices

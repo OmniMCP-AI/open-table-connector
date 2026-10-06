@@ -22,6 +22,7 @@ def read_json_input(source: str, *, stdin: BinaryIO | None = None, max_bytes: in
         raise JsonInputError("could not open JSON input") from exc
     if source == "-" and stream is None:
         raise JsonInputError("stdin must be supplied explicitly for JSON input")
+    assert stream is not None
     try:
         data = stream.read(max_bytes + 1)
     except OSError as exc:
