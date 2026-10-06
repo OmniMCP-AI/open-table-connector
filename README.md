@@ -39,7 +39,17 @@ The main workspace packages are:
 - `open-table-connector-process`: the pinned local framed transport used by
   sister-product bindings; and
 - `open-table-connector-local-files`: concrete `csv`, `excel`, and `md`
-  read/inspect connectors plus the `local_files` compatibility facade.
+  read/inspect connectors plus the `local_files` compatibility facade;
+- `open-table-connector`: the `otc` CLI, static discovery, bounded stdin/file
+  input, spreadsheet shortcuts, and recipe commands;
+- `open-table-connector-spreadsheets`: versioned workbook operation contracts,
+  rich-object qualification, snapshots, and layout recipes;
+- `open-table-connector-artifacts`: neutral DOCX/PPTX export, view, and watch
+  contracts for optional artifact adapters;
+- `open-table-connector-officecli`: the optional OfficeCLI adapter for native
+  DOCX/PPTX table artifacts and bounded presentation views; and
+- `open-table-connector-mcp`: the optional typed MCP stdio adapter exposing
+  discovery, inspection, and execution tools.
 
 The `open_table_connector` Python namespace is PEP 420 based; framework packages
 are never dependencies of the neutral packages.
@@ -78,6 +88,21 @@ The CLI is the quickest path for ordinary table movement, but it is now meant
 to be a thin wrapper over the SDK. The Python SDK is the primary application
 surface for normalized table operations, relational SQL lite, temporal SQL
 lite, and bounded time-series operations.
+
+The CLI also exposes progressive operation discovery and buffered workbook
+commands. Use `otc help` for a versioned operation without opening a target and
+`otc capabilities` for endpoint-specific support. The `otc spreadsheet`
+surface supports bounded reads, styles, formats, worksheet changes, verified
+publication, rich-artifact image operations, and observed layout recipes. Rich
+XLSX authoring uses the existing Excelize-backed local provider; OfficeCLI is
+never used as an XLSX writer.
+
+Optional artifact commands are installed separately. OfficeCLI can create
+native DOCX/PPTX table snapshots from qualified sources. HTML, PNG, text,
+outline, stats, issues, and watch are SDK-level view contracts; the CLI returns
+an explicit capability error for view/watch until a qualified OfficeCLI binary
+and renderer are configured. The optional `otc-mcp` package exposes the typed
+`otc_discover`, `otc_inspect`, and `otc_execute` tools over MCP stdio.
 
 ## Python SDK
 
@@ -221,6 +246,11 @@ otc read --from file:///absolute/path/orders.xlsx --sheet Orders
 otc read --from md:///absolute/path/orders.md --output-format json
 otc read --from gsheets://SPREADSHEET/Orders --output-format json
 otc read --from https://www.maybe.ai/docs/spreadsheets/d/DOCUMENT --target Orders --output-format json
+otc help spreadsheet image.insert --output-format json
+otc capabilities --uri file:///absolute/path/report.xlsx --output-format json
+otc spreadsheet read --uri file:///absolute/path/report.xlsx --sheet Report --range A1:B2
+otc spreadsheet recipe export --uri file:///absolute/path/report.xlsx --selectors selectors.json
+otc artifact export --from orders.csv --to report.docx
 ```
 
 Use `md://` for explicit Markdown routing. Bare paths and `file://` URIs route
@@ -270,9 +300,10 @@ is organized as:
 - [Getting started](docs/getting-started/) — installation, first project, and
   first time-series query.
 - [User guide](docs/user-guide/) — concepts, use cases, configuration, add-ons,
-  ingestion, resolution, temporal SQL, time-series storage, evidence, and CLI.
+  ingestion, resolution, temporal SQL, time-series storage, evidence, CLI,
+  spreadsheet operations, and agent workflows.
 - [Reference](docs/reference/) — public Python API, configuration fields,
-  errors, and compatibility boundaries.
+  errors, compatibility boundaries, and artifact/spreadsheet readiness.
 - [Operations](docs/operations/) — deployment, security, releases, and
   troubleshooting.
 
@@ -285,6 +316,16 @@ content is maintained in the structured guide.
   — deferred bridge seam after the Python SDK stabilizes.
 - [Use cases](docs/user-guide/use-cases.md) — three complete OTC workflows for
   local exports, shared-sheet imports, and bounded temporal analysis.
+- [Spreadsheet operations](docs/user-guide/spreadsheet-operations.md) —
+  buffered workbook sessions, verified publication, rich XLSX qualification,
+  and recipe replay.
+- [Agent workflows](docs/user-guide/agent-workflows.md) — discovery-first
+  CLI, evidence, artifact, and MCP workflows.
+- [OfficeCLI comparison and recommendations](docs/reports/2026-10-06-officecli-comparison-and-recommendations.md)
+  — detailed command-style comparison and integration boundaries.
+- [Office artifact readiness](docs/office-artifact-readiness.md) and
+  [rich spreadsheet readiness](docs/spreadsheet-rich-readiness.md) — current
+  qualified subsets and explicit runtime gates.
 - [Additional demos](docs/demos.md) — more CSV/JSONL/Excel, temporal, SQLite,
   PostgreSQL, and `otc-process` examples.
 - [Portable time-series design](docs/superpowers/specs/2026-08-29-portable-time-series-storage-design.md)

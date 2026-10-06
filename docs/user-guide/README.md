@@ -10,3 +10,5 @@
 - [TimescaleDB](timescaledb.md)
 - [Evidence and lineage](evidence-and-lineage.md)
 - [CLI](cli.md)
+- [Spreadsheet operations](spreadsheet-operations.md)
+- [Agent workflows](agent-workflows.md)

@@ -48,6 +48,27 @@ the same string remains literal. Table writes create or replace a whole
 workbook, so use Spreadsheet range operations for in-place edits that preserve
 existing formulas and layout.
 
+## Rich XLSX profile
+
+Local rich XLSX operations use the same Excelize-backed provider and existing
+Excelize object capabilities. OfficeCLI is not involved. Select the profile
+explicitly when creating a workbook:
+
+```python
+book = client.workbook.create(
+    "file:///absolute/path/report.xlsx",
+    profile="rich-artifact/1.0",
+)
+```
+
+The qualified rich subset currently covers PNG/JPEG image insertion, exact
+serialized image observation, and index-based deletion while preserving other
+qualified workbook parts. Image arguments retain original bytes, MIME type,
+and anchor; unsupported size/object options fail before dispatch. Use
+`book.capabilities` or `otc capabilities` before relying on a richer object
+family. MaybeSheet sheet-mode shares the contract but requires separate live
+evidence before it is advertised as qualified.
+
 ## Unified workbook sessions
 
 `client.workbook.create("file:///absolute/path/report.xlsx")` creates an

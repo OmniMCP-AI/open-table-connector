@@ -55,15 +55,46 @@ human-readable message text.
 ## Optional artifact and MCP packages
 
 Install `open-table-connector-artifacts` with the adapter you need. The
-OfficeCLI adapter can create native DOCX/PPTX tables and request HTML, PNG,
-text, outline, stats, issues, or disposable watch previews when an OfficeCLI
-binary and its renderer prerequisites are available. It never authors or
-resaves the authoritative XLSX.
+OfficeCLI adapter can create native DOCX/PPTX table snapshots. The neutral SDK
+also defines HTML, PNG, text, outline, stats, issues, and disposable watch view
+contracts, but the current CLI intentionally returns
+`unsupported_capability` for `artifact view` and `artifact watch` until a
+qualified OfficeCLI binary and renderer are configured. These views operate on
+owned disposable snapshots and never become the authoritative workbook.
 
-Rich XLSX operations use the existing Excelize capabilities through local
-files and MaybeSheet sheet-mode. Images and other objects are advertised only
-when the selected provider exposes the operation and independent readback is
-available. Unsupported objects return an explicit capability result.
+```console
+otc artifact export --from orders.csv --to report.docx
+```
+
+The export adapter accepts qualified CSV sources and DOCX/PPTX destinations.
+Legacy `.doc`, `.ppt`, and `.xls` destinations are rejected. OfficeCLI is not
+an XLSX authoring backend and is never used as a fallback for rich spreadsheets.
+
+Rich XLSX operations use existing Excelize capabilities through local files;
+MaybeSheet sheet-mode retains the same contract but remains live-evidence
+gated. The qualified local subset currently covers PNG/JPEG image insertion,
+observation, and index deletion with independent serialized readback. Other
+object families are capability-gated until their preservation and readback
+evidence exists. Use `--profile rich-artifact/1.0` explicitly when creating a
+local workbook for this surface.
+
+```console
+otc spreadsheet operation --uri file:///absolute/path/report.xlsx \
+  --profile rich-artifact/1.0 --operation image.insert --sheet Report \
+  --arguments '{"content_base64":"...","mime_type":"image/png","anchor":"B2"}'
+```
+
+Layout recipes use the closed `otc.spreadsheet-recipe/1.0` envelope. Exported
+recipes contain observed layout operations only; they do not contain values,
+formulas, or image bytes and they reject unsupported properties before
+dispatch.
+
+```console
+otc spreadsheet recipe export --uri file:///absolute/path/report.xlsx \
+  --selectors selectors.json
+otc spreadsheet apply --uri file:///absolute/path/report.xlsx \
+  --spec recipe.json --dry-run
+```
 
 The optional `open-table-connector-mcp` package exposes exactly three typed
 tools: `otc_discover`, `otc_inspect`, and `otc_execute`. It uses the official

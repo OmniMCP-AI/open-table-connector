@@ -184,6 +184,54 @@ for `preserve`. `replace-latest` additionally requires an ingestion-time field
 and a complete replacement key. These checks are applied before a portable
 plan is constructed and again by the evaluator.
 
+## Workbook, rich XLSX, and recipes
+
+The optional workbook facade exposes buffered sessions for local `.xlsx` files
+and MaybeSheet sheet-mode. Local sessions support bounded reads, writes, styles,
+formats, worksheet changes, formulas, independent verification, and retained
+receipts. Creation is explicit about its profile:
+
+```python
+book = client.workbook.create(
+    "file:///absolute/report.xlsx",
+    profile="rich-artifact/1.0",
+)
+```
+
+`literal-artifact/1.0` and `general/1.0` retain their existing semantics.
+`rich-artifact/1.0` selects the existing Excelize-backed rich writer; it does
+not install or call OfficeCLI. The currently qualified local rich subset is
+PNG/JPEG image insertion, observation, and deletion with independent serialized
+readback. Providers advertise unsupported or unproven object families as
+capability results instead of silently dropping them.
+
+Observed layout recipes use `otc.spreadsheet-recipe/1.0` and contain layout
+operations only. They exclude values, formulas, and image bytes, recompute
+requirements from observed operations, and reject unsupported properties before
+dispatch:
+
+```python
+from open_table_connector.sdk.recipes import apply_recipe, export_recipe
+
+recipe_result = export_recipe(client, uri, selectors)
+applied = apply_recipe(client, uri, recipe_result.require_value(), options)
+```
+
+## Optional artifacts and MCP
+
+`client.artifacts()` is a lazy facade over optional artifact adapters. The
+OfficeCLI adapter can export native DOCX/PPTX table snapshots from qualified
+sources. It never authors XLSX. The SDK also carries bounded HTML, PNG, text,
+outline, stats, issues, and disposable watch contracts; renderer-dependent
+operations return an explicit capability result until their runtime is
+configured.
+
+The separate `open-table-connector-mcp` distribution exposes exactly three
+typed tools over official MCP stdio: `otc_discover`, `otc_inspect`, and
+`otc_execute`. Deployment requires an explicit fail-closed `OTC_MCP_CONFIG`
+policy, and requests cannot contain shell commands, arbitrary imports, or
+credential values.
+
 ## CLI relationship
 
 The `otc` CLI is a thin parser and renderer over this SDK. It exists to

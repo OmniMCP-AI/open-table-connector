@@ -46,3 +46,16 @@ Google Sheets, Feishu Bitable, Maybe Sheet, and direct Excel expose different
 capability sets. Check the provider README and `otc list` before relying on
 calculated-value reads, recalculation, field formulas, or temporal lifecycle
 operations.
+
+## Optional artifact and MCP add-ons
+
+Install `open-table-connector-artifacts` with
+`open-table-connector-officecli` when a workflow needs native DOCX/PPTX table
+snapshots. OfficeCLI is isolated from XLSX authoring: rich local XLSX uses the
+existing Excelize provider and MaybeSheet sheet-mode is advertised only when
+its operation and evidence gates pass.
+
+Install `open-table-connector-mcp` separately to run the typed MCP stdio
+adapter. It exposes `otc_discover`, `otc_inspect`, and `otc_execute` under the
+fail-closed `OTC_MCP_CONFIG` policy. The adapter does not accept shell commands,
+arbitrary imports, or credential values in requests.

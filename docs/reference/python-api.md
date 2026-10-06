@@ -94,3 +94,24 @@ observation. Its coverage, source references, native dimensions and
 workbook. A write acknowledgment never substitutes for readback. Providers
 without verified read commands return `unsupported_capability` rather than
 silently dropping a request.
+
+## Workbook, recipe, and artifact APIs
+
+`client.workbook(...)` and `client.workbook.create(...)` expose the buffered
+workbook session for local `.xlsx` files and qualified MaybeSheet sheet-mode
+targets. Local creation profiles are `literal-artifact/1.0`, `general/1.0`, and
+`rich-artifact/1.0`; the rich profile uses existing Excelize capabilities only.
+The currently qualified local rich subset is PNG/JPEG image insertion,
+observation, and deletion with independent serialized readback. Unsupported
+objects return a capability error.
+
+Layout recipes are parsed with `spreadsheets.parse_recipe` and replayed through
+`sdk.recipes.export_recipe` / `apply_recipe`. The envelope is
+`otc.spreadsheet-recipe/1.0`; recipes contain observed layout operations and
+requirements, not cell values, formulas, or image bytes.
+
+`client.artifacts()` is an optional lazy facade. With the artifact and OfficeCLI
+packages installed it can export native DOCX/PPTX table snapshots. Renderer-
+dependent HTML, PNG, text, outline, stats, issues, and watch operations remain
+capability-gated until a qualified OfficeCLI runtime is available, and their
+outputs are disposable snapshots.
