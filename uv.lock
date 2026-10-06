@@ -498,6 +498,7 @@ name = "open-table-connector-sdk"
 version = "0.1.0"
 source = { editable = "packages/sdk" }
 dependencies = [
+    { name = "jsonschema" },
     { name = "open-table-connector-contract" },
     { name = "open-table-connector-formulas" },
     { name = "polars" },
@@ -507,6 +508,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "jsonschema", specifier = ">=4,<5" },
     { name = "open-table-connector-contract", editable = "packages/contract" },
     { name = "open-table-connector-formulas", editable = "packages/formulas" },
     { name = "polars", specifier = ">=1,<2" },

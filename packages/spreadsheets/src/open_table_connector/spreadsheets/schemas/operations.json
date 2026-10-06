@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "otc.operation/1.0",
+  "type": "object",
+  "required": ["schema", "operation_id", "version", "target_kind", "arguments_schema", "capability", "effects", "limits", "examples", "result_schema"],
+  "additionalProperties": false
+}

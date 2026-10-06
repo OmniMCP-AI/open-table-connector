@@ -22,6 +22,7 @@ from open_table_connector.contract import (
 )
 
 from .commands import run_command
+from .discovery_commands import run_discovery_command
 from .output import emit_error
 from .registry import build_default_registry
 from .version import get_version_label
@@ -144,6 +145,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     import_parser = subparsers.add_parser("import", help="import a table into a connector")
     _add_options(import_parser, require_from=True, require_to=True)
+    help_parser = subparsers.add_parser("help", help="describe a registered operation")
+    help_parser.add_argument("namespace")
+    help_parser.add_argument("operation_id", nargs="?")
+    help_parser.add_argument("--output-format", choices=(PROVIDER_JSON, FORMAT_TABLE), default=FORMAT_TABLE)
+    capabilities_parser = subparsers.add_parser("capabilities", help="resolve endpoint capabilities")
+    capabilities_parser.add_argument("--uri", required=True)
+    capabilities_parser.add_argument("--sheet")
+    capabilities_parser.add_argument("--output-format", choices=(PROVIDER_JSON, FORMAT_TABLE), default=FORMAT_TABLE)
     from .spreadsheet_commands import add_parser
 
     add_parser(subparsers)
@@ -162,6 +171,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return int(error.code)
 
     try:
+        if args.command == "help":
+            return run_discovery_command(args, sys.stdout, sys.stderr)
+
         from .credentials import parse_credential_overrides
 
         overrides = parse_credential_overrides(getattr(args, "credential_key", ()))

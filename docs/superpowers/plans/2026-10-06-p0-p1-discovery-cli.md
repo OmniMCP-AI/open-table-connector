@@ -42,12 +42,12 @@ All [index constraints and interfaces](2026-10-06-cli-and-office-artifacts-p0-p2
 
 The spreadsheet catalog starts with every currently dispatched operation and read action. `execute_operation` validates a request and enters the existing WorkbookSession for writes/observations. Initially register only those current operations; future tasks register qualified ones. Capability resolution uses existing configured SDK routing and provider bindings, never creates a workbook. Missing endpoint data produces unknown/live-error evidence, not synthesized support. Add `otc help ... --output-format json|table` and `otc capabilities ... --output-format json|table` through this API.
 
-- [ ] Add `test_help_does_not_activate_provider`: fake provider factory/credential resolver raises if called; help succeeds. Add `test_duplicate_schema_registration_rejected` and `test_absent_spreadsheet_package_keeps_core_help` in an isolated import fixture.
-- [ ] Add `test_missing_file_uses_static_creation_only`, `test_remote_auth_failure_not_supported`, `test_schema_known_but_provider_unsupported`, `test_schema_examples_match_dispatch_validation`; assert support state, resolution origin, no mutation, and argument rejection before handler calls.
-- [ ] Add `test_help_and_capabilities_cli_use_sdk_payload` and `test_unknown_operation_never_imports_arbitrary_module`; compare CLI JSON with SDK results and assert zero dispatch for unregistered IDs.
-- [ ] Run the three new test modules; expect failure on missing catalog/commands.
-- [ ] Implement modules, entry points, closed schemas and validation; package schema resources. Add SDK `jsonschema>=4,<5`, refresh lock intentionally, then test frozen execution. Keep registry/provider loading lazy.
-- [ ] Run new tests plus `packages/cli/tests/test_commands.py` and `specification/conformance/universal/test_discovery.py`; expect all pass. Commit D2 files: `feat: expose operation help and endpoint capabilities`.
+- [x] Add `test_help_does_not_activate_provider`: fake provider factory/credential resolver raises if called; help succeeds. Add `test_duplicate_schema_registration_rejected` and `test_absent_spreadsheet_package_keeps_core_help` in an isolated import fixture.
+- [x] Add `test_missing_file_uses_static_creation_only`, `test_remote_auth_failure_not_supported`, `test_schema_known_but_provider_unsupported`, `test_schema_examples_match_dispatch_validation`; assert support state, resolution origin, no mutation, and argument rejection before handler calls.
+- [x] Add `test_help_and_capabilities_cli_use_sdk_payload` and `test_unknown_operation_never_imports_arbitrary_module`; compare CLI JSON with SDK results and assert zero dispatch for unregistered IDs.
+- [x] Run the three new test modules; initial run failed on the intentionally missing catalog/commands.
+- [x] Implement modules, entry points, closed schemas and validation; package schema resources. Add SDK `jsonschema>=4,<5`, refresh lock intentionally, then test frozen execution. Keep registry/provider loading lazy.
+- [x] Run new tests plus `packages/cli/tests/test_commands.py` and `specification/conformance/universal/test_discovery.py`; all pass. Commit D2 files: `feat: expose operation help and endpoint capabilities`.
 
 ## Task D3: Shortcuts and Stdin Batch Parity
 
