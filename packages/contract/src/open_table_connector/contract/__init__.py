@@ -39,6 +39,14 @@ from .execution import (
     StepExecutor,
 )
 from .identity import CapabilityIdentity, ConnectorIdentity
+from .json_input import JsonInputError, read_json_input
+from .operations import (
+    CapabilityObservation,
+    ExecutionOptions,
+    OperationDescriptor,
+    OperationRequest,
+    TargetSelector,
+)
 from .inspect import InspectRequest, TableInspection, TableInspector
 from .names import (
     CAPABILITY_TABLE_MATERIALIZE_CREATE,
@@ -59,6 +67,8 @@ from .names import (
     IF_EXISTS_ERROR,
     IF_EXISTS_REPLACE,
     OPTION_LIVE_MATERIALIZATION_EVIDENCE,
+    OPERATION_CATALOG_GROUP,
+    OPERATION_HANDLER_GROUP,
     OPTION_TIMEOUT_SECONDS,
     PACKAGE_NAMESPACE,
     PORTABLE_TABLE_PROFILE_V1,
@@ -138,6 +148,8 @@ __all__ = [
     "PluginFactory",
     "PACKAGE_NAMESPACE",
     "CLI_PLUGIN_GROUP",
+    "OPERATION_CATALOG_GROUP",
+    "OPERATION_HANDLER_GROUP",
     "CLI_CONFIG_DIRECTORY",
     "CLI_CONFIG_ENV",
     "CLI_CONFIG_FILENAME",
@@ -207,6 +219,11 @@ __all__ = [
     "TransactionalStore",
     "ProviderConfig",
     "ProviderFactoryContext",
+    "CapabilityObservation",
+    "ExecutionOptions",
+    "OperationDescriptor",
+    "OperationRequest",
+    "TargetSelector",
     "WritePreflightAdapter",
     "parse_adapter_endpoint",
     "parse_adapter_format",

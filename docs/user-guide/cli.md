@@ -12,6 +12,10 @@ The canonical commands are `otc` and `open-table-connector`. The deprecated
 | `read` | Read one endpoint and emit rows |
 | `convert` | Read once and write a local file or stdout |
 | `import` | Read once and write a writable connector |
+| `help` | Describe a versioned operation without opening a target |
+| `capabilities` | Resolve endpoint operation support and evidence |
+| `spreadsheet` | Buffer, inspect, verify and publish workbook operations |
+| `artifact` | Export native document artifacts and request bounded views |
 
 ## Common options
 
@@ -40,8 +44,29 @@ otc inspect --from orders.csv --output-format json
 otc read --from orders.csv --output-format jsonl
 otc convert --from orders.csv --to orders.xlsx --to-format excel --sheet Orders
 otc import --from orders.csv --to gsheets://ID/Orders --if-exists replace
+otc help spreadsheet range.style --output-format json
+otc capabilities --uri file:///absolute/path/report.xlsx --output-format json
 ```
 
 Success output uses the selected format. Errors are one safe JSON object on
 stderr; automation should use the exit code and stable error `code`, not
 human-readable message text.
+
+## Optional artifact and MCP packages
+
+Install `open-table-connector-artifacts` with the adapter you need. The
+OfficeCLI adapter can create native DOCX/PPTX tables and request HTML, PNG,
+text, outline, stats, issues, or disposable watch previews when an OfficeCLI
+binary and its renderer prerequisites are available. It never authors or
+resaves the authoritative XLSX.
+
+Rich XLSX operations use the existing Excelize capabilities through local
+files and MaybeSheet sheet-mode. Images and other objects are advertised only
+when the selected provider exposes the operation and independent readback is
+available. Unsupported objects return an explicit capability result.
+
+The optional `open-table-connector-mcp` package exposes exactly three typed
+tools: `otc_discover`, `otc_inspect`, and `otc_execute`. It uses the official
+MCP stdio transport, requires an explicit fail-closed policy for deployment,
+and does not accept shell commands, arbitrary module names, or credential
+values in request arguments.

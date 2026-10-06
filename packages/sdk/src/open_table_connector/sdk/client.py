@@ -530,6 +530,14 @@ class Client:
         self._assert_open()
         return self._workbook_access
 
+    def artifacts(self):
+        """Return the optional artifact facade without importing its adapters."""
+
+        from .artifacts import ArtifactAccess
+
+        self._assert_open()
+        return ArtifactAccess(self)
+
     def copy_workbook(
         self,
         source: str | TableURI,

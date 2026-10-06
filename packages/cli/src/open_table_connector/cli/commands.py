@@ -145,7 +145,19 @@ def _emit_json(payload: Any, out: TextIO) -> None:
 def run_command(args: Namespace, registry: ConnectorRegistry, out: TextIO, err: TextIO) -> int:
     try:
         command = getattr(args, "command", None)
+        if command == "artifact":
+            from .artifact_commands import run_artifact
+
+            return run_artifact(args, out, err)
+        if command in {"help", "capabilities"}:
+            from .discovery_commands import run_discovery_command
+
+            return run_discovery_command(args, out, err, registry=registry)
         if command == "spreadsheet":
+            if getattr(args, "action", None) in {"recipe", "apply"}:
+                from .recipe_commands import run_recipe_command
+
+                return run_recipe_command(args, registry, out, err)
             from .spreadsheet_commands import run_spreadsheet
 
             return run_spreadsheet(args, registry, out, err)

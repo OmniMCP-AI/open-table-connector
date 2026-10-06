@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "otc.spreadsheet-recipe/1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "requirements", "operations"]
+}

@@ -24,6 +24,12 @@ capabilities rather than assuming every package is present.
 - PostgreSQL is not a TimescaleDB identity in OTC.
 - DuckDB is not a current dependency or execution backend.
 - Native provider SQL has no portable semantics or automatic fallback.
+- Optional OfficeCLI support covers native DOCX/PPTX table export and bounded
+  views only when the external runtime is installed. Rich XLSX authoring stays
+  on existing Excelize capabilities, including MaybeSheet sheet-mode; OfficeCLI
+  is not an XLSX writer.
+- Legacy `.doc`, `.ppt`, and `.xls` output requires a separately qualified
+  converter and is not implied by OOXML support.
 
 ## Versioning
 

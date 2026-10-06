@@ -30,7 +30,7 @@ class SpreadsheetSession:
         copy_from: str | None = None,
         copy_title: str | None = None,
     ):
-        if profile not in {"general/1.0", "literal-artifact/1.0"}:
+        if profile not in {"general/1.0", "literal-artifact/1.0", "rich-artifact/1.0"}:
             raise _error("unsupported workbook profile", "unsupported_capability")
         if copy_from is not None and (
             not isinstance(copy_from, str) or not copy_from.strip() or copy_from != copy_from.strip()

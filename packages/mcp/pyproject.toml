@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "open-table-connector-mcp"
+version = "0.1.0"
+description = "Optional typed MCP adapter for Open Table Connector"
+requires-python = ">=3.11,<3.15"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "open-table-connector-sdk>=0.1,<0.2",
+    "mcp>=1,<2",
+]
+
+[tool.uv.sources]
+open-table-connector-sdk = { workspace = true }
+
+[project.scripts]
+otc-mcp = "open_table_connector.mcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["open_table_connector.mcp*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+"open_table_connector.mcp" = ["py.typed"]

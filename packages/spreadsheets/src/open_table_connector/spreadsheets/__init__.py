@@ -27,6 +27,9 @@ from .capabilities import (
     SPREADSHEET_WORKSHEET_LIST,
 )
 from .model import CellFormat, CellStyle, ImageSpec, RangeRef, SpreadsheetTarget, WorksheetRef
+from .rich import ObjectObservation, RichObjectRequest, RichQualification, qualification
+from .snapshots import WorkbookSnapshot
+from .recipes import LayoutRecipe, parse_recipe
 from .formats import normalize_format
 from ._layout import LayoutCapabilityError, normalize_config, normalize_style, prepare_layout, validate_descriptor
 
@@ -40,6 +43,13 @@ __all__ = [
     "SpreadsheetTarget",
     "SpreadsheetProvider",
     "WorksheetRef",
+    "ObjectObservation",
+    "RichObjectRequest",
+    "RichQualification",
+    "qualification",
+    "WorkbookSnapshot",
+    "LayoutRecipe",
+    "parse_recipe",
     "normalize_format",
     "LayoutCapabilityError",
     "normalize_config",

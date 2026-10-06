@@ -5,7 +5,8 @@ from __future__ import annotations
 import base64
 import binascii
 import json
-from pathlib import Path
+
+from open_table_connector.contract import JsonInputError, read_json_input
 
 from .model import parse_endpoint
 from .output import CliUsageError
@@ -17,25 +18,38 @@ def add_parser(subparsers):
     parser = subparsers.add_parser(
         "spreadsheet", help="buffer, save, read and verify workbook operations"
     )
-    parser.add_argument("action", choices=("batch", "operation", "read", "style-read", "config-read", "verify", "inspect"))
+    parser.add_argument("action", choices=("batch", "operation", "read", "style-read", "config-read", "verify", "inspect", "style", "format", "write", "worksheet", "recipe", "apply"))
+    parser.add_argument("worksheet_action", nargs="?", choices=("create", "rename", "delete"))
+    parser.add_argument("recipe_action", nargs="?", choices=("export",))
     parser.add_argument("--uri", required=True)
     parser.add_argument("--commands", help="version 1.0 JSON command file")
     parser.add_argument("--operation", help="existing spreadsheet operation verb")
     parser.add_argument("--arguments", default="{}", help="operation arguments as JSON")
     parser.add_argument("--sheet")
     parser.add_argument("--range")
+    parser.add_argument("--pattern")
+    parser.add_argument("--bold", dest="bold", action="store_true", default=None)
+    parser.add_argument("--no-bold", dest="no_bold", action="store_true", default=False)
+    parser.add_argument("--italic", dest="italic", action="store_true", default=None)
+    parser.add_argument("--no-italic", dest="no_italic", action="store_true", default=False)
+    parser.add_argument("--values-file")
+    parser.add_argument("--values")
+    parser.add_argument("--name")
     parser.add_argument("--fields", help="style fields as a JSON array")
     parser.add_argument("--rows", help="row numbers as a JSON array")
     parser.add_argument("--columns", help="column letters as a JSON array")
     parser.add_argument("--view-fields", help="view fields as a JSON array")
     parser.add_argument("--create", action="store_true")
-    parser.add_argument("--profile", choices=("general/1.0", "literal-artifact/1.0"))
+    parser.add_argument("--profile", choices=("general/1.0", "literal-artifact/1.0", "rich-artifact/1.0"))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--allow-partial", action="store_true")
     parser.add_argument("--expected", help="retained independent expected intent JSON file")
     parser.add_argument("--expected-revision")
     parser.add_argument("--idempotency-key")
     parser.add_argument("--failure-directory")
+    parser.add_argument("--selectors")
+    parser.add_argument("--spec")
+    parser.add_argument("--allow-incomplete", action="store_true")
     parser.add_argument("--credential-key", action="append", default=[])
 
 
@@ -60,22 +74,23 @@ def _json(text):
         raise CliUsageError("invalid workbook command JSON") from exc
 
 
-def _read_json(path):
-    with Path(path).open("rb") as stream:
-        data = stream.read(_MAX_INPUT + 1)
-    if len(data) > _MAX_INPUT:
-        raise CliUsageError("workbook command input exceeds 16 MiB")
+def _read_json(path, *, stdin=None):
     try:
-        return _json(data.decode("utf-8"))
-    except UnicodeError as exc:
-        raise CliUsageError("workbook command file must be UTF-8") from exc
+        return read_json_input(path, stdin=stdin, max_bytes=_MAX_INPUT)
+    except JsonInputError as exc:
+        raise CliUsageError(str(exc)) from exc
 
 
-def _changes(args):
+def _changes(args, *, stdin=None):
+    if args.action in {"style", "format", "write", "worksheet"}:
+        from .spreadsheet_shortcuts import compile_shortcut
+
+        request = compile_shortcut(args)
+        return [{"operation_id": request.operation_id, "target_key": request.target.sheet or "", "arguments": dict(request.arguments)}]
     if args.action == "batch":
         if not args.commands:
             raise CliUsageError("batch requires --commands")
-        payload = _read_json(args.commands)
+        payload = _read_json(args.commands, stdin=stdin)
         if (
             not isinstance(payload, dict)
             or set(payload) != {"version", "changes"}
@@ -140,7 +155,7 @@ def run_spreadsheet(args, registry, out, err):
     from open_table_connector.sdk import Client, ConnectorRegistry, OTCError
     from open_table_connector.sdk.workbook import WorkbookSession
 
-    changes = _changes(args)
+    changes = _changes(args, stdin=getattr(args, "_stdin", None))
     requested_fields = _json_array(args.fields, "--fields") if args.action == "style-read" else None
     requested_rows = _json_array(args.rows, "--rows") if args.action == "config-read" else None
     requested_columns = _json_array(args.columns, "--columns") if args.action == "config-read" else None

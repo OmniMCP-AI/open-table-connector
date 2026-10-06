@@ -11,6 +11,9 @@ license = { text = "Apache-2.0" }
 readme = "README.md"
 dependencies = ["open-table-connector-contract>=0.1,<0.2"]
 
+[project.entry-points."open_table_connector.operation_catalogs.v1"]
+spreadsheet = "open_table_connector.spreadsheets.operation_catalog:operation_catalog"
+
 [tool.uv.sources]
 open-table-connector-contract = { workspace = true }
 
@@ -20,4 +23,4 @@ include = ["open_table_connector.spreadsheets*"]
 namespaces = true
 
 [tool.setuptools.package-data]
-"open_table_connector.spreadsheets" = ["py.typed"]
+"open_table_connector.spreadsheets" = ["py.typed", "schemas/*.json"]

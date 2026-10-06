@@ -84,6 +84,16 @@ from .registry import (
     discover_configured_plugins,
     discover_descriptors,
 )
+from .discovery import (
+    OPERATION_CATALOG_GROUP,
+    OPERATION_HANDLER_GROUP,
+    OperationCatalog,
+    discover_operation_descriptors,
+    resolve_capabilities,
+)
+from .operations import discover_operation_handlers, execute_operation, register_operation_handler
+from .snapshots import capture_workbook_snapshot
+from .artifacts import ArtifactAccess
 from .result import (
     CommitState,
     ErrorCode,
@@ -129,6 +139,16 @@ __all__ = [
     "CommitState",
     "ConfiguredPlugin",
     "ConnectorRegistry",
+    "OperationCatalog",
+    "OPERATION_CATALOG_GROUP",
+    "OPERATION_HANDLER_GROUP",
+    "discover_operation_descriptors",
+    "resolve_capabilities",
+    "execute_operation",
+    "register_operation_handler",
+    "discover_operation_handlers",
+    "capture_workbook_snapshot",
+    "ArtifactAccess",
     "CredentialLease",
     "CredentialBinding",
     "CredentialResolver",

@@ -26,6 +26,7 @@ from open_table_connector.contract import (
 from open_table_connector.spreadsheets import ArtifactLimits, RangeRef, SpreadsheetTarget
 
 PROFILE = "literal-artifact/1.0"
+RICH_PROFILE = "rich-artifact/1.0"
 OPERATIONS = (
     "worksheet.create",
     "worksheet.rename",
@@ -175,6 +176,8 @@ def _preservation(data, limits):
                     "Rich-text preservation is unsupported",
                     ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
                 )
+
+
             if name.startswith("xl/worksheets/") and name.endswith(".xml"):
                 sheets += 1
                 coordinates = set()
@@ -229,6 +232,75 @@ def _preservation(data, limits):
                             ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
                         )
     return parts
+
+
+def _excelize_open(binding, path):
+    import excelize
+
+    if binding.get("new"):
+        return excelize.new_file()
+    book = excelize.open_file(str(path))
+    if book is None:
+        raise _error("open", "Excelize could not open workbook", ConnectorErrorCode.EXECUTION_FAILED)
+    return book
+
+
+def _excelize_apply(book, change, limits):
+    import excelize
+
+    operation = change.operation_id
+    sheet_name = change.target_key
+    args = dict(change.arguments)
+    if operation == "worksheet.create":
+        book.new_sheet(sheet_name)
+        if "Sheet1" in book.get_sheet_list() and len(book.get_sheet_list()) > 1:
+            book.delete_sheet("Sheet1")
+        return
+    if operation == "worksheet.rename":
+        book.set_sheet_name(sheet_name, args["name"])
+        return
+    if operation == "worksheet.delete":
+        book.delete_sheet(sheet_name)
+        return
+    address = args.get("address")
+    if operation == "range.merge":
+        start, end = address.split(":")
+        book.merge_cell(sheet_name, start, end)
+        return
+    if operation == "range.unmerge":
+        start, end = address.split(":")
+        book.unmerge_cell(sheet_name, start, end)
+        return
+    if operation == "range.write":
+        start_row = int(re.search(r"[0-9]+", address).group())
+        for row_index, row in enumerate(args["values"]):
+            for col_index, value in enumerate(row):
+                cell = f"{chr(65 + col_index)}{start_row + row_index}"
+                if isinstance(value, str):
+                    book.set_cell_str(sheet_name, cell, value)
+                else:
+                    book.set_cell_value(sheet_name, cell, value)
+        return
+    if operation == "formula.set":
+        book.set_cell_formula(sheet_name, address, args["expression"])
+        return
+    if operation in {"image.insert", "image.add"}:
+        content = args["content"]
+        extension = ".png" if args.get("mime_type", "image/png") == "image/png" else ".jpeg"
+        book.add_picture_from_bytes(sheet_name, args["anchor"], excelize.Picture(extension=extension, file=content))
+        return
+    if operation == "range.style":
+        font = excelize.Font(bold=bool(args.get("bold", False)), italic=bool(args.get("italic", False)))
+        style_id = book.new_style(excelize.Style(font=font))
+        start, end = address.split(":") if ":" in address else (address, address)
+        book.set_cell_style(sheet_name, start, end, style_id)
+        return
+    raise _error(
+        "unsupported_operation",
+        "Excelize rich operation unavailable",
+        ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+        operation=operation,
+    )
 
 
 def _sheet_name(name):
@@ -891,14 +963,25 @@ def _snapshot(book, literal):
                 width = round(pic.width * 9525)
                 height = round(pic.height * 9525)
             else:
-                if not hasattr(anchor, "ext") or anchor._from.colOff or anchor._from.rowOff:
+                if hasattr(anchor, "to"):
+                    if anchor._from.colOff or anchor._from.rowOff:
+                        raise _error(
+                            "anchor",
+                            "Unsupported image anchor",
+                            ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
+                        )
+                    row, col = anchor._from.row + 1, anchor._from.col + 1
+                    width = (anchor.to.col - anchor._from.col) * 914400 + anchor.to.colOff
+                    height = (anchor.to.row - anchor._from.row) * 914400 + anchor.to.rowOff
+                elif not hasattr(anchor, "ext") or anchor._from.colOff or anchor._from.rowOff:
                     raise _error(
                         "anchor",
                         "Unsupported image anchor",
                         ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
                     )
-                row, col = anchor._from.row + 1, anchor._from.col + 1
-                width, height = anchor.ext.cx, anchor.ext.cy
+                else:
+                    row, col = anchor._from.row + 1, anchor._from.col + 1
+                    width, height = anchor.ext.cx, anchor.ext.cy
             from openpyxl.utils import get_column_letter
 
             images.append(
@@ -1045,12 +1128,62 @@ class LocalSpreadsheetProvider:
             "connector_id": "local-files",
         }
 
+    def _rich_preflight(self, binding, changes):
+        path = _path(binding["uri"])
+        book = _excelize_open(binding, path)
+        try:
+            for change in changes:
+                _excelize_apply(book, change, _limits(binding))
+        finally:
+            book.close()
+        return {"atomic": True, "capabilities": OPERATIONS}
+
+    def _rich_commit(self, binding, changes):
+        path = _path(binding["uri"])
+        limits = _limits(binding)
+        self._rich_preflight(binding, changes)
+        if not path.parent.is_dir():
+            raise _error("parent_missing", "Workbook parent directory must exist")
+        temporary = None
+        with _target_lock(path):
+            book = _excelize_open(binding, path)
+            try:
+                for change in changes:
+                    _excelize_apply(book, change, limits)
+                fd, name = tempfile.mkstemp(prefix="." + path.stem + "-", suffix=".xlsx", dir=path.parent)
+                os.close(fd)
+                temporary = Path(name)
+                book.save_as(str(temporary))
+            finally:
+                book.close()
+            data = _bytes(temporary, limits)
+            from .rich_observe import observe_rich_xlsx
+
+            observations = observe_rich_xlsx(data, limits=limits)
+            if binding.get("new"):
+                os.link(temporary, path)
+            else:
+                if _hash(_bytes(path, limits)) != binding.get("revision"):
+                    raise _error("stale_revision", "Workbook changed before replacement", ConnectorErrorCode.CONFLICT)
+                os.replace(temporary, path)
+            temporary = None
+            expected = {"profile": RICH_PROFILE, "images": len(observations)}
+            return {
+                "outcome": "succeeded",
+                "commit": "committed",
+                "verification": "passed",
+                "value": {"status": "verified", "profile": RICH_PROFILE, "images": len(observations)},
+                "binding": {**binding, "new": False, "revision": _hash(data), "expected": expected},
+                "expected": expected,
+                "receipts": ({"details": {"profile": RICH_PROFILE, "images": len(observations), "expected": expected}},),
+            }
+
     def _build(self, binding, changes):
         from openpyxl import Workbook, load_workbook
 
         path = _path(binding["uri"])
         limits = _limits(binding)
-        if binding.get("profile") not in (PROFILE, "general/1.0"):
+        if binding.get("profile") not in (PROFILE, RICH_PROFILE, "general/1.0"):
             raise _error(
                 "profile", "Unsupported workbook profile", ConnectorErrorCode.UNSUPPORTED_CAPABILITY
             )
@@ -1091,6 +1224,8 @@ class LocalSpreadsheetProvider:
             raise
 
     def preflight(self, binding, changes):
+        if binding.get("profile") == RICH_PROFILE:
+            return self._rich_preflight(binding, changes)
         try:
             book = self._build(binding, changes)
             book.close()
@@ -1185,6 +1320,7 @@ class LocalSpreadsheetProvider:
     def verify_layout(self, binding, expected):
         """Compare a layout expectation with a fresh, published XLSX read."""
         from open_table_connector.spreadsheets.observations import compare_layout
+
         from .spreadsheet_observe import observe_xlsx
 
         if not isinstance(expected, Mapping) or expected.get("kind") != "spreadsheet.financial-layout.expectation/1.0":
@@ -1260,6 +1396,8 @@ class LocalSpreadsheetProvider:
                 "Workbook storage does not offer idempotency keys",
                 ConnectorErrorCode.UNSUPPORTED_CAPABILITY,
             )
+        if binding.get("profile") == RICH_PROFILE:
+            return self._rich_commit(binding, changes)
         if expected_revision is not None and expected_revision != binding.get("revision"):
             raise _error("stale_revision", "Expected revision differs", ConnectorErrorCode.CONFLICT)
         # Validate before creating staging or lock files.
