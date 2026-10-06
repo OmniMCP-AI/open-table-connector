@@ -6,7 +6,6 @@ import argparse
 import inspect
 import json
 import re
-from collections import defaultdict
 from enum import Enum
 from importlib import import_module
 from pathlib import Path
