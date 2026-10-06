@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "otc.rich-objects/1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "operation_id": {"type": "string"},
+    "target_key": {"type": "string"},
+    "arguments": {"type": "object", "additionalProperties": false}
+  },
+  "required": ["operation_id", "target_key", "arguments"]
+}
