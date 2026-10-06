@@ -4,11 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from open_table_connector.contract import ExecutionOptions, OperationRequest, TargetSelector
+from open_table_connector.contract import ExecutionOptions
 from open_table_connector.spreadsheets import LayoutRecipe, RichObjectRequest
 
-from .operations import execute_operation
-from .result import CommitState, ErrorCode, ErrorInfo, OperationResult, OperationWarning, Outcome, VerificationState
+from .result import (
+    CommitState,
+    ErrorCode,
+    ErrorInfo,
+    OperationResult,
+    OperationWarning,
+    OTCError,
+    Outcome,
+    VerificationState,
+)
 
 
 def _rejected(code, message):
@@ -42,16 +50,23 @@ def export_recipe(client, target, selectors: Sequence[Mapping[str, object]], *, 
 def apply_recipe(client, target, recipe: LayoutRecipe, options: ExecutionOptions):
     if not isinstance(recipe, LayoutRecipe):
         return _rejected(ErrorCode.INVALID_SCHEMA, "recipe is invalid")
-    if options.dry_run:
-        return OperationResult({"operations": len(recipe.operations)}, Outcome.PLANNED, CommitState.NOT_STARTED, VerificationState.SKIPPED, ())
-    receipts = []
-    for operation in recipe.operations:
-        request = OperationRequest("spreadsheet", operation.operation_id, "1.0", TargetSelector(target, operation.target_key), operation.arguments)
-        result = execute_operation(client, request, options)
-        if result.outcome.value not in {"succeeded", "planned"}:
-            return result
-        receipts.extend(result.receipts)
-    return OperationResult({"operations": len(recipe.operations)}, Outcome.SUCCEEDED, CommitState.COMMITTED, VerificationState.PASSED, tuple(receipts))
+    book = None
+    try:
+        book = client.workbook(target)
+        for operation in recipe.operations:
+            if operation.operation_id not in {"range.style", "range.format", "range.merge", "range.unmerge", "worksheet.config"}:
+                return _rejected(ErrorCode.UNSUPPORTED_CAPABILITY, "recipe operation is not an admitted layout mutation")
+            book._queue(operation.operation_id, operation.target_key, dict(operation.arguments))
+        return book.write(
+            dry_run=options.dry_run, allow_partial=options.allow_partial,
+            expected_revision=options.expected_revision, idempotency_key=options.idempotency_key)
+    except OTCError as exc:
+        return exc.result
+    except (AttributeError, ValueError, TypeError):
+        return _rejected(ErrorCode.INVALID_TARGET, "recipe target could not be bound or validated")
+    finally:
+        if book is not None:
+            book.close()
 
 
 __all__ = ["apply_recipe", "export_recipe"]

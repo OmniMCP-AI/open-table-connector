@@ -6,6 +6,10 @@ This ledger distinguishes implemented-source evidence from live runtime gates.
 The branch contains the implementation and its tests; a pending live gate is
 not presented as qualified behavior.
 
+The final source revision for this ledger includes the Python 3.11 dataclass
+compatibility fix, the Excelize-only rich-profile write path, and fail-closed
+MCP startup added after the initial local verification.
+
 | Gate | Evidence on this branch | Result |
 | --- | --- | --- |
 | A1 command/reference inventory | D2/D4 commits `7b8ed9d`, `d58fc86`; CLI reference checker and 209 CLI tests | Pass |

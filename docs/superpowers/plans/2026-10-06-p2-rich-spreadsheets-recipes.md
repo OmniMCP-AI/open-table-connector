@@ -44,7 +44,7 @@ All [index constraints/interfaces](2026-10-06-cli-and-office-artifacts-p0-p2.md)
 - [ ] Add `test_formula_like_text_and_leading_zero_stay_literal`, `test_null_empty_false_zero_preserved`, `test_unsupported_option_has_no_destination_effect`, `test_rich_chart_never_roundtrips_through_general_writer` using an existing supported chart fixture.
 - [ ] Add `test_competing_creators_one_winner`, `test_stale_template_rejected`, `test_verification_failure_never_publishes`, `test_cleanup_failure_retains_committed_receipt`; reuse current publication test patterns rather than replacing them.
 - [x] Run the two new modules; initial run failed on the missing profile support.
-- [x] Implement explicit rich profile selection over the existing staged provider and independent serialized image observation; retain legacy tests and no OfficeCLI fallback.
+- [x] Implement explicit rich profile selection over the existing Excelize-backed provider and independent serialized image observation; retain legacy tests and no OfficeCLI fallback.
 - [x] Run new modules plus existing `test_spreadsheet_provider.py`, `test_spreadsheet_verify.py`, `test_excel_formula.py`; all pass. Commit R2 files: `feat: add verified Excelize rich workbook image operations`.
 
 ## Task R3: MaybeSheet Shared Images and Remote Effects

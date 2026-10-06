@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
+from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from .policy import load_policy
 from .tools import otc_discover
 
 
@@ -70,6 +74,15 @@ def handle_request(request):
 
 
 def main() -> int:
+    config_path = os.environ.get("OTC_MCP_CONFIG")
+    if not config_path or not os.path.isabs(config_path):
+        print("MCP policy is required via absolute OTC_MCP_CONFIG", file=sys.stderr)
+        return 2
+    try:
+        load_policy(Path(config_path))
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"MCP policy unavailable: {type(exc).__name__}", file=sys.stderr)
+        return 2
     asyncio.run(create_server().run_stdio_async())
     return 0
 
