@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import tempfile
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
+
+from open_table_connector.contract import SCHEME_FILE
 
 from .result import CommitState, ErrorCode, ErrorInfo, OperationResult, Outcome, VerificationState
 
@@ -24,6 +28,25 @@ class ArtifactAccess:
             return artifact_adapter()
         except (ImportError, ModuleNotFoundError):
             return None
+
+    def _preview_store(self):
+        from .preview_sessions import PreviewSessionStore
+
+        return PreviewSessionStore(Path(tempfile.gettempdir()) / "open-table-connector-preview")
+
+    def _snapshot(self, source, directory):
+        parsed = urlsplit(source.uri)
+        if parsed.scheme != SCHEME_FILE or parsed.netloc not in {"", "localhost"} or not parsed.path.startswith("/"):
+            raise RuntimeError("artifact preview requires a local committed file; remote export is not qualified")
+        path = Path(unquote(parsed.path))
+        if path.suffix.lower() not in {".docx", ".pptx", ".xlsx"}:
+            raise RuntimeError("artifact preview format is not qualified")
+        data = path.read_bytes()
+        digest = "sha256:" + hashlib.sha256(data).hexdigest()
+        directory.mkdir(parents=True, exist_ok=True)
+        snapshot = directory / ("snapshot" + path.suffix.lower())
+        snapshot.write_bytes(data)
+        return path, snapshot, digest
 
     def export(self, request):
         try:
@@ -62,41 +85,71 @@ class ArtifactAccess:
         adapter = self._adapter()
         if adapter is None:
             return _failure(ErrorCode.UNSUPPORTED_CAPABILITY, "OfficeCLI adapter is unavailable")
-        path = Path(unquote(urlsplit(request.source.uri).path))
         try:
-            evidence = adapter.render(path, request)
-            value = ViewValue(tuple(evidence.get("outputs", ())), request.source.uri, evidence.get("source_hash", ""), evidence.get("renderer", {}))
+            with tempfile.TemporaryDirectory(prefix="otc-preview-") as directory:
+                source, snapshot, digest = self._snapshot(request.source, Path(directory))
+                evidence = adapter.render(snapshot, request)
+                if "sha256:" + hashlib.sha256(source.read_bytes()).hexdigest() != digest:
+                    return _failure(ErrorCode.SNAPSHOT_UNAVAILABLE, "source changed during rendering")
+            value = ViewValue(tuple(evidence.get("outputs", ())), request.source.uri, digest, evidence.get("renderer", {}))
             return OperationResult(value, Outcome.SUCCEEDED, CommitState.NOT_APPLICABLE, VerificationState.PASSED, ())
         except RuntimeError as exc:
             return _failure(ErrorCode.UNSUPPORTED_CAPABILITY, str(exc))
+        except FileExistsError:
+            return _failure(ErrorCode.DESTINATION_EXISTS, "view destination already exists")
         except Exception:
             return _failure(ErrorCode.EXECUTION_FAILED, "artifact view failed")
 
     def watch(self, request):
-        from pathlib import Path
-        from tempfile import gettempdir
-
         from open_table_connector.artifacts import WatchValue
+        from open_table_connector.contract import TargetSelector
 
-        from .preview_sessions import PreviewSessionStore
-
-        store = PreviewSessionStore(Path(gettempdir()) / "open-table-connector-preview")
+        store = self._preview_store()
         if request.action == "start":
             if request.source is None:
                 return _failure(ErrorCode.INVALID_TARGET, "watch start requires a source")
+            if request.read_only_required:
+                return _failure(ErrorCode.UNSUPPORTED_CAPABILITY, "watch runtime cannot enforce a read-only preview")
+            adapter = self._adapter()
+            if adapter is None or not hasattr(adapter, "start_watch"):
+                return _failure(ErrorCode.UNSUPPORTED_CAPABILITY, "watch runtime is unavailable")
             record = store.create({"state": "stopped", "source_uri": request.source.uri, "editability": "preview_copy_only", "persistence": "discard"})
-            value = WatchValue(record["session_id"], record["state"], None, None, None)
-            return OperationResult(value, Outcome.SUCCEEDED, CommitState.NOT_APPLICABLE, VerificationState.UNAVAILABLE, ())
-        if not request.session_id:
+        elif not request.session_id:
             return _failure(ErrorCode.INVALID_TARGET, "watch action requires a session id")
-        try:
-            record = store.load(request.session_id)
-        except KeyError:
-            return _failure(ErrorCode.TARGET_NOT_FOUND, "preview session was not found")
-        if request.action == "stop":
-            record = store.update(request.session_id, {"state": "stopped"})
+        else:
+            try:
+                record = store.load(request.session_id)
+            except (KeyError, ValueError):
+                return _failure(ErrorCode.TARGET_NOT_FOUND, "preview session was not found")
+        session_id = record["session_id"]
+        if request.action in {"start", "refresh"}:
+            adapter = self._adapter()
+            if adapter is None or not hasattr(adapter, "start_watch"):
+                return _failure(ErrorCode.UNSUPPORTED_CAPABILITY, "watch runtime is unavailable")
+            if request.action == "refresh":
+                store.stop(session_id)
+            try:
+                source, snapshot, digest = self._snapshot(TargetSelector(record["source_uri"]), store.directory / session_id)
+                store.update(session_id, {"snapshot_path": str(snapshot)})
+                process, url = adapter.start_watch(snapshot)
+                store.attach(session_id, process)
+                parsed = urlsplit(url)
+                if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "::1", "localhost"} or parsed.username or parsed.password:
+                    raise RuntimeError("watch requires a loopback-only URL")
+                if "sha256:" + hashlib.sha256(source.read_bytes()).hexdigest() != digest:
+                    raise RuntimeError("source changed during watch startup")
+                record = store.update(session_id, {"url": url, "source_hash": digest, "snapshot_hash": digest})
+            except Exception as exc:
+                store.stop(session_id)
+                return _failure(ErrorCode.UNSUPPORTED_CAPABILITY, str(exc))
+        elif request.action == "stop":
+            record = store.stop(session_id)
+        else:
+            state = store.runtime_state(session_id)
+            record = store.update(session_id, {"state": state, "url": record.get("url") if state == "running" else None})
         value = WatchValue(record["session_id"], record["state"], record.get("url"), record.get("source_hash"), record.get("snapshot_hash"))
-        return OperationResult(value, Outcome.SUCCEEDED, CommitState.NOT_APPLICABLE, VerificationState.UNAVAILABLE, ())
+        verified = VerificationState.PASSED if record["state"] in {"running", "stopped"} else VerificationState.UNAVAILABLE
+        return OperationResult(value, Outcome.SUCCEEDED, CommitState.NOT_APPLICABLE, verified, ())
 
 
 __all__ = ["ArtifactAccess"]

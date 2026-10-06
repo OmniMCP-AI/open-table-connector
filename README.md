@@ -104,6 +104,11 @@ an explicit capability error for view/watch until a qualified OfficeCLI binary
 and renderer are configured. The optional `otc-mcp` package exposes the typed
 `otc_discover`, `otc_inspect`, and `otc_execute` tools over MCP stdio.
 
+Read the complete [CLI manual](docs/user-guide/cli-manual.md), [SDK manual](docs/user-guide/sdk-manual.md),
+and [components manual](docs/user-guide/components.md). Generated [CLI options](docs/reference/cli-options.md),
+[Python API inventory](docs/reference/api-inventory.md), and [spreadsheet schemas](docs/reference/spreadsheet-schemas.md)
+are the exhaustive references.
+
 ## Python SDK
 
 The public Python vocabulary is intentionally small:
@@ -321,6 +326,9 @@ content is maintained in the structured guide.
   and recipe replay.
 - [Agent workflows](docs/user-guide/agent-workflows.md) — discovery-first
   CLI, evidence, artifact, and MCP workflows.
+- [CLI manual](docs/user-guide/cli-manual.md), [SDK manual](docs/user-guide/sdk-manual.md),
+  and [components manual](docs/user-guide/components.md) — complete usage and
+  package ownership references.
 - [OfficeCLI comparison and recommendations](docs/reports/2026-10-06-officecli-comparison-and-recommendations.md)
   — detailed command-style comparison and integration boundaries.
 - [Office artifact readiness](docs/office-artifact-readiness.md) and

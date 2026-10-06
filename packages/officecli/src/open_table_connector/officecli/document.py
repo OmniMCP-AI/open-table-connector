@@ -3,11 +3,37 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import socket
+import subprocess
+import tempfile
+import time
 import zipfile
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
+from urllib.request import urlopen
 from xml.sax.saxutils import escape
 
 from open_table_connector.artifacts import ViewRequest, display_cell
+from open_table_connector.contract import SCHEME_FILE
+
+from .capabilities import check_officecli
+from .process import run_officecli, runtime_environment, stop_process
+
+
+class _Assets(HTMLParser):
+    def handle_starttag(self, tag, attrs):
+        for name, value in attrs:
+            if name in {"src", "href"} and value and not value.startswith(("#", "data:")):
+                raise RuntimeError("renderer external asset reference is not qualified")
+
+
+def _local_path(uri):
+    parsed = urlsplit(uri)
+    if parsed.scheme != SCHEME_FILE or parsed.netloc not in {"", "localhost"} or not parsed.path.startswith("/"):
+        raise RuntimeError("renderer requires a canonical local file URL")
+    return Path(unquote(parsed.path))
 
 
 def _docx(rows):
@@ -23,6 +49,10 @@ def _pptx(rows):
 
 
 class OfficeCliAdapter:
+    def __init__(self, *, binary: str | None = None, browser: str | None = None):
+        self.binary = binary or os.environ.get("OTC_OFFICECLI_BINARY", "")
+        self.browser = browser or os.environ.get("OTC_OFFICECLI_BROWSER")
+
     def describe(self):
         return {"name": "officecli", "version": "1.0.154", "formats": ["docx", "pptx"], "modes": ["html", "screenshot", "text", "outline", "stats", "issues"]}
 
@@ -43,7 +73,72 @@ class OfficeCliAdapter:
             return {"parts": names, "size": document_path.stat().st_size}
 
     def render(self, snapshot_path: Path, request: ViewRequest):
-        raise RuntimeError("OfficeCLI renderer is unavailable until a qualified binary is configured")
+        capability = check_officecli(self.binary, renderer=request.mode, browser=self.browser)
+        if not capability.supported:
+            raise RuntimeError(capability.reason)
+        if snapshot_path.suffix.lower().lstrip(".") not in capability.formats:
+            raise RuntimeError("renderer format is not qualified")
+        allowed = {"page", "range", "max_lines"}
+        if set(request.selector) - allowed:
+            raise RuntimeError("renderer selector is not qualified")
+        if "page" in request.selector and snapshot_path.suffix.lower() == ".xlsx":
+            raise RuntimeError("page is not a worksheet selector")
+        digest = "sha256:" + hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+        suffix, media = {"html": (".html", "text/html"), "screenshot": (".png", "image/png")}.get(request.mode, (".txt", "text/plain"))
+        destination = _local_path(request.destination_uri) if request.destination_uri else Path(tempfile.mkdtemp(prefix="otc-view-")) / ("view" + suffix)
+        if destination.exists():
+            raise FileExistsError(destination)
+        with tempfile.TemporaryDirectory(prefix="otc-render-") as directory:
+            output = Path(directory) / ("view" + suffix)
+            argv = [self.binary, "view", str(snapshot_path), request.mode]
+            if request.mode in {"html", "screenshot"}:
+                argv += ["--out", str(output)]
+            if request.mode == "screenshot":
+                argv += ["--render", "html"]
+            for key, value in request.selector.items():
+                argv += ["--" + key.replace("_", "-"), str(value)]
+            result = run_officecli(argv, input_json=None)
+            if result.returncode or result.truncated or result.timed_out:
+                raise RuntimeError("renderer execution failed or exceeded its limits")
+            if request.mode not in {"html", "screenshot"}:
+                output.write_text(result.stdout, encoding="utf-8")
+            if not output.is_file() or output.stat().st_size > 16 * 1024 * 1024:
+                raise RuntimeError("renderer output is unavailable or exceeds its limit")
+            data = output.read_bytes()
+            if not data.strip():
+                raise RuntimeError("renderer output is blank")
+            if request.mode == "html":
+                _Assets().feed(data.decode("utf-8"))
+            if request.mode == "screenshot" and not data.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise RuntimeError("renderer output is not PNG")
+            if "sha256:" + hashlib.sha256(snapshot_path.read_bytes()).hexdigest() != digest:
+                raise RuntimeError("renderer modified its snapshot")
+            with destination.open("xb") as stream:
+                stream.write(data)
+        return {"outputs": [{"uri": destination.as_uri(), "media_type": media, "content_hash": "sha256:" + hashlib.sha256(data).hexdigest()}],
+                "source_hash": digest, "renderer": {"name": "officecli", "version": capability.version, "browser": capability.browser, "fonts": "runtime-dependent"}}
+
+    def start_watch(self, snapshot_path: Path):
+        capability = check_officecli(self.binary, renderer="watch", browser=self.browser)
+        if not capability.supported:
+            raise RuntimeError(capability.reason)
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            port = listener.getsockname()[1]
+        process = subprocess.Popen([self.binary, "watch", str(snapshot_path), "--port", str(port)],
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                   shell=False, env=runtime_environment(), start_new_session=True)
+        url = f"http://127.0.0.1:{port}"
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and process.poll() is None:
+            try:
+                with urlopen(url, timeout=0.2) as response:
+                    if response.status == 200:
+                        return process, url
+            except OSError:
+                time.sleep(0.05)
+        stop_process(process)
+        raise RuntimeError("watch runtime did not become ready on its owned port")
 
 
 __all__ = ["OfficeCliAdapter"]

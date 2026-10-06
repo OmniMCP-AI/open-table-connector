@@ -16,3 +16,7 @@ view and watch outputs are disposable and never become the source workbook.
 Install `open-table-connector-officecli` to register the optional physical
 adapter. The neutral package itself has no OfficeCLI or browser dependency and
 can be imported by the core SDK without activating an external process.
+
+See the [components manual](../../docs/user-guide/components.md) for adapter
+ownership and the [SDK manual](../../docs/user-guide/sdk-manual.md) for view and
+watch lifecycle examples.

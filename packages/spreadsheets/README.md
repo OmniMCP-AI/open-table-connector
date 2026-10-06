@@ -14,3 +14,7 @@ capability-blocked rather than inferred from a local binding's method names.
 observed layout operations and requirements; they never carry cell values,
 formulas, or image bytes and they reject unsupported properties before
 dispatch. OfficeCLI is not a spreadsheet backend for this package.
+
+The [SDK manual](../../docs/user-guide/sdk-manual.md) contains session examples;
+the generated [spreadsheet schemas](../../docs/reference/spreadsheet-schemas.md)
+are the exhaustive operation reference.

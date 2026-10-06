@@ -19,6 +19,9 @@ from .result import (
 )
 
 
+_OBSERVABLE = frozenset({"range.style", "worksheet.config"})
+
+
 def _rejected(code, message):
     return OperationResult(None, Outcome.REJECTED, CommitState.NOT_STARTED, VerificationState.SKIPPED, (), error=ErrorInfo(code, message))
 
@@ -26,15 +29,33 @@ def _rejected(code, message):
 def export_recipe(client, target, selectors: Sequence[Mapping[str, object]], *, allow_incomplete: bool = False):
     operations = []
     omissions = []
+    book = None
     for selector in selectors:
         if not isinstance(selector, Mapping):
-            return _rejected(ErrorCode.INVALID_SCHEMA, "recipe selector must be an object")
+            omissions.append("selector is not an object")
+            continue
         try:
             operation = RichObjectRequest(str(selector["operation_id"]), str(selector["target_key"]), selector.get("arguments", {}))
         except (KeyError, ValueError, TypeError):
             omissions.append("invalid selector")
             continue
-        operations.append(operation)
+        if operation.operation_id not in _OBSERVABLE:
+            omissions.append(f"{operation.operation_id}: observation is not qualified")
+            continue
+        try:
+            if book is None:
+                book = client.workbook(target)
+            worksheet = book.worksheet(operation.target_key)
+            if operation.operation_id == "range.style":
+                address = operation.arguments.get("address")
+                worksheet.range(address).read_style()
+            else:
+                worksheet.read_config(rows=[1], columns=["A"])
+            operations.append(operation)
+        except Exception as exc:
+            omissions.append(f"{operation.operation_id}: {type(exc).__name__}")
+    if book is not None:
+        book.close()
     if omissions and not allow_incomplete:
         return _rejected(ErrorCode.UNSUPPORTED_CAPABILITY, "requested recipe observation is incomplete")
     recipe = LayoutRecipe(
