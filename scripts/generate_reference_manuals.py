@@ -9,6 +9,7 @@ import re
 from enum import Enum
 from importlib import import_module
 from pathlib import Path
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = (
@@ -25,7 +26,7 @@ def cell(value: object) -> str:
     return str(value).replace("|", "\\|").replace("\n", " ")
 
 
-def signature(value: object) -> str:
+def signature(value: Any) -> str:
     try:
         text = str(inspect.signature(value))
     except (ValueError, TypeError):
@@ -35,14 +36,17 @@ def signature(value: object) -> str:
 
 def source_link(value: object) -> str:
     try:
-        path = Path(inspect.getsourcefile(value)).resolve()
+        source = inspect.getsourcefile(cast(Any, value))
+        if source is None:
+            return ""
+        path = Path(source).resolve()
         relative = path.relative_to(ROOT).as_posix()
     except (TypeError, ValueError):
         return ""
     return f"[source](../../{relative})"
 
 
-def public_names(module) -> list[str]:
+def public_names(module: Any) -> list[str]:
     exported = getattr(module, "__all__", None)
     if exported is not None:
         return sorted(set(exported))
@@ -96,8 +100,8 @@ def api_reference() -> str:
                     lines.append(f"| `{key}` | `{cell(value.value)}` |")
                 lines.append("")
                 continue
-            annotations = {}
-            members = {}
+            annotations: dict[str, Any] = {}
+            members: dict[str, Any] = {}
             for parent in reversed(cls.__mro__):
                 if not parent.__module__.startswith("open_table_connector"):
                     continue
@@ -126,7 +130,7 @@ def api_reference() -> str:
 
 
 def cli_reference() -> str:
-    from open_table_connector.cli.__main__ import build_parser
+    from open_table_connector.cli.__main__ import build_parser  # type: ignore[import-not-found]
 
     parser = build_parser()
     lines = [
@@ -158,7 +162,9 @@ def cli_reference() -> str:
 
 
 def operation_reference() -> str:
-    from open_table_connector.spreadsheets.operation_catalog import operation_catalog
+    from open_table_connector.spreadsheets.operation_catalog import (
+        operation_catalog,  # type: ignore[import-not-found]
+    )
 
     descriptors = sorted(operation_catalog(), key=lambda item: (item.operation_id, item.version))
     lines = [
