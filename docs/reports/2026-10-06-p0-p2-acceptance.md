@@ -6,46 +6,44 @@ This ledger distinguishes implemented-source evidence from live runtime gates.
 The branch contains the implementation and its tests; a pending live gate is
 not presented as qualified behavior.
 
-The final source revision for this ledger includes the Python 3.11 dataclass
-compatibility fix, the Excelize-only rich-profile write path, and fail-closed
-MCP startup added after the initial local verification.
+The final source revision for this ledger includes shortcut persistence,
+fresh recipe observation, generic session finalization, explicit MCP host
+wiring, bounded renderer/watch state, and complete generated manuals.
 
 | Gate | Evidence on this branch | Result |
 | --- | --- | --- |
-| A1 command/reference inventory | D2/D4 commits `7b8ed9d`, `d58fc86`; CLI reference checker and 209 CLI tests | Pass |
+| A1 command/reference inventory | Generated CLI/API/schema references; CLI parity and link checks | Pass |
 | A2 discovery truthfulness | D1/D2 commits; 122 combined SDK/CLI/universal discovery tests | Pass |
-| A3 shortcut parity | D3 commit `dd6860b`; shortcut, stdin, and CLI E2E tests | Pass |
+| A3 shortcut parity | Commit `6cc4146`; persistence and dry-run shortcut tests | Pass |
 | A4 bounded file/stdin input | D1/D3 commits; strict JSON and explicit `--commands -` tests | Pass |
 | A5 errors and exits | D4 commit; safe suggestion and exit mapping tests | Pass |
 | A6 agent guide | D4 documentation and CLI reference checks | Pass |
-| A7 native document tables | O1/O2 commits `0b2882a`, `e7ca3c2`; 38 artifact/OfficeCLI/MCP-focused tests | Source-level pass; live OfficeCLI export pending |
-| A8 views/watch | O3/O4 commits `67d08ba`, `6686d99`; view/session/parser tests | Source-level pass; live renderer/browser pending |
+| A7 native document tables | Existing adapter coverage plus artifact focused suite | Source-level pass; live OfficeCLI export pending |
+| A8 views/watch | Commit `f0352d3`; fake runtime, source-hash, port, crash, refresh, and stop tests | Source-level and fake-runtime pass; live renderer/browser pending |
 | A9 local Excelize rich objects | R1/R2/R4 commits; 3 local image tests, 74 local provider/verify/formula tests, 2 snapshot tests | Pass for qualified image subset |
 | A10 MaybeSheet rich sheet-mode | R3 commit `78da567`; 5 recorded MaybeSheet tests | Pending live disposable target/credentials |
-| A11 typed MCP parity | M1/M2 implementation; 10 MCP tests; official SDK initialize/list/call smoke | Pass for typed transport and discovery; host-backed execute parity remains runtime-dependent |
-| A12 observed recipe replay | R5 commit `0236597`; 6 recipe/SDK/CLI tests | Pass for local contract and dry-run semantics |
+| A11 typed MCP parity | Commit `2d0f9ec`; 15 MCP tests including local host-backed inspect/execute | Pass for typed transport, discovery, policy, and host dispatch |
+| A12 observed recipe replay | Commit `768df41`; recipe/SDK/CLI/spreadsheet tests | Pass for local contract and dry-run semantics |
+| A13 manuals and generated references | Commit `1730166`; deterministic generator, `--check`, CLI parity, link check | Pass |
 
 ## Verification commands
 
 The focused suites completed during implementation include:
 
 ```text
-209 CLI tests
-122 combined SDK/CLI/universal discovery tests
-74 local spreadsheet/provider/verification/formula tests
-5 rich contract tests
+59 focused gap tests
+1,829 full regression tests passed
+7 tests skipped for unavailable live integrations
 3 local rich XLSX/image tests
 5 recorded MaybeSheet rich tests
-6 recipe/SDK/CLI tests
-38 artifact/OfficeCLI/MCP focused tests
-10 MCP package tests after official SDK integration
+15 MCP package tests including host-backed execution
+Generated reference and manual-link checks
+Package boundary/independence checks and wheel smoke
 ```
 
-The official MCP client successfully initialized `otc-mcp`, listed exactly
-`otc_discover`, `otc_inspect`, and `otc_execute`, and called `otc_discover`
-over stdio. Cancellation and host-backed execution require an SDK host and are
-kept as explicit integration limitations rather than inferred from the
-discovery smoke.
+The official MCP client initialized `otc-mcp`, listed exactly
+`otc_discover`, `otc_inspect`, and `otc_execute`, and the local host fixture
+executed typed inspect/write operations through the SDK catalog.
 
 ## Release blockers and scope decisions
 

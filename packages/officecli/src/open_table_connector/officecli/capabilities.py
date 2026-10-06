@@ -4,6 +4,8 @@ import os
 import re
 from dataclasses import dataclass
 
+from open_table_connector.contract import SCHEME_XLSX
+
 from .process import run_officecli
 
 
@@ -13,7 +15,7 @@ class OfficeCliCapability:
     version: str | None = None
     reason: str | None = None
     modes: tuple[str, ...] = ()
-    formats: tuple[str, ...] = ("docx", "pptx", "xlsx")
+    formats: tuple[str, ...] = ("docx", "pptx", SCHEME_XLSX)
     browser: str | None = None
 
 

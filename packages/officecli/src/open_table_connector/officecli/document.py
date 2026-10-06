@@ -16,6 +16,7 @@ from urllib.request import urlopen
 from xml.sax.saxutils import escape
 
 from open_table_connector.artifacts import ViewRequest, display_cell
+from open_table_connector.contract import SCHEME_FILE
 
 from .capabilities import check_officecli
 from .process import run_officecli, runtime_environment, stop_process
@@ -30,7 +31,7 @@ class _Assets(HTMLParser):
 
 def _local_path(uri):
     parsed = urlsplit(uri)
-    if parsed.scheme != "file" or parsed.netloc not in {"", "localhost"} or not parsed.path.startswith("/"):
+    if parsed.scheme != SCHEME_FILE or parsed.netloc not in {"", "localhost"} or not parsed.path.startswith("/"):
         raise RuntimeError("renderer requires a canonical local file URL")
     return Path(unquote(parsed.path))
 

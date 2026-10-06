@@ -264,26 +264,26 @@ git commit -m "docs: publish complete CLI and SDK reference manuals"
 - Modify: `docs/office-artifact-readiness.md`
 - Modify: `docs/spreadsheet-rich-readiness.md`
 
-- [ ] **Step 1: Run focused gap suites**
+- [x] **Step 1: Run focused gap suites**
 
 Run the task test commands plus `git diff --check`, package boundary and
 independence checks, and wheel smoke for CLI, SDK, spreadsheets, artifacts,
 OfficeCLI, and MCP.
 
-- [ ] **Step 2: Run the full regression suite**
+- [x] **Step 2: Run the full regression suite**
 
 Run: `uv run --all-packages pytest -q`
 
 Expected: no regressions; live OfficeCLI/browser/MaybeSheet gates remain
 explicit if their prerequisites are unavailable.
 
-- [ ] **Step 3: Update acceptance evidence**
+- [x] **Step 3: Update acceptance evidence**
 
 Record shortcut persistence, recipe freshness, generic dispatch lifecycle, MCP
 host behavior, renderer capability results, generated-reference checks, exact
 commands, and any remaining live blockers.
 
-- [ ] **Step 4: Review, commit, and report**
+- [x] **Step 4: Review, commit, and report**
 
 Run `git diff --check`, inspect the staged file list to exclude user-owned
 changes, then commit the acceptance update and report the verification evidence.

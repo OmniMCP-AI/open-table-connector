@@ -8,6 +8,8 @@ import tempfile
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+from open_table_connector.contract import SCHEME_FILE
+
 from .result import CommitState, ErrorCode, ErrorInfo, OperationResult, Outcome, VerificationState
 
 
@@ -34,7 +36,7 @@ class ArtifactAccess:
 
     def _snapshot(self, source, directory):
         parsed = urlsplit(source.uri)
-        if parsed.scheme != "file" or parsed.netloc not in {"", "localhost"} or not parsed.path.startswith("/"):
+        if parsed.scheme != SCHEME_FILE or parsed.netloc not in {"", "localhost"} or not parsed.path.startswith("/"):
             raise RuntimeError("artifact preview requires a local committed file; remote export is not qualified")
         path = Path(unquote(parsed.path))
         if path.suffix.lower() not in {".docx", ".pptx", ".xlsx"}:

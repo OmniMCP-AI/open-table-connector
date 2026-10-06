@@ -9,15 +9,15 @@ does not make OfficeCLI a required OTC dependency or an XLSX authoring engine.
 | PPTX native tables | Implemented adapter contract and local unit coverage | Same runtime gate as DOCX; no claim of legacy `.ppt` output. |
 | Local rich XLSX | Qualified for existing Excelize image workflow | Excelize remains the sole author; save/reopen and image-byte checks are covered by local tests. |
 | MaybeSheet sheet-mode rich XLSX | Contract and recorded image evidence | Live disposable credentials/target were unavailable, so A10 remains pending. Base-mode mutation is excluded. |
-| HTML view | Implemented bounded view facade | Requires the optional OfficeCLI binary; renderer version and source hash belong in the result. |
-| PNG screenshot | Implemented bounded view facade | Requires OfficeCLI plus its browser prerequisite; nonblank screenshot acceptance is pending. |
-| Watch loop | Implemented disposable preview-session store and parser | Sessions are preview-copy-only and discard on stop. External edits are not assumed to refresh automatically. |
+| HTML view | Qualified bounded adapter path | Requires the optional OfficeCLI binary at qualified version `1.0.154`; source hash is checked before and after rendering and output is bounded. |
+| PNG screenshot | Qualified capability-gated adapter path | Requires OfficeCLI plus an executable browser; nonblank PNG and browser absence are tested with fake runtimes. |
+| Watch loop | Qualified owned disposable lifecycle | Loopback URL, owned process identity, snapshot/source hashes, crash/orphaned state, refresh replacement, and stop-without-publish are recorded. |
 
 OfficeCLI never writes, recalculates, or resaves the authoritative XLSX. Rich
 XLSX support uses only object methods already exposed by the installed
 Excelize binding. Unsupported object families remain explicitly blocked until
 provider-specific save/reopen evidence exists.
 
-The release ledger records pending live gates separately from source-level unit
-coverage. Recorded tests cannot substitute for a real OfficeCLI process or a
-live MaybeSheet disposable target.
+The release ledger records pending live gates separately from source-level and
+fake-runtime coverage. Recorded tests cannot substitute for a real OfficeCLI
+process or a live MaybeSheet disposable target.
