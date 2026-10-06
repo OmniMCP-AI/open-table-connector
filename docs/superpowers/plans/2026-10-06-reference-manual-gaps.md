@@ -112,25 +112,25 @@ git commit -m "fix: qualify spreadsheet recipe export and apply"
 
 **Interfaces:** `_builtin_spreadsheet_handler(client, request, options) -> OperationResult[object]` must close every workbook session and call `write()` for mutating operation IDs, passing `dry_run`, `allow_partial`, `expected_revision`, and `idempotency_key` from `ExecutionOptions`.
 
-- [ ] **Step 1: Write failing generic-dispatch tests**
+- [x] **Step 1: Write failing generic-dispatch tests**
 
 Add tests for range write/style, worksheet create, dry-run, unsupported operation, stale revision, and a tracking provider that asserts session close occurs after committed, rejected, and unknown outcomes.
 
-- [ ] **Step 2: Run the focused tests to verify failure**
+- [x] **Step 2: Run the focused tests to verify failure**
 
 Run: `uv run --all-packages pytest -q packages/sdk/tests/test_operations.py`
 
 Expected: mutation tests reject or leave bytes unchanged because the current handler returns `_rejected` for write operations and does not finalize sessions.
 
-- [ ] **Step 3: Implement explicit read/mutation operation routing**
+- [x] **Step 3: Implement explicit read/mutation operation routing**
 
 Use a context-managed workbook access for each operation. Reads return observation results. Mutations queue exactly one change, invoke `book.write(...)` with `ExecutionOptions`, return the complete result, and close in `finally` without suppressing `OTCError` or uncertain receipts.
 
-- [ ] **Step 4: Run SDK operation and workbook suites**
+- [x] **Step 4: Run SDK operation and workbook suites**
 
 Run: `uv run --all-packages pytest -q packages/sdk/tests/test_operations.py packages/sdk/tests/test_artifacts.py packages/sdk/tests/test_preview_sessions.py packages/local_files/tests/test_excelize_rich_workbook.py`.
 
-- [ ] **Step 5: Commit the dispatcher fix**
+- [x] **Step 5: Commit the dispatcher fix**
 
 ```bash
 git add packages/sdk/src/open_table_connector/sdk/operations.py packages/sdk/tests/test_operations.py

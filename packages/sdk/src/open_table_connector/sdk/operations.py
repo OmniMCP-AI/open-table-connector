@@ -16,6 +16,14 @@ _HANDLERS: dict[tuple[str, str, str], Handler] = {}
 _ENTRYPOINTS_LOADED = False
 
 
+def _json_arguments(value):
+    if isinstance(value, Mapping):
+        return {str(key): _json_arguments(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [_json_arguments(item) for item in value]
+    return value
+
+
 def register_operation_handler(namespace: str, operation_id: str, version: str, handler: Handler) -> None:
     key = (namespace, operation_id, version)
     if key in _HANDLERS:
@@ -64,52 +72,64 @@ def _builtin_spreadsheet_handler(client, request: OperationRequest, options: Exe
     sheet = request.target.sheet
     args = dict(request.arguments)
     operation = request.operation_id
-    if operation == "workbook.inspect":
-        return book.inspect()
-    if operation == "workbook.verify":
-        return book.verify(args.get("expected"))
-    if operation == "workbook.reconcile":
-        return book.reconcile()
-    if operation == "workbook.write":
+    try:
+        if operation == "workbook.inspect":
+            return book.inspect()
+        if operation == "workbook.verify":
+            return book.verify(args.get("expected"))
+        if operation == "workbook.reconcile":
+            return book.reconcile()
+        if operation == "workbook.write":
+            return book.write(
+                dry_run=options.dry_run,
+                allow_partial=options.allow_partial,
+                expected_revision=options.expected_revision,
+                idempotency_key=options.idempotency_key,
+            )
+        if operation == "worksheet.list":
+            return OperationResult(book.worksheet.list(), Outcome.SUCCEEDED, CommitState.NOT_APPLICABLE, VerificationState.PASSED, ())
+        if not sheet:
+            return _rejected(ErrorCode.INVALID_TARGET, "spreadsheet operation requires a worksheet")
+        worksheet = book.worksheet(sheet)
+        if operation == "worksheet.create":
+            book.worksheet.create(args["name"])
+        elif operation == "worksheet.rename":
+            worksheet.rename(args["name"])
+        elif operation == "worksheet.delete":
+            worksheet.delete()
+        elif operation == "worksheet.move":
+            worksheet.move(args["index"])
+        else:
+            address = args.get("address")
+            range_handle = worksheet.range(address) if address is not None else None
+            if operation == "range.read":
+                return range_handle.read()
+            if operation == "range.write":
+                range_handle.write(args["values"])
+            elif operation == "range.clear":
+                range_handle.clear()
+            elif operation == "range.sort":
+                range_handle.sort(key_column=args.get("key_column", 1), reverse=args.get("reverse", False))
+            elif operation == "range.merge":
+                range_handle.merge()
+            elif operation == "range.unmerge":
+                range_handle.unmerge()
+            elif operation == "range.style":
+                range_handle.style(**{key: value for key, value in args.items() if key != "address"})
+            elif operation == "range.format":
+                range_handle.format(**{key: value for key, value in args.items() if key != "address"})
+            elif operation == "range.style.read":
+                return range_handle.read_style(args.get("fields"))
+            else:
+                return _rejected(ErrorCode.UNSUPPORTED_CAPABILITY, "workbook operation is not implemented", operation_id=operation)
         return book.write(
             dry_run=options.dry_run,
             allow_partial=options.allow_partial,
             expected_revision=options.expected_revision,
             idempotency_key=options.idempotency_key,
         )
-    if operation == "worksheet.list":
-        return OperationResult(book.worksheet.list(), Outcome.SUCCEEDED, CommitState.NOT_APPLICABLE, VerificationState.PASSED, ())
-    if not sheet:
-        return _rejected(ErrorCode.INVALID_TARGET, "spreadsheet operation requires a worksheet")
-    worksheet = book.worksheet(sheet)
-    if operation == "worksheet.create":
-        return book.worksheet.create(args["name"]).with_results()
-    if operation == "worksheet.rename":
-        return worksheet.rename(args["name"])
-    if operation == "worksheet.delete":
-        return worksheet.delete()
-    if operation == "worksheet.move":
-        return worksheet.move(args["index"])
-    address = args.get("address")
-    if operation == "range.read":
-        return worksheet.range(address).read()
-    if operation == "range.write":
-        return worksheet.range(address).write(args["values"])
-    if operation == "range.clear":
-        return worksheet.range(address).clear()
-    if operation == "range.sort":
-        return worksheet.range(address).sort(key_column=args.get("key_column", 1), reverse=args.get("reverse", False))
-    if operation == "range.merge":
-        return worksheet.range(address).merge()
-    if operation == "range.unmerge":
-        return worksheet.range(address).unmerge()
-    if operation == "range.style":
-        return worksheet.range(address).style(**{key: value for key, value in args.items() if key != "address"})
-    if operation == "range.format":
-        return worksheet.range(address).format(**{key: value for key, value in args.items() if key != "address"})
-    if operation == "range.style.read":
-        return worksheet.range(address).read_style(args.get("fields"))
-    return _rejected(ErrorCode.UNSUPPORTED_CAPABILITY, "workbook operation is not implemented", operation_id=operation)
+    finally:
+        book.close()
 
 
 def execute_operation(client, request: OperationRequest, options: ExecutionOptions, *, catalog: OperationCatalog | None = None) -> OperationResult[object]:
@@ -117,7 +137,7 @@ def execute_operation(client, request: OperationRequest, options: ExecutionOptio
     descriptor = selected.get(request.namespace, request.operation_id, request.version)
     if descriptor is None:
         return _rejected(ErrorCode.INVALID_DESCRIPTOR, "operation is not registered", operation_id=request.operation_id)
-    error = _validate(descriptor, dict(request.arguments))
+    error = _validate(descriptor, _json_arguments(request.arguments))
     if error is not None:
         return _rejected(ErrorCode.INVALID_SCHEMA, "operation arguments are invalid", reason=error)
     global _ENTRYPOINTS_LOADED
