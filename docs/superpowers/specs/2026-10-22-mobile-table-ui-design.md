@@ -388,9 +388,9 @@ The controller enforces these rules:
 
 ### 6.1 Browsing
 
-The default narrow-screen layout is a list of compact record cards. Each card shows the stable identity field and the first useful fields in schema order. A record detail sheet exposes every permitted field. The renderer also exposes an explicit `Grid view` toggle for people familiar with Excel who need to scan more rows and columns quickly. Grid view uses compact column headers, horizontal scrolling, and the same field order and values; it is a reading mode, and tapping a row still opens the same record detail sheet for editing.
+The default narrow-screen layout is a list of compact record cards. Each card shows the stable identity field and the first useful fields in schema order. A record detail sheet exposes every permitted field. The renderer also exposes an explicit `Card / Table` selector aligned to the right of the refresh action. The Table view is for people familiar with Excel who need to scan more rows and columns quickly: it uses compact column headers, horizontal scrolling, and the same field order and values. Each visible column boundary provides a touch-friendly drag handle with bounded minimum and maximum widths; the chosen widths apply to the header and all rows for the current session. Table view is a reading mode, and tapping a row still opens the same record detail sheet for editing.
 
-Grid view is available in both H5 and WeChat. H5 may use a horizontal grid directly in a wide or landscape container. WeChat uses a native horizontal scroll surface. Neither renderer makes cells inline-editable in v1.
+Table view is available in both H5 and WeChat. H5 may use a horizontal grid directly in a wide or landscape container. WeChat uses a native horizontal scroll surface. On iPad, the renderer uses a wider canvas, two-column cards, and a larger table viewport while preserving the same row tap and column resize behavior. Neither renderer makes cells inline-editable in v1.
 
 The header shows the table title, read-only/editable status, and sync state. The renderer provides loading, empty, and error slots so the host can apply product branding without changing controller behavior.
 

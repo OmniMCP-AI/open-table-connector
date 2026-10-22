@@ -177,7 +177,7 @@
         white-space: nowrap;
       }
       .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: #4eaa82; }
-      .toolbar { display: flex; gap: 8px; margin-bottom: 18px; }
+      .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 18px; }
       .toolbar button {
         min-height: 35px;
         padding: 0 12px;
@@ -195,7 +195,6 @@
         display: flex;
         align-items: center;
         gap: 0;
-        margin: -4px 0 14px;
       }
       .view-switch button {
         min-height: 30px;
@@ -209,7 +208,6 @@
       .view-switch button:nth-child(2) { border-left: 0; border-radius: 0 8px 8px 0; }
       .view-switch button:hover { color: var(--coral-dark); }
       .view-switch button.active { border-color: var(--ink); background: var(--ink); color: white; }
-      .grid-hint { margin-left: auto; color: var(--soft); font-size: 10px; }
       .record-list { display: grid; gap: 10px; }
       .record-card {
         width: 100%;
@@ -247,18 +245,30 @@
       .load-more { width: 100%; margin-top: 13px; min-height: 38px; border: 1px dashed #cfc6bb; border-radius: 12px; background: transparent; color: var(--muted); font-size: 11px; }
       .load-more:hover { border-color: var(--coral); color: var(--coral-dark); }
       .grid-shell { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: white; -webkit-overflow-scrolling: touch; }
-      .grid-header, .grid-row { display: grid; grid-template-columns: 1.55fr .82fr .72fr 1fr .62fr; min-width: 560px; }
+      .grid-header, .grid-row { display: grid; width: max-content; min-width: 100%; }
       .grid-header { padding: 0 12px; border-bottom: 1px solid var(--line); background: #f3f0eb; color: var(--soft); font-size: 9px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
       .grid-header > div, .grid-row > div { overflow: hidden; min-width: 0; padding: 11px 7px; text-overflow: ellipsis; white-space: nowrap; }
       .grid-header > div:first-child, .grid-row > div:first-child { padding-left: 4px; }
-      .grid-row { width: 100%; padding: 0 12px; border: 0; border-bottom: 1px solid var(--line); background: white; color: var(--ink); text-align: left; font-size: 11px; transition: .16s ease; }
+      .grid-row { padding: 0 12px; border: 0; border-bottom: 1px solid var(--line); background: white; color: var(--ink); text-align: left; font-size: 11px; transition: .16s ease; }
       .grid-row:last-child { border-bottom: 0; }
       .grid-row:hover { background: #fff8f5; }
       .grid-row > div:first-child { position: sticky; left: 0; z-index: 1; background: inherit; color: var(--ink); font-weight: 700; }
       .grid-row > div:not(:first-child) { color: #595650; }
+      .grid-header-cell { position: relative; }
+      .resize-handle { position: absolute; top: 5px; right: -1px; bottom: 5px; width: 12px; border: 0; border-right: 1px solid rgba(119,116,109,.35); background: transparent; cursor: col-resize; touch-action: none; }
+      .resize-handle:hover, .resize-handle:focus-visible { border-right-color: var(--coral); background: rgba(223,106,84,.12); outline: 0; }
+      .resizing { cursor: col-resize; user-select: none; }
       .grid-status { display: inline-flex; align-items: center; gap: 5px; }
       .grid-status i { width: 6px; height: 6px; border-radius: 50%; background: #4eaa82; }
       .grid-status i.amber { background: #c8912e; }
+
+      .ipad-studio { width: min(1320px, calc(100% - 40px)); grid-template-columns: minmax(240px, .65fr) minmax(560px, 760px) minmax(220px, .55fr); }
+      .device-ipad { width: min(760px, 100%); min-height: 690px; padding: 12px; border-radius: 30px; }
+      .device-ipad .phone-inner { min-height: 666px; border-radius: 22px; }
+      .device-ipad .notch { display: none; }
+      .device-ipad .content { padding: 22px 24px 82px; }
+      .device-ipad .record-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      .device-ipad .grid-header, .device-ipad .grid-row { min-width: 700px; }
 
       .scrim { position: absolute; z-index: 9; inset: 0; background: rgba(32,35,33,.38); }
       .sheet {
@@ -314,6 +324,7 @@
       @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
       @media (max-width: 980px) {
         .studio { grid-template-columns: 1fr 430px; justify-content: center; }
+        .ipad-studio { grid-template-columns: 1fr; }
         .notes { display: none; }
       }
       @media (max-width: 700px) {
@@ -324,13 +335,17 @@
         .intro p, .principles { display: none; }
         .controls { margin-bottom: 18px; }
         .phone { width: min(390px, 100%); margin: 0 auto; box-shadow: 0 14px 40px rgba(49,42,34,.12); }
+        .device-ipad { width: 100%; min-height: 640px; padding: 8px; border-radius: 25px; }
+        .device-ipad .phone-inner { min-height: 624px; border-radius: 19px; }
+        .device-ipad .content { padding: 17px 16px 80px; }
+        .device-ipad .record-list { grid-template-columns: 1fr; }
       }
     </style>
   </head>
   <body>
     <div id="root"></div>
     <script type="text/babel">
-      const { useMemo, useState } = React;
+      const { useEffect, useMemo, useRef, useState } = React;
 
       const seedRows = [
         { id: "rec-1024", title: "华东零售复购", status: "进行中", statusTone: "mint", owner: "林雪", updated: "今天 09:42", note: "门店复购率正在上升", score: "72" },
@@ -338,17 +353,54 @@
         { id: "rec-1022", title: "南区会员召回", status: "进行中", statusTone: "mint", owner: "赵越", updated: "昨天 15:28", note: "本周触达 1,284 人", score: "81" },
         { id: "rec-1021", title: "直营店开业计划", status: "待跟进", statusTone: "amber", owner: "陈岚", updated: "10 月 20 日", note: "等待物业确认时间", score: "46" }
       ];
+      const gridColumns = ["记录名称", "状态", "负责人", "最近更新", "评分"];
+      const initialColumnWidths = [164, 92, 92, 112, 68];
 
       function App() {
         const [platform, setPlatform] = useState("h5");
+        const [deviceMode, setDeviceMode] = useState("phone");
         const [demoMode, setDemoMode] = useState("browse");
         const [rows, setRows] = useState(seedRows);
         const [viewMode, setViewMode] = useState("cards");
+        const [columnWidths, setColumnWidths] = useState(initialColumnWidths);
+        const [resizing, setResizing] = useState(false);
         const [selected, setSelected] = useState(null);
         const [draft, setDraft] = useState(null);
         const [saveState, setSaveState] = useState("idle");
         const [busy, setBusy] = useState(false);
         const [toast, setToast] = useState("");
+        const resizeRef = useRef(null);
+
+        useEffect(() => {
+          const handlePointerMove = (event) => {
+            if (!resizeRef.current) return;
+            const { index, startX, startWidth } = resizeRef.current;
+            const min = index === 0 ? 132 : 68;
+            const max = index === 3 ? 220 : 280;
+            const nextWidth = Math.max(min, Math.min(max, startWidth + event.clientX - startX));
+            setColumnWidths((value) => value.map((width, columnIndex) => columnIndex === index ? nextWidth : width));
+          };
+          const handlePointerUp = () => {
+            if (!resizeRef.current) return;
+            resizeRef.current = null;
+            setResizing(false);
+          };
+          window.addEventListener("pointermove", handlePointerMove);
+          window.addEventListener("pointerup", handlePointerUp);
+          return () => {
+            window.removeEventListener("pointermove", handlePointerMove);
+            window.removeEventListener("pointerup", handlePointerUp);
+          };
+        }, []);
+
+        const gridTemplateColumns = columnWidths.map((width) => `${width}px`).join(" ");
+        const gridMinWidth = `${Math.max(560, columnWidths.reduce((total, width) => total + width, 0))}px`;
+        const startResize = (index, event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          resizeRef.current = { index, startX: event.clientX, startWidth: columnWidths[index] };
+          setResizing(true);
+        };
 
         const current = useMemo(() => rows.find((row) => row.id === selected) || null, [rows, selected]);
         const openRow = (row) => {
@@ -401,13 +453,13 @@
         };
 
         return (
-          <main className="studio">
+          <main className={`studio ${deviceMode === "ipad" ? "ipad-studio" : ""}`}>
             <section className="intro">
               <p className="eyebrow">OTC / mobile table / draft 01</p>
               <h1>把表格带进手机里的工作流。</h1>
               <p>一版用于确认方向的中保真设计稿：同一套 OTC 语义，在 H5 和微信小程序里各自使用合适的外壳。</p>
               <div className="principles">
-                <div className="principle"><strong>两种阅读密度</strong><span>卡片适合手机处理，Grid view 适合熟悉 Excel 的快速扫表。</span></div>
+                <div className="principle"><strong>两种阅读密度</strong><span>卡片适合手机处理，表格视图适合熟悉 Excel 的快速扫表。</span></div>
                 <div className="principle"><strong>只在有能力时编辑</strong><span>服务端给出 stable record ID 与 capability，UI 才亮起编辑入口。</span></div>
                 <div className="principle"><strong>冲突可见</strong><span>保存冲突保留草稿，给出当前服务端记录，不做静默覆盖。</span></div>
               </div>
@@ -421,6 +473,11 @@
                   <button className={`switch ${platform === "wechat" ? "active" : ""}`} onClick={() => setPlatform("wechat")}>微信小程序</button>
                 </div>
                 <div className="control-row">
+                  <span className="control-label">设备</span>
+                  <button className={`switch ${deviceMode === "phone" ? "active" : ""}`} onClick={() => setDeviceMode("phone")}>iPhone</button>
+                  <button className={`switch ${deviceMode === "ipad" ? "active" : ""}`} onClick={() => setDeviceMode("ipad")}>iPad</button>
+                </div>
+                <div className="control-row">
                   <span className="control-label">演示</span>
                   <button className={`switch ${demoMode === "browse" ? "active" : ""}`} onClick={() => enterDemo("browse")}>浏览</button>
                   <button className={`switch ${demoMode === "edit" ? "active" : ""}`} onClick={() => enterDemo("edit")}>编辑</button>
@@ -428,7 +485,7 @@
                 </div>
               </div>
 
-              <div className={`phone ${platform === "wechat" ? "wechat" : "h5"}`}>
+              <div className={`phone ${platform === "wechat" ? "wechat" : "h5"} ${deviceMode === "ipad" ? "device-ipad" : "device-phone"}`}>
                 <div className="phone-inner">
                   <div className="notch" />
                   <div className="statusbar"><span>9:41</span><span>5G&nbsp;&nbsp;▮▮▮&nbsp;&nbsp;100%</span></div>
@@ -445,12 +502,10 @@
                     </div>
                     <div className="toolbar">
                       <button className="primary" onClick={refresh}>刷新数据</button>
-                      <button onClick={() => setToast("当前表格支持单条记录编辑")}>能力说明</button>
-                    </div>
-                    <div className="view-switch" role="tablist" aria-label="阅读模式">
-                      <button className={viewMode === "cards" ? "active" : ""} onClick={() => setViewMode("cards")} role="tab" aria-selected={viewMode === "cards"}>卡片</button>
-                      <button className={viewMode === "grid" ? "active" : ""} onClick={() => setViewMode("grid")} role="tab" aria-selected={viewMode === "grid"}>Grid view</button>
-                      {viewMode === "grid" && <span className="grid-hint">左右滑动查看更多列</span>}
+                      <div className="view-switch" role="tablist" aria-label="阅读模式">
+                        <button className={viewMode === "cards" ? "active" : ""} onClick={() => setViewMode("cards")} role="tab" aria-selected={viewMode === "cards"}>卡片</button>
+                        <button className={viewMode === "grid" ? "active" : ""} onClick={() => setViewMode("grid")} role="tab" aria-selected={viewMode === "grid"}>表格</button>
+                      </div>
                     </div>
                     {viewMode === "cards" ? (
                       <div className="record-list">
@@ -470,10 +525,19 @@
                         ))}
                       </div>
                     ) : (
-                      <div className="grid-shell" role="region" aria-label="Grid view，可横向滚动">
-                        <div className="grid-header"><div>记录名称</div><div>状态</div><div>负责人</div><div>最近更新</div><div>评分</div></div>
+                      <div className="grid-shell" role="region" aria-label="表格视图，可横向滚动">
+                        <div className="grid-header" style={{ gridTemplateColumns, minWidth: gridMinWidth }}>
+                          {gridColumns.map((label, index) => (
+                            <div className="grid-header-cell" key={label}>
+                              {label}
+                              {index < gridColumns.length - 1 && (
+                                <button className="resize-handle" aria-label={`调整${label}列宽`} onPointerDown={(event) => startResize(index, event)} />
+                              )}
+                            </div>
+                          ))}
+                        </div>
                         {rows.map((row) => (
-                          <button className="grid-row" key={row.id} onClick={() => openRow(row)}>
+                          <button className={`grid-row ${resizing ? "resizing" : ""}`} style={{ gridTemplateColumns, minWidth: gridMinWidth }} key={row.id} onClick={() => openRow(row)}>
                             <div title={`${row.title} · ${row.id}`}>{row.title}</div>
                             <div><span className="grid-status"><i className={row.statusTone === "amber" ? "amber" : ""} />{row.status}</span></div>
                             <div>{row.owner}</div>
