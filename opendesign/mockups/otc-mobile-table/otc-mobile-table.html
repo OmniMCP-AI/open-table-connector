@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OTC Mobile Table · Design Draft</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+      :root {
+        --ink: #202321;
+        --muted: #77746d;
+        --soft: #a6a198;
+        --paper: #fbfaf7;
+        --warm: #f2eee8;
+        --warm-deep: #e5ded5;
+        --line: #e7e2db;
+        --coral: #df6a54;
+        --coral-dark: #bd4f3c;
+        --coral-soft: #f8e1db;
+        --mint: #d9eee6;
+        --mint-ink: #286751;
+        --amber: #f5e5bd;
+        --amber-ink: #825f1f;
+        --shadow: 0 28px 80px rgba(49, 42, 34, 0.17);
+        --radius: 18px;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-width: 320px;
+        color: var(--ink);
+        background: #ddd6ce;
+        font-family: "DM Sans", "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      button, input { font: inherit; }
+      button { cursor: pointer; }
+      button:focus-visible, input:focus-visible { outline: 3px solid rgba(223, 106, 84, .28); outline-offset: 2px; }
+
+      .studio {
+        width: min(1180px, calc(100% - 40px));
+        min-height: 100vh;
+        margin: 0 auto;
+        padding: 32px 0 56px;
+        display: grid;
+        grid-template-columns: minmax(280px, 1fr) 430px minmax(220px, .8fr);
+        gap: 42px;
+        align-items: start;
+      }
+      .eyebrow {
+        margin: 0 0 14px;
+        color: var(--soft);
+        font: 700 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+      }
+      .intro { padding-top: 70px; }
+      .intro h1 {
+        max-width: 360px;
+        margin: 0;
+        font-size: clamp(34px, 4.4vw, 58px);
+        line-height: .96;
+        letter-spacing: -.065em;
+        font-weight: 750;
+      }
+      .intro p {
+        max-width: 335px;
+        margin: 22px 0 28px;
+        color: #5d5a54;
+        font-size: 15px;
+        line-height: 1.65;
+      }
+      .principles {
+        display: grid;
+        gap: 10px;
+        max-width: 360px;
+      }
+      .principle {
+        padding: 13px 14px;
+        border: 1px solid rgba(32,35,33,.08);
+        border-radius: 14px;
+        background: rgba(251,250,247,.52);
+      }
+      .principle strong { display: block; margin-bottom: 4px; font-size: 13px; }
+      .principle span { color: var(--muted); font-size: 12px; line-height: 1.4; }
+
+      .controls {
+        margin-bottom: 14px;
+        display: grid;
+        gap: 10px;
+      }
+      .control-row { display: flex; gap: 8px; flex-wrap: wrap; }
+      .control-label { align-self: center; width: 68px; color: var(--muted); font-size: 12px; }
+      .switch {
+        min-height: 36px;
+        padding: 0 13px;
+        border: 1px solid rgba(32,35,33,.15);
+        border-radius: 99px;
+        background: rgba(251,250,247,.55);
+        color: var(--muted);
+        font-size: 12px;
+        transition: .18s ease;
+      }
+      .switch:hover { border-color: var(--coral); color: var(--ink); transform: translateY(-1px); }
+      .switch.active { border-color: var(--ink); background: var(--ink); color: white; }
+      .phone {
+        width: 390px;
+        max-width: 100%;
+        min-height: 844px;
+        padding: 10px;
+        border: 1px solid rgba(31,30,27,.25);
+        border-radius: 43px;
+        background: #272827;
+        box-shadow: var(--shadow);
+      }
+      .phone-inner {
+        position: relative;
+        min-height: 822px;
+        overflow: hidden;
+        border-radius: 34px;
+        background: var(--paper);
+      }
+      .notch {
+        position: absolute;
+        z-index: 5;
+        top: 0;
+        left: 50%;
+        width: 122px;
+        height: 24px;
+        transform: translateX(-50%);
+        border-radius: 0 0 16px 16px;
+        background: #272827;
+      }
+      .wechat .notch { display: none; }
+      .statusbar {
+        display: flex;
+        justify-content: space-between;
+        padding: 12px 20px 5px;
+        color: var(--muted);
+        font: 700 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .wechat .statusbar { padding-top: 16px; }
+      .mini-nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 50px;
+        padding: 0 18px;
+        border-bottom: 1px solid var(--line);
+      }
+      .mini-nav h2 { margin: 0; font-size: 17px; letter-spacing: -.025em; }
+      .mini-nav .nav-action { border: 0; background: none; color: var(--muted); font-size: 17px; }
+      .wechat .mini-nav { justify-content: center; min-height: 47px; }
+      .wechat .mini-nav h2 { font-size: 16px; }
+      .wechat .mini-nav .nav-action { position: absolute; right: 18px; }
+      .nav-dots { display: inline-flex; gap: 3px; align-items: center; }
+      .nav-dots i { width: 3px; height: 3px; border-radius: 50%; background: currentColor; }
+      .content { padding: 17px 16px 80px; }
+      .table-meta {
+        margin-bottom: 10px;
+      }
+      .table-meta h3 { margin: 0; font-size: 22px; letter-spacing: -.055em; }
+      .table-toolbar {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 15px;
+      }
+      .table-toolbar .view-switch { justify-self: start; }
+      .record-count { justify-self: center; color: var(--muted); font-size: 10px; white-space: nowrap; }
+      .table-actions { display: flex; align-items: center; justify-self: end; gap: 8px; }
+      .sync {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--mint-ink);
+        font-size: 10px;
+        white-space: nowrap;
+      }
+      .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: #4eaa82; }
+      .refresh-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 31px;
+        height: 31px;
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: white;
+        color: var(--muted);
+        font-size: 17px;
+        line-height: 1;
+        transition: .18s ease;
+      }
+      .refresh-icon:hover { border-color: var(--coral); color: var(--coral-dark); transform: translateY(-1px); }
+      .view-switch {
+        display: flex;
+        align-items: center;
+        gap: 0;
+      }
+      .view-switch button {
+        min-height: 30px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        background: white;
+        color: var(--muted);
+        font-size: 10px;
+      }
+      .view-switch button:first-child { border-radius: 8px 0 0 8px; }
+      .view-switch button:nth-child(2) { border-left: 0; border-radius: 0 8px 8px 0; }
+      .view-switch button:hover { color: var(--coral-dark); }
+      .view-switch button.active { border-color: var(--ink); background: var(--ink); color: white; }
+      .record-list { display: grid; gap: 10px; }
+      .record-card {
+        width: 100%;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: white;
+        text-align: left;
+        transition: .18s ease;
+      }
+      .record-card:hover { border-color: rgba(223,106,84,.55); box-shadow: 0 8px 22px rgba(80,56,43,.08); transform: translateY(-1px); }
+      .record-top { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
+      .record-title { margin: 0; font-size: 15px; letter-spacing: -.02em; }
+      .record-id { margin-top: 3px; color: var(--soft); font: 10px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .chip { display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border-radius: 99px; font-size: 10px; white-space: nowrap; }
+      .chip.mint { background: var(--mint); color: var(--mint-ink); }
+      .chip.amber { background: var(--amber); color: var(--amber-ink); }
+      .record-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+      .field-label { margin-bottom: 3px; color: var(--soft); font-size: 10px; }
+      .field-value { overflow: hidden; color: #4d4c48; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+      .bottom-bar {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        display: flex;
+        justify-content: space-around;
+        padding: 9px 14px 14px;
+        border-top: 1px solid var(--line);
+        background: rgba(251,250,247,.96);
+      }
+      .bottom-tab { border: 0; background: none; color: var(--muted); font-size: 10px; }
+      .bottom-tab.active { color: var(--coral-dark); font-weight: 700; }
+      .bottom-icon { display: block; margin-bottom: 4px; font-size: 15px; line-height: 1; }
+      .load-more { width: 100%; margin-top: 13px; min-height: 38px; border: 1px dashed #cfc6bb; border-radius: 12px; background: transparent; color: var(--muted); font-size: 11px; }
+      .load-more:hover { border-color: var(--coral); color: var(--coral-dark); }
+      .grid-shell { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: white; -webkit-overflow-scrolling: touch; }
+      .grid-header, .grid-row { display: grid; width: max-content; min-width: 100%; }
+      .grid-header { padding: 0 12px; border-bottom: 1px solid var(--line); background: #f3f0eb; color: var(--soft); font-size: 9px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
+      .grid-header > div, .grid-row > div { overflow: hidden; min-width: 0; padding: 11px 7px; text-overflow: ellipsis; white-space: nowrap; }
+      .grid-header > div:first-child, .grid-row > div:first-child { padding-left: 4px; }
+      .grid-row { padding: 0 12px; border: 0; border-bottom: 1px solid var(--line); background: white; color: var(--ink); text-align: left; font-size: 11px; transition: .16s ease; }
+      .grid-row:last-child { border-bottom: 0; }
+      .grid-row:hover { background: #fff8f5; }
+      .grid-row > div:first-child { position: sticky; left: 0; z-index: 1; background: inherit; color: var(--ink); font-weight: 700; }
+      .grid-row > div:not(:first-child) { color: #595650; }
+      .grid-header-cell { position: relative; }
+      .resize-handle { position: absolute; top: 5px; right: -1px; bottom: 5px; width: 12px; border: 0; border-right: 1px solid rgba(119,116,109,.35); background: transparent; cursor: col-resize; touch-action: none; }
+      .resize-handle:hover, .resize-handle:focus-visible { border-right-color: var(--coral); background: rgba(223,106,84,.12); outline: 0; }
+      .resizing { cursor: col-resize; user-select: none; }
+      .grid-status { display: inline-flex; align-items: center; gap: 5px; }
+      .grid-status i { width: 6px; height: 6px; border-radius: 50%; background: #4eaa82; }
+      .grid-status i.amber { background: #c8912e; }
+
+      .ipad-studio { width: min(1320px, calc(100% - 40px)); grid-template-columns: minmax(240px, .65fr) minmax(560px, 760px) minmax(220px, .55fr); }
+      .device-ipad { width: min(760px, 100%); min-height: 690px; padding: 12px; border-radius: 30px; }
+      .device-ipad .phone-inner { min-height: 666px; border-radius: 22px; }
+      .device-ipad .notch { display: none; }
+      .device-ipad .content { padding: 22px 24px 82px; }
+      .device-ipad .record-list { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+      .device-ipad .grid-header, .device-ipad .grid-row { min-width: 700px; }
+
+      .scrim { position: absolute; z-index: 9; inset: 0; background: rgba(32,35,33,.38); }
+      .sheet {
+        position: absolute;
+        z-index: 10;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        max-height: 86%;
+        overflow: auto;
+        padding: 11px 17px 23px;
+        border-radius: 23px 23px 0 0;
+        background: var(--paper);
+        box-shadow: 0 -14px 40px rgba(32,35,33,.16);
+        animation: rise .22s ease both;
+      }
+      @keyframes rise { from { transform: translateY(20px); opacity: .5; } to { transform: translateY(0); opacity: 1; } }
+      .grabber { width: 38px; height: 4px; margin: 0 auto 14px; border-radius: 9px; background: #d7d0c8; }
+      .sheet-head { display: flex; justify-content: space-between; gap: 14px; align-items: start; margin-bottom: 18px; }
+      .sheet-head h3 { margin: 0 0 4px; font-size: 20px; letter-spacing: -.045em; }
+      .sheet-head p { margin: 0; color: var(--muted); font-size: 11px; }
+      .close { width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--warm); color: var(--muted); font-size: 18px; }
+      .edit-form { display: grid; gap: 14px; }
+      .edit-field label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; }
+      .edit-field input { width: 100%; min-height: 45px; padding: 0 12px; border: 1px solid #dcd6ce; border-radius: 11px; background: white; color: var(--ink); font-size: 14px; }
+      .edit-field input:disabled { color: #88837b; background: #f1eee9; }
+      .readonly-note { margin-top: 5px; color: var(--soft); font-size: 10px; }
+      .sheet-actions { display: flex; gap: 9px; margin-top: 6px; }
+      .sheet-actions button { flex: 1; min-height: 45px; border-radius: 11px; font-size: 13px; font-weight: 700; }
+      .sheet-actions .cancel { border: 1px solid var(--line); background: white; color: var(--muted); }
+      .sheet-actions .save { border: 1px solid var(--coral); background: var(--coral); color: white; }
+      .sheet-actions .save:disabled { border-color: #d9b0a7; background: #d9b0a7; }
+      .saving-note { display: flex; align-items: center; gap: 7px; margin-top: 10px; color: var(--coral-dark); font-size: 11px; }
+      .spinner { width: 12px; height: 12px; border: 2px solid #efb8aa; border-top-color: var(--coral-dark); border-radius: 50%; animation: spin .7s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .conflict { padding: 11px 12px; border: 1px solid #ead1a3; border-radius: 12px; background: #fff8e9; }
+      .conflict strong { display: block; margin-bottom: 4px; color: var(--amber-ink); font-size: 12px; }
+      .conflict p { margin: 0; color: #7d6c4a; font-size: 11px; line-height: 1.5; }
+      .conflict-row { display: flex; justify-content: space-between; gap: 10px; margin-top: 9px; padding-top: 9px; border-top: 1px solid #eddfc6; font-size: 11px; }
+      .success-note { padding: 10px 12px; border-radius: 11px; background: var(--mint); color: var(--mint-ink); font-size: 11px; }
+
+      .notes { padding-top: 110px; }
+      .notes h2 { margin: 0 0 15px; font-size: 15px; letter-spacing: -.02em; }
+      .notes ol { margin: 0; padding-left: 18px; color: #605c55; font-size: 12px; line-height: 1.7; }
+      .notes li { padding-left: 5px; margin-bottom: 10px; }
+      .legend { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 22px; }
+      .legend span { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 10px; }
+      .legend i { width: 7px; height: 7px; border-radius: 50%; background: var(--coral); }
+      .legend i.mint { background: #4eaa82; }
+      .legend i.amber { background: #c8912e; }
+
+      .toast { position: absolute; z-index: 20; right: 14px; bottom: 61px; left: 14px; padding: 11px 13px; border-radius: 11px; background: var(--ink); color: white; font-size: 11px; animation: toast-in .2s ease both; }
+      @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      @media (max-width: 980px) {
+        .studio { grid-template-columns: 1fr 430px; justify-content: center; }
+        .ipad-studio { grid-template-columns: 1fr; }
+        .notes { display: none; }
+      }
+      @media (max-width: 700px) {
+        body { background: var(--paper); }
+        .studio { width: 100%; display: block; padding: 18px 16px 36px; }
+        .intro { padding: 0 0 18px; }
+        .intro h1 { max-width: none; font-size: 38px; }
+        .intro p, .principles { display: none; }
+        .controls { margin-bottom: 18px; }
+        .phone { width: min(390px, 100%); margin: 0 auto; box-shadow: 0 14px 40px rgba(49,42,34,.12); }
+        .device-ipad { width: 100%; min-height: 640px; padding: 8px; border-radius: 25px; }
+        .device-ipad .phone-inner { min-height: 624px; border-radius: 19px; }
+        .device-ipad .content { padding: 17px 16px 80px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="text/babel">
+      const { useEffect, useMemo, useRef, useState } = React;
+
+      const seedRows = [
+        { id: "rec-1024", title: "华东零售复购", status: "进行中", statusTone: "mint", owner: "林雪", updated: "今天 09:42", note: "门店复购率正在上升", score: "72" },
+        { id: "rec-1023", title: "北区新客转化", status: "待跟进", statusTone: "amber", owner: "周宁", updated: "昨天 18:10", note: "需要补充销售渠道", score: "58" },
+        { id: "rec-1022", title: "南区会员召回", status: "进行中", statusTone: "mint", owner: "赵越", updated: "昨天 15:28", note: "本周触达 1,284 人", score: "81" },
+        { id: "rec-1021", title: "直营店开业计划", status: "待跟进", statusTone: "amber", owner: "陈岚", updated: "10 月 20 日", note: "等待物业确认时间", score: "46" }
+      ];
+      const gridColumns = ["记录名称", "状态", "负责人", "最近更新", "评分"];
+      const initialColumnWidths = [164, 92, 92, 112, 68];
+
+      function App() {
+        const [platform, setPlatform] = useState("h5");
+        const [deviceMode, setDeviceMode] = useState("phone");
+        const [demoMode, setDemoMode] = useState("browse");
+        const [rows, setRows] = useState(seedRows);
+        const [viewMode, setViewMode] = useState("cards");
+        const [columnWidths, setColumnWidths] = useState(initialColumnWidths);
+        const [resizing, setResizing] = useState(false);
+        const [selected, setSelected] = useState(null);
+        const [draft, setDraft] = useState(null);
+        const [saveState, setSaveState] = useState("idle");
+        const [busy, setBusy] = useState(false);
+        const [toast, setToast] = useState("");
+        const resizeRef = useRef(null);
+
+        useEffect(() => {
+          const handlePointerMove = (event) => {
+            if (!resizeRef.current) return;
+            const { index, startX, startWidth } = resizeRef.current;
+            const min = index === 0 ? 132 : 68;
+            const max = index === 3 ? 220 : 280;
+            const nextWidth = Math.max(min, Math.min(max, startWidth + event.clientX - startX));
+            setColumnWidths((value) => value.map((width, columnIndex) => columnIndex === index ? nextWidth : width));
+          };
+          const handlePointerUp = () => {
+            if (!resizeRef.current) return;
+            resizeRef.current = null;
+            setResizing(false);
+          };
+          window.addEventListener("pointermove", handlePointerMove);
+          window.addEventListener("pointerup", handlePointerUp);
+          return () => {
+            window.removeEventListener("pointermove", handlePointerMove);
+            window.removeEventListener("pointerup", handlePointerUp);
+          };
+        }, []);
+
+        const gridTemplateColumns = columnWidths.map((width) => `${width}px`).join(" ");
+        const gridMinWidth = `${Math.max(560, columnWidths.reduce((total, width) => total + width, 0))}px`;
+        const startResize = (index, event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          resizeRef.current = { index, startX: event.clientX, startWidth: columnWidths[index] };
+          setResizing(true);
+        };
+
+        const current = useMemo(() => rows.find((row) => row.id === selected) || null, [rows, selected]);
+        const openRow = (row) => {
+          setSelected(row.id);
+          setDraft({ ...row });
+          setSaveState("idle");
+        };
+        const closeSheet = () => {
+          setSelected(null);
+          setDraft(null);
+          setSaveState("idle");
+        };
+        const setField = (field, value) => setDraft((valueNow) => ({ ...valueNow, [field]: value }));
+        const refresh = () => {
+          setBusy(true);
+          setToast("正在重新读取 OTC 表格…");
+          window.setTimeout(() => {
+            setBusy(false);
+            setToast("已同步到最新版本");
+            window.setTimeout(() => setToast(""), 2200);
+          }, 750);
+        };
+        const loadMore = () => {
+          const next = [
+            { id: "rec-1020", title: "西南渠道盘点", status: "进行中", statusTone: "mint", owner: "陆川", updated: "10 月 19 日", note: "渠道数据已接入", score: "66" },
+            { id: "rec-1019", title: "华南促销复盘", status: "待跟进", statusTone: "amber", owner: "方圆", updated: "10 月 18 日", note: "待确认下一轮预算", score: "51" }
+          ];
+          setRows((value) => [...value, ...next]);
+          setToast("已加载下一页 · 2 条记录");
+          window.setTimeout(() => setToast(""), 2200);
+        };
+        const save = () => {
+          if (!draft || !draft.title.trim() || !draft.owner.trim()) return;
+          if (demoMode === "conflict") {
+            setSaveState("conflict");
+            return;
+          }
+          setSaveState("saving");
+          window.setTimeout(() => {
+            setRows((value) => value.map((row) => row.id === draft.id ? { ...draft, updated: "刚刚", status: "进行中", statusTone: "mint" } : row));
+            setSaveState("success");
+            window.setTimeout(closeSheet, 950);
+          }, 720);
+        };
+        const enterDemo = (mode) => {
+          setDemoMode(mode);
+          if (mode === "browse") closeSheet();
+          if (mode === "edit" && !selected) openRow(rows[0]);
+          if (mode === "conflict" && !selected) openRow(rows[0]);
+        };
+
+        return (
+          <main className={`studio ${deviceMode === "ipad" ? "ipad-studio" : ""}`}>
+            <section className="intro">
+              <p className="eyebrow">OTC / mobile table / draft 01</p>
+              <h1>把表格带进手机里的工作流。</h1>
+              <p>一版用于确认方向的中保真设计稿：同一套 OTC 语义，在 H5 和微信小程序里各自使用合适的外壳。</p>
+              <div className="principles">
+                <div className="principle"><strong>两种阅读密度</strong><span>卡片适合手机处理，表格视图适合熟悉 Excel 的快速扫表。</span></div>
+                <div className="principle"><strong>只在有能力时编辑</strong><span>服务端给出 stable record ID 与 capability，UI 才亮起编辑入口。</span></div>
+                <div className="principle"><strong>冲突可见</strong><span>保存冲突保留草稿，给出当前服务端记录，不做静默覆盖。</span></div>
+              </div>
+            </section>
+
+            <section>
+              <div className="controls" aria-label="Prototype controls">
+                <div className="control-row">
+                  <span className="control-label">容器</span>
+                  <button className={`switch ${platform === "h5" ? "active" : ""}`} onClick={() => setPlatform("h5")}>H5 手机</button>
+                  <button className={`switch ${platform === "wechat" ? "active" : ""}`} onClick={() => setPlatform("wechat")}>微信小程序</button>
+                </div>
+                <div className="control-row">
+                  <span className="control-label">设备</span>
+                  <button className={`switch ${deviceMode === "phone" ? "active" : ""}`} onClick={() => setDeviceMode("phone")}>iPhone</button>
+                  <button className={`switch ${deviceMode === "ipad" ? "active" : ""}`} onClick={() => setDeviceMode("ipad")}>iPad</button>
+                </div>
+                <div className="control-row">
+                  <span className="control-label">演示</span>
+                  <button className={`switch ${demoMode === "browse" ? "active" : ""}`} onClick={() => enterDemo("browse")}>浏览</button>
+                  <button className={`switch ${demoMode === "edit" ? "active" : ""}`} onClick={() => enterDemo("edit")}>编辑</button>
+                  <button className={`switch ${demoMode === "conflict" ? "active" : ""}`} onClick={() => enterDemo("conflict")}>冲突</button>
+                </div>
+              </div>
+
+              <div className={`phone ${platform === "wechat" ? "wechat" : "h5"} ${deviceMode === "ipad" ? "device-ipad" : "device-phone"}`}>
+                <div className="phone-inner">
+                  <div className="notch" />
+                  <div className="statusbar"><span>9:41</span><span>5G&nbsp;&nbsp;▮▮▮&nbsp;&nbsp;100%</span></div>
+                  <nav className="mini-nav">
+                    <h2>{platform === "wechat" ? "增长机会" : "OTC Table"}</h2>
+                    <button className="nav-action" aria-label="更多操作">
+                      {platform === "wechat" ? <span className="nav-dots"><i /><i /><i /></span> : "↻"}
+                    </button>
+                  </nav>
+                  <div className="content">
+                    <div className="table-meta">
+                      <h3>增长机会</h3>
+                    </div>
+                    <div className="table-toolbar">
+                      <div className="view-switch" role="tablist" aria-label="阅读模式">
+                        <button className={viewMode === "cards" ? "active" : ""} onClick={() => setViewMode("cards")} role="tab" aria-selected={viewMode === "cards"}>卡片</button>
+                        <button className={viewMode === "grid" ? "active" : ""} onClick={() => setViewMode("grid")} role="tab" aria-selected={viewMode === "grid"}>表格</button>
+                      </div>
+                      <span className="record-count">412 条记录</span>
+                      <div className="table-actions">
+                        <div className="sync"><i className="sync-dot" />{busy ? "同步中" : "已同步"}</div>
+                        <button className="refresh-icon" onClick={refresh} aria-label="刷新数据" title="刷新数据">↻</button>
+                      </div>
+                    </div>
+                    {viewMode === "cards" ? (
+                      <div className="record-list">
+                        {rows.map((row) => (
+                          <button className="record-card" key={row.id} onClick={() => openRow(row)}>
+                            <div className="record-top">
+                              <div><h4 className="record-title">{row.title}</h4><div className="record-id">{row.id}</div></div>
+                              <span className={`chip ${row.statusTone}`}>{row.status}</span>
+                            </div>
+                            <div className="record-fields">
+                              <div><div className="field-label">负责人</div><div className="field-value">{row.owner}</div></div>
+                              <div><div className="field-label">最近更新</div><div className="field-value">{row.updated}</div></div>
+                              <div><div className="field-label">机会评分</div><div className="field-value">{row.score} / 100</div></div>
+                              <div><div className="field-label">备注</div><div className="field-value">{row.note}</div></div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="grid-shell" role="region" aria-label="表格视图，可横向滚动">
+                        <div className="grid-header" style={{ gridTemplateColumns, minWidth: gridMinWidth }}>
+                          {gridColumns.map((label, index) => (
+                            <div className="grid-header-cell" key={label}>
+                              {label}
+                              {index < gridColumns.length - 1 && (
+                                <button className="resize-handle" aria-label={`调整${label}列宽`} onPointerDown={(event) => startResize(index, event)} />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {rows.map((row) => (
+                          <button className={`grid-row ${resizing ? "resizing" : ""}`} style={{ gridTemplateColumns, minWidth: gridMinWidth }} key={row.id} onClick={() => openRow(row)}>
+                            <div title={`${row.title} · ${row.id}`}>{row.title}</div>
+                            <div><span className="grid-status"><i className={row.statusTone === "amber" ? "amber" : ""} />{row.status}</span></div>
+                            <div>{row.owner}</div>
+                            <div>{row.updated}</div>
+                            <div>{row.score}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <button className="load-more" onClick={loadMore}>加载下一页 · 继续浏览</button>
+                  </div>
+                  <div className="bottom-bar">
+                    <button className="bottom-tab active"><span className="bottom-icon">▦</span>数据</button>
+                    <button className="bottom-tab" onClick={() => setToast("筛选与视图设置放在下一版") }><span className="bottom-icon">≡</span>视图</button>
+                    <button className="bottom-tab" onClick={() => setToast("编辑权限由 OTC capability 决定") }><span className="bottom-icon">◌</span>权限</button>
+                  </div>
+
+                  {selected && current && (
+                    <>
+                      <div className="scrim" onClick={closeSheet} />
+                      <div className="sheet" role="dialog" aria-modal="true" aria-label="编辑记录">
+                        <div className="grabber" />
+                        <div className="sheet-head">
+                          <div><h3>{current.title}</h3><p>{current.id} · record revision sha256:…9ad2</p></div>
+                          <button className="close" onClick={closeSheet} aria-label="关闭">×</button>
+                        </div>
+                        {saveState === "conflict" && (
+                          <div className="conflict">
+                            <strong>记录已被其他人更新</strong>
+                            <p>你的草稿仍然保留。请对照当前版本后重新编辑，避免覆盖他人的修改。</p>
+                            <div className="conflict-row"><span>服务端当前状态</span><b>{current.status}</b></div>
+                          </div>
+                        )}
+                        {saveState === "success" && <div className="success-note">已保存，正在用服务端返回的记录刷新列表。</div>}
+                        {saveState !== "success" && (
+                          <div className="edit-form">
+                            <div className="edit-field"><label htmlFor="title">记录名称</label><input id="title" value={draft.title} onChange={(event) => setField("title", event.target.value)} disabled={saveState === "saving"} /></div>
+                            <div className="edit-field"><label htmlFor="owner">负责人</label><input id="owner" value={draft.owner} onChange={(event) => setField("owner", event.target.value)} disabled={saveState === "saving"} /></div>
+                            <div className="edit-field"><label htmlFor="note">备注</label><input id="note" value={draft.note} onChange={(event) => setField("note", event.target.value)} disabled={saveState === "saving"} /></div>
+                            <div className="edit-field"><label htmlFor="score">机会评分 · 只读</label><input id="score" value={`${draft.score} / 100`} disabled /><div className="readonly-note">computed_field · 由 OTC capability 标记为不可编辑</div></div>
+                            {saveState === "saving" && <div className="saving-note"><span className="spinner" />正在提交 patch，等待验证结果…</div>}
+                            <div className="sheet-actions"><button className="cancel" onClick={closeSheet} disabled={saveState === "saving"}>取消</button><button className="save" onClick={save} disabled={saveState === "saving" || !draft.title.trim() || !draft.owner.trim()}>保存记录</button></div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                  {toast && <div className="toast">{toast}</div>}
+                </div>
+              </div>
+            </section>
+
+            <aside className="notes">
+              <p className="eyebrow">Review focus</p>
+              <h2>请先确认这 5 个方向</h2>
+              <ol>
+                <li>列表卡片是否比手机横向表格更适合作为默认视图？</li>
+                <li>详情抽屉里的单条编辑是否足够简单？</li>
+                <li>冲突态是否需要保留“查看服务端版本”这一步？</li>
+                <li>H5 与微信的头部外壳是否需要更强的品牌差异？</li>
+                <li>下一版是否加入搜索、筛选和字段排序？</li>
+              </ol>
+              <div className="legend"><span><i />主操作</span><span><i className="mint" />已同步</span><span><i className="amber" />需要处理</span></div>
+            </aside>
+          </main>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
+</html>

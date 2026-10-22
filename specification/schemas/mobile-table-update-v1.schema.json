@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OTC mobile table update v1",
+  "oneOf": [
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract", "request_id", "operation_id", "outcome", "commit", "verification", "table_revision", "record", "receipts"],
+      "properties": {
+        "contract": {"const": "otc.mobile.table/1.0"}, "request_id": {"type": "string", "minLength": 1}, "operation_id": {"type": ["string", "null"]},
+        "outcome": {"enum": ["succeeded", "rejected", "failed", "partial", "unknown", "planned"]},
+        "commit": {"enum": ["not_applicable", "not_started", "not_committed", "committed", "partial", "unknown"]},
+        "verification": {"enum": ["passed", "failed", "skipped", "unavailable", "not_applicable"]},
+        "table_revision": {"type": ["string", "null"]}, "record": {"type": ["object", "null"], "properties": {"record_id": {"type": "string", "minLength": 1}, "record_revision": {"type": "string", "minLength": 1}, "values": {"type": "object", "additionalProperties": {"type": ["string", "number", "boolean", "null", "array", "object"]}}}, "required": ["record_id", "record_revision", "values"], "additionalProperties": false}, "receipts": {"type": "array", "items": {"type": "object", "additionalProperties": true}
+        }
+      }
+    },
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract", "request_id", "error"],
+      "properties": {
+        "contract": {"const": "otc.mobile.table/1.0"}, "request_id": {"type": "string", "minLength": 1},
+        "error": {"$ref": "#/$defs/error"}
+      }
+    }
+  ],
+  "$defs": {
+    "row": {
+      "type": "object", "additionalProperties": false,
+      "required": ["record_id", "record_revision", "values"],
+      "properties": {"record_id": {"type": "string", "minLength": 1}, "record_revision": {"type": "string", "minLength": 1}, "values": {"type": "object", "additionalProperties": {"type": ["string", "number", "boolean", "null", "array", "object"]}}}
+    },
+    "error": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "message", "details"],
+      "properties": {"code": {"type": "string", "minLength": 1}, "message": {"type": "string", "minLength": 1}, "details": {"type": "object", "additionalProperties": {"type": ["string", "number", "boolean", "null", "array", "object"]}}}
+    }
+  }
+}

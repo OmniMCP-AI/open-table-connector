@@ -7,6 +7,7 @@
 - [Configuration](configuration.md)
 - [Error codes](error-codes.md)
 - [Compatibility](compatibility.md)
+- [Mobile table HTTP contract](mobile-table-http.md)
 - [CLI reference](../user-guide/cli.md)
 - [Spreadsheet operations](../user-guide/spreadsheet-operations.md)
 - [Office artifact readiness](../office-artifact-readiness.md)

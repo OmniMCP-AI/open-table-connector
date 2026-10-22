@@ -17,7 +17,15 @@ from .model import (
     SheetModeTableAddress,
     TableMode,
 )
-from .result import CommitState, ErrorCode, OperationResult, OTCError, Outcome, VerificationState
+from .result import (
+    CommitState,
+    ErrorCode,
+    ErrorInfo,
+    OperationResult,
+    OTCError,
+    Outcome,
+    VerificationState,
+)
 
 if TYPE_CHECKING:
     from open_table_connector.timeseries import TemporalTableDescriptor
@@ -308,6 +316,43 @@ class Table:
                 keys=keys,
             )
         )
+
+    def update_record(
+        self,
+        record_id: str,
+        patch: Mapping[str, object],
+        *,
+        expected_table_revision: str,
+        expected_record_revision: str,
+        idempotency_key: str,
+    ):
+        """Update one stable record when the bound connector opts in."""
+
+        from .mobile_records import RecordUpdateRequest, RecordUpdater
+
+        self._client._assert_open()
+        self._ensure_data_binding()
+        connector = self._client._connector_for_binding(self._binding)
+        if not isinstance(connector, RecordUpdater):
+            return OperationResult(
+                value=None,
+                outcome=Outcome.REJECTED,
+                commit=CommitState.NOT_STARTED,
+                verification=VerificationState.SKIPPED,
+                receipts=(),
+                error=ErrorInfo(
+                    code=ErrorCode.UNSUPPORTED_CAPABILITY,
+                    message="connector does not expose qualified record updates",
+                ),
+            )
+        request = RecordUpdateRequest(
+            record_id=record_id,
+            patch=patch,
+            expected_table_revision=expected_table_revision,
+            expected_record_revision=expected_record_revision,
+            idempotency_key=idempotency_key,
+        )
+        return connector.update_record(self._binding, request)
 
     def delete(self, *, where, parameters: Mapping[str, Any] | None = None):
         self._client._assert_open()

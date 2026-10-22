@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OTC mobile table capabilities v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "request_id", "table_uri", "capability", "read", "record_update", "limits", "source"],
+  "properties": {
+    "contract": {"const": "otc.mobile.table/1.0"},
+    "request_id": {"type": "string", "minLength": 1},
+    "table_uri": {"type": "string", "minLength": 1},
+    "capability": {"const": "otc.mobile.table/1.0"},
+    "read": {
+      "type": "object", "additionalProperties": false,
+      "required": ["support", "max_page_size", "stable_record_ids"],
+      "properties": {
+        "support": {"enum": ["supported", "unsupported", "unknown"]},
+        "max_page_size": {"type": "integer", "minimum": 1, "maximum": 100},
+        "stable_record_ids": {"type": "boolean"}
+      }
+    },
+    "record_update": {
+      "type": "object", "additionalProperties": false,
+      "required": ["support", "requires_expected_revision", "max_fields_per_patch", "field_types"],
+      "properties": {
+        "support": {"enum": ["supported", "unsupported", "unknown"]},
+        "requires_expected_revision": {"type": "boolean"},
+        "max_fields_per_patch": {"type": "integer", "minimum": 0, "maximum": 10},
+        "field_types": {"type": "array", "items": {"enum": ["string", "integer", "number", "boolean", "date", "datetime"]}, "uniqueItems": true}
+      }
+    },
+    "limits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["max_fields", "max_patch_bytes"],
+      "properties": {
+        "max_fields": {"type": "integer", "minimum": 0, "maximum": 50},
+        "max_patch_bytes": {"type": "integer", "minimum": 0, "maximum": 16384}
+      }
+    },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["connector_id", "connector_version"],
+      "properties": {"connector_id": {"type": "string", "minLength": 1}, "connector_version": {"type": "string", "minLength": 1}}
+    }
+  }
+}

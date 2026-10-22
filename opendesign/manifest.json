@@ -1,0 +1,20 @@
+{
+  "generated": "2026-10-22T13:05:55.238958+00:00",
+  "sections": [
+    {
+      "id": "mockups",
+      "label": "Mockups",
+      "groups": [
+        {
+          "slug": "otc-mobile-table",
+          "files": [
+            {
+              "label": "otc-mobile-table.html",
+              "path": "mockups/otc-mobile-table/otc-mobile-table.html"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

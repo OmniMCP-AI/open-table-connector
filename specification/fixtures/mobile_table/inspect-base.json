@@ -1,0 +1,16 @@
+{
+  "contract": "otc.mobile.table/1.0",
+  "request_id": "req_inspect_base",
+  "table_uri": "https://example.invalid/table/123",
+  "mode": "base",
+  "schema_fingerprint": "sha256:schema-base",
+  "row_count": 412,
+  "source_revision": "sha256:source-base",
+  "coordinate_convention": {"mode": "base", "record_id_field": "id", "key_fields": [], "ordinal_snapshot_id": null},
+  "fields": [
+    {"id": "id", "label": "ID", "type": "string", "nullable": false, "editable": false, "read_only_reason": "record_identity"},
+    {"id": "status", "label": "Status", "type": "string", "nullable": false, "editable": true, "read_only_reason": null},
+    {"id": "owner", "label": "Owner", "type": "string", "nullable": true, "editable": true, "read_only_reason": null},
+    {"id": "updated_at", "label": "Updated", "type": "datetime", "nullable": false, "editable": false, "read_only_reason": "provider_owned"}
+  ]
+}

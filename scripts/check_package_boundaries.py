@@ -22,6 +22,7 @@ _ORDER = {
     "open-table-connector-officecli": 2,
     "open-table-connector-mcp": 3,
     "open-table-connector-conformance": 3,
+    "open-table-connector-mobile-table": 3,
     "open-table-connector-process": 4,
     "open-table-connector-dbt": 4,
     "open-table-connector": 5,
