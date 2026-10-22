@@ -50,7 +50,7 @@ export class MobileTableElement extends HTMLElement {
             ${this.tab("cards", "Card")}${this.tab("table", "Table")}
           </div>
           <span class="record-count">${count} 条记录</span>
-          <div class="sync-actions"><span class="sync-dot" aria-hidden="true"></span><span>已同步</span><button class="refresh" type="button" aria-label="刷新表格">↻</button></div>
+          <div class="sync-actions"><span class="sync-dot" role="status" aria-label="已同步"></span><button class="refresh" type="button" aria-label="刷新表格">↻</button></div>
         </div>
         ${this.renderBody(state)}
         ${Object.keys(state.drafts)[0] ? this.renderSheet(state, Object.keys(state.drafts)[0]) : ""}

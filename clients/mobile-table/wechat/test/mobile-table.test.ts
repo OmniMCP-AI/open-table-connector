@@ -60,7 +60,9 @@ describe("WeChat mobile table parity", () => {
     expect(wxml).toContain("scroll-view");
     expect(wxml).toContain("bindscrolltolower");
     expect(wxml).toContain("bindtouchstart");
+    expect(wxml).toContain("bindtouchend");
     expect(wxml).toContain("aria-label=\"刷新表格\"");
+    expect(wxml).not.toContain("<text>已同步</text>");
     expect(wxml).not.toContain("contenteditable");
   });
 });

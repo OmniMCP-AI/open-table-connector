@@ -39,6 +39,8 @@ describe("otc-mobile-table", () => {
     expect(element.querySelector(".record-count")?.textContent).toBe("412 条记录");
     expect(element.querySelector(".refresh")?.getAttribute("aria-label")).toBe("刷新表格");
     expect(element.querySelector(".refresh")?.textContent?.trim()).toBe("↻");
+    expect(element.querySelector(".sync-actions")?.textContent).not.toContain("已同步");
+    expect(element.querySelector(".sync-dot")?.getAttribute("aria-label")).toBe("已同步");
     expect(element.querySelector(".control-row")?.textContent).not.toContain("字段");
     expect(element.textContent).not.toContain("能力说明");
     expect(element.textContent).not.toContain("左右滚动查看更多列");

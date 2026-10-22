@@ -6,7 +6,7 @@
       <button size="mini" role="tab" data-view="table" aria-selected="{{view === 'table'}}" bindtap="onViewTap">Table</button>
     </view>
     <text class="record-count">{{recordCount}} 条记录</text>
-    <view class="sync-actions"><text class="sync-dot" aria-hidden="true">●</text><text>已同步</text><button class="refresh" aria-label="刷新表格" bindtap="onRefresh">↻</button></view>
+    <view class="sync-actions"><text class="sync-dot" role="status" aria-label="已同步">●</text><button class="refresh" aria-label="刷新表格" bindtap="onRefresh">↻</button></view>
   </view>
 
   <view wx:if="{{view === 'cards'}}" class="card-grid">
@@ -17,8 +17,8 @@
   </view>
 
   <scroll-view wx:else class="table-scroll" scroll-x="true" lower-threshold="80" bindscrolltolower="onLoadMore">
-    <view class="data-table">
-      <view class="table-row table-head"><view wx:for="{{fields}}" wx:key="id" class="table-cell" style="width: {{columnWidths[item.id] || 180}}px">{{item.label}}<button class="resize-handle" data-field-id="{{item.id}}" aria-label="调整{{item.label}}列宽" bindtouchstart="onResizeMove" bindtouchmove="onResizeMove"></button></view></view>
+      <view class="data-table">
+      <view class="table-row table-head"><view wx:for="{{fields}}" wx:key="id" class="table-cell" style="width: {{columnWidths[item.id] || 180}}px">{{item.label}}<button class="resize-handle" data-field-id="{{item.id}}" aria-label="调整{{item.label}}列宽" bindtouchstart="onResizeStart" bindtouchmove="onResizeMove" bindtouchend="onResizeEnd"></button></view></view>
       <view wx:for="{{rows}}" wx:key="recordId" class="table-row" data-record-id="{{item.recordId}}" bindtap="onRecordTap"><view wx:for="{{fields}}" wx:for-item="field" wx:key="id" class="table-cell" style="width: {{columnWidths[field.id] || 180}}px">{{item.values[field.id]}}</view></view>
     </view>
   </scroll-view>
