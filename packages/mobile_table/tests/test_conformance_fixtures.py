@@ -90,13 +90,13 @@ def test_reference_adapter_uses_shared_fixture_shapes() -> None:
     assert cap.body == _json(FIXTURES / "capabilities-supported.json")
     assert read.body == _json(FIXTURES / "read-first-page.json")
     assert update.body == _json(FIXTURES / "update-success.json")
-    assert [name for name, _ in host.calls] == ["capabilities", "capabilities", "read", "capabilities", "update"]
+    assert [name for name, _ in host.calls] == ["capabilities", "capabilities", "read", "capabilities", "inspect", "update"]
 
 
 def test_host_failure_does_not_expose_credentials_or_record_values() -> None:
     class LeakyHost(FakeMobileHost):
         def capabilities(self, table_uri: TableURI):
-            raise RuntimeError("token=secret-value table=https://user:pass@example.invalid/table/123 patch={'status':'private'}")
+            raise ValueError("token=secret-value table=https://user:pass@example.invalid/table/123 patch={'status':'private'}")
 
     response = MobileTableAdapter(LeakyHost()).dispatch(
         "POST",
@@ -104,7 +104,7 @@ def test_host_failure_does_not_expose_credentials_or_record_values() -> None:
         {"contract": "otc.mobile.table/1.0", "request_id": "req-safe", "table_uri": "https://example.invalid/table/123"},
     )
     text = json.dumps(response.body, sort_keys=True)
-    assert response.status == 500
+    assert response.status == 400
     assert "secret-value" not in text
     assert "user:pass" not in text
     assert "private" not in text

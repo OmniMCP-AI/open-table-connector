@@ -53,9 +53,15 @@ export class MobileTableController {
   private generation = 0;
   private activeRead?: Promise<void>;
   private mutationInFlight = false;
+  private readonly listeners = new Set<(state: MobileTableState) => void>();
 
   public constructor(options: MobileTableControllerOptions) {
     this.options = options;
+  }
+
+  public subscribe(listener: (state: MobileTableState) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   public async load(): Promise<void> {
@@ -83,10 +89,15 @@ export class MobileTableController {
     const generation = this.generation;
     const operation = this.readPage(generation, this.state.nextPageToken, true);
     this.activeRead = operation;
-    try { await operation; } finally { if (this.activeRead === operation) this.activeRead = undefined; }
+    try {
+      await operation;
+    } catch {
+      if (generation === this.generation) this.setState({ phase: "error", lastError: { code: "execution_failed", message: "The next page could not be loaded.", details: {} } });
+    } finally { if (this.activeRead === operation) this.activeRead = undefined; }
   }
 
   public beginEdit(recordId: string): void {
+    if (!this.canEdit()) return;
     const row = this.state.rows.find((candidate) => candidate.recordId === recordId);
     if (!row) throw new Error(`record ${recordId} was not found`);
     const values = { ...row.values };
@@ -164,7 +175,7 @@ export class MobileTableController {
       if (generation !== this.generation) return;
       const inspection = await this.options.transport.inspect({ ...baseRequest } satisfies InspectionRequest);
       if (generation !== this.generation) return;
-      this.setState({ capabilities, inspection, fields: [...inspection.fields], phase: capabilities.record_update.support === "supported" ? "loading" : "read_only" });
+      this.setState({ capabilities, inspection, fields: [...inspection.fields], phase: this.canEdit(capabilities) ? "loading" : "read_only" });
       await this.readPage(generation, null, false);
     } catch (error) {
       if (generation !== this.generation) return;
@@ -187,7 +198,11 @@ export class MobileTableController {
     if (!response) throw lastError ?? new Error("read failed");
     if (generation !== this.generation) return;
     const rows = response.rows.map(normalizeRecord);
-    this.setState({ phase: this.state.capabilities?.record_update.support === "supported" ? "ready" : "read_only", fields: [...response.fields], rows: append ? [...this.state.rows, ...rows] : rows, nextPageToken: response.next_page_token, sourceRevision: response.source_revision });
+    if (append && this.state.sourceRevision && response.source_revision !== this.state.sourceRevision) {
+      this.setState({ phase: "error", lastError: { code: "stale_revision", message: "The table changed; refresh before loading more.", details: {} } });
+      return;
+    }
+    this.setState({ phase: this.canEdit() ? "ready" : "read_only", fields: [...response.fields], rows: append ? [...this.state.rows, ...rows] : rows, nextPageToken: response.next_page_token, sourceRevision: response.source_revision });
   }
 
   private applyUpdate(recordId: string, response: UpdateResponse): void {
@@ -195,7 +210,20 @@ export class MobileTableController {
       const state: MutationState = response.error.code === "stale_revision" ? "conflict" : "error";
       const serverValue = response.error.details.current_record as { record_id: string; record_revision: string; values: Record<string, unknown> } | undefined;
       const draft = this.state.drafts[recordId];
-      this.setState({ mutationStates: { ...this.state.mutationStates, [recordId]: state }, drafts: { ...this.state.drafts, [recordId]: draft ? { ...cloneDraft(draft), serverRecord: serverValue ? normalizeRecord(serverValue) : undefined } : draft }, lastError: normalizeError(response.error, response.request_id) });
+      const serverRecord = serverValue ? normalizeRecord(serverValue) : undefined;
+      const nextDraft = draft && serverRecord ? {
+        ...cloneDraft(draft),
+        baseValues: { ...serverRecord.values },
+        changedFields: draft.changedFields.filter((fieldId) => !Object.is(draft.values[fieldId], serverRecord.values[fieldId])),
+        serverRecord,
+      } : draft ? { ...cloneDraft(draft), serverRecord: undefined } : draft;
+      this.setState({
+        mutationStates: { ...this.state.mutationStates, [recordId]: state },
+        rows: serverRecord ? this.state.rows.map((row) => row.recordId === recordId ? serverRecord : row) : this.state.rows,
+        sourceRevision: typeof response.error.details.current_table_revision === "string" ? response.error.details.current_table_revision : this.state.sourceRevision,
+        drafts: { ...this.state.drafts, [recordId]: nextDraft },
+        lastError: normalizeError(response.error, response.request_id),
+      });
       return;
     }
     if (response.outcome === "succeeded" && response.commit === "committed" && response.verification === "passed" && response.record) {
@@ -215,8 +243,15 @@ export class MobileTableController {
 
   private requestId(): string { return this.options.requestId?.() ?? makeId("mobile-request"); }
 
+  private canEdit(capabilities = this.state.capabilities): boolean {
+    return capabilities?.record_update.support === "supported"
+      && capabilities.read.stable_record_ids
+      && capabilities.record_update.requires_expected_revision;
+  }
+
   private setState(patch: Partial<MobileTableState>): void {
     this.state = { ...this.state, ...patch };
     this.options.onStateChange?.(this.state);
+    for (const listener of this.listeners) listener(this.state);
   }
 }

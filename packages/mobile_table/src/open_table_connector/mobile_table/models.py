@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -21,6 +23,27 @@ def _mapping(value: Any, name: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise TypeError(f"{name} must be an object")
     return {str(key): item for key, item in value.items()}
+
+
+_SECRET_KEY = re.compile(r"(?:token|secret|password|passwd|authorization|cookie|api[_-]?key|credential)", re.IGNORECASE)
+
+
+def _safe_details(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise TypeError("error details must be an object")
+
+    def clean(item: Any) -> Any:
+        if isinstance(item, Mapping):
+            return {str(key): clean(child) for key, child in item.items() if not _SECRET_KEY.search(str(key))}
+        if isinstance(item, Sequence) and not isinstance(item, (str, bytes, bytearray)):
+            return [clean(child) for child in item]
+        if item is None or isinstance(item, (str, bool, int)):
+            return item
+        if isinstance(item, float) and math.isfinite(item):
+            return item
+        raise TypeError("error details must contain only JSON values")
+
+    return clean(value)
 
 
 def _tuple_strings(value: Any, name: str) -> tuple[str, ...]:
@@ -80,7 +103,7 @@ class MobileRecord:
     def __post_init__(self) -> None:
         object.__setattr__(self, "record_id", _text(self.record_id, "record_id"))
         object.__setattr__(self, "record_revision", _text(self.record_revision, "record_revision"))
-        object.__setattr__(self, "values", _mapping(self.values, "values"))
+        object.__setattr__(self, "values", _safe_details(self.values))
 
     def to_wire(self) -> dict[str, Any]:
         return {"record_id": self.record_id, "record_revision": self.record_revision, "values": dict(self.values)}
@@ -100,7 +123,7 @@ class MobileError:
     def __post_init__(self) -> None:
         object.__setattr__(self, "code", _text(self.code, "error code"))
         object.__setattr__(self, "message", _text(self.message, "error message"))
-        object.__setattr__(self, "details", _mapping(self.details, "error details"))
+        object.__setattr__(self, "details", _safe_details(self.details))
 
     def to_wire(self) -> dict[str, Any]:
         return {"code": self.code, "message": self.message, "details": dict(self.details)}
@@ -121,6 +144,10 @@ class MobileCapabilities:
     record_update: Mapping[str, Any]
     limits: Mapping[str, Any]
     source: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        for name in ("read", "record_update", "limits", "source"):
+            object.__setattr__(self, name, _safe_details(getattr(self, name)))
 
     def to_wire(self) -> dict[str, Any]:
         return {
@@ -166,7 +193,7 @@ class MobileInspection:
             object.__setattr__(self, name, _text(getattr(self, name), name))
         if isinstance(self.row_count, bool) or not isinstance(self.row_count, int) or self.row_count < 0:
             raise ValueError("row_count must be a non-negative integer")
-        object.__setattr__(self, "coordinate_convention", _mapping(self.coordinate_convention, "coordinate_convention"))
+        object.__setattr__(self, "coordinate_convention", _safe_details(self.coordinate_convention))
         object.__setattr__(self, "fields", tuple(self.fields))
 
     def to_wire(self) -> dict[str, Any]:
@@ -270,7 +297,7 @@ class MobileUpdateResult:
                 raise ValueError(f"invalid {name} state")
         if self.table_revision is not None:
             object.__setattr__(self, "table_revision", _text(self.table_revision, "table_revision"))
-        object.__setattr__(self, "receipts", tuple(_mapping(receipt, "receipt") for receipt in self.receipts))
+        object.__setattr__(self, "receipts", tuple(_safe_details(receipt) for receipt in self.receipts))
 
     def to_wire(self) -> dict[str, Any]:
         return {

@@ -44,8 +44,10 @@ class MobileTableAdapter:
             if path == "/otc/mobile/v1/records/update":
                 return self._update(payload)
             return self._error(payload.get("request_id") if isinstance(payload, Mapping) else None, 404, "invalid_request", "unknown mobile table operation")
-        except (TypeError, ValueError) as exc:
-            return self._error(payload.get("request_id") if isinstance(payload, Mapping) else None, 400, "invalid_request", str(exc))
+        except (TypeError, ValueError):
+            # Validation errors and host-provided type/value failures must not
+            # echo provider data, credentials, URLs, or patch values.
+            return self._error(payload.get("request_id") if isinstance(payload, Mapping) else None, 400, "invalid_request", "invalid mobile table request")
         except Exception:
             return self._error(payload.get("request_id") if isinstance(payload, Mapping) else None, 500, "execution_failed", "mobile table host operation failed")
 
@@ -102,6 +104,18 @@ class MobileTableAdapter:
         advertised_fields = capability.record_update.get("max_fields_per_patch", 10)
         if isinstance(advertised_fields, int) and len(patch) > advertised_fields:
             return self._error(request.request_id, 400, "resource_limit", "patch exceeds the provider field limit", {"max_fields_per_patch": advertised_fields})
+        inspection = self._host.inspect(table_uri, None)
+        if inspection.outcome is not inspection.outcome.SUCCEEDED:
+            return self._result(request.request_id, inspection)
+        fields = {field.id: field for field in inspection.require_value().fields}
+        for field_id, value in patch.items():
+            field = fields.get(field_id)
+            if field is None:
+                return self._error(request.request_id, 400, "invalid_request", "patch contains an unknown field")
+            if not field.editable:
+                return self._error(request.request_id, 400, "invalid_request", "patch contains a read-only field")
+            if not _matches_field_type(field.type, field.nullable, value):
+                return self._error(request.request_id, 400, "invalid_request", "patch value does not match the inspected field type")
         update_request = RecordUpdateRequest(
             record_id=cast(str, record_id),
             patch=patch,
@@ -112,7 +126,7 @@ class MobileTableAdapter:
         return self._result(request.request_id, self._host.update(table_uri, update_request))
 
     def _result(self, request_id: str, result: OperationResult[Any]) -> MobileHttpResponse:
-        if result.outcome in {result.outcome.SUCCEEDED, result.outcome.PLANNED} and result.value is not None:
+        if result.value is not None and result.error is None:
             body = dict(result.value.to_wire())
             body["contract"] = CONTRACT
             body["request_id"] = request_id
@@ -122,7 +136,12 @@ class MobileTableAdapter:
             return self._error(request_id, 500, "execution_failed", "mobile table host returned no result")
         code = error.code.value
         status = 409 if code in {ErrorCode.STALE_REVISION.value, ErrorCode.UNSUPPORTED_CAPABILITY.value, ErrorCode.IDEMPOTENCY_CONFLICT.value} else 400 if result.outcome is result.outcome.REJECTED else 500
-        return self._error(request_id, status, code, error.message, dict(error.safe_details))
+        safe_messages = {
+            ErrorCode.STALE_REVISION.value: "The record changed before it could be saved.",
+            ErrorCode.UNSUPPORTED_CAPABILITY.value: "The requested mobile table operation is not supported.",
+            ErrorCode.IDEMPOTENCY_CONFLICT.value: "The idempotency key was already used with a different request.",
+        }
+        return self._error(request_id, status, code, safe_messages.get(code, "The mobile table operation failed."), dict(error.safe_details))
 
     @staticmethod
     def _error(request_id: object, status: int, code: str, message: str, details: Mapping[str, object] | None = None) -> MobileHttpResponse:
@@ -131,3 +150,17 @@ class MobileTableAdapter:
 
 
 __all__ = ["MobileHttpResponse", "MobileTableAdapter"]
+
+
+def _matches_field_type(type_name: str, nullable: bool, value: object) -> bool:
+    if value is None:
+        return nullable
+    if type_name == "string" or type_name in {"date", "datetime"}:
+        return isinstance(value, str)
+    if type_name == "boolean":
+        return isinstance(value, bool)
+    if type_name == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if type_name == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return False

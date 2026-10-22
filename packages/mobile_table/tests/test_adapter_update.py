@@ -25,7 +25,8 @@ def test_update_returns_canonical_result() -> None:
     assert response.body["outcome"] == "succeeded"
     assert response.body["record"]["values"]["status"] == "Done"
     assert host.calls[0][0] == "capabilities"
-    assert host.calls[1][0] == "update"
+    assert host.calls[1][0] == "inspect"
+    assert host.calls[2][0] == "update"
 
 
 def test_stale_revision_maps_to_http_409_and_safe_error_envelope() -> None:
@@ -51,3 +52,12 @@ def test_unsupported_capability_is_returned_before_host_update() -> None:
     assert response.status == 409
     assert response.body["error"]["code"] == "unsupported_capability"
     assert [name for name, _value in host.calls] == ["capabilities"]
+
+
+def test_update_rejects_unknown_or_read_only_fields_before_host_update() -> None:
+    host = FakeMobileHost()
+    response = MobileTableAdapter(host).dispatch("POST", "/otc/mobile/v1/records/update", {**BASE, "patch": {"updated_at": "2026-10-23T00:00:00Z"}})
+
+    assert response.status == 400
+    assert response.body["error"]["code"] == "invalid_request"
+    assert [name for name, _value in host.calls] == ["capabilities", "inspect"]

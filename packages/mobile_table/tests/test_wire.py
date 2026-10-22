@@ -92,3 +92,9 @@ def test_unknown_response_fields_are_ignored_by_models() -> None:
 
     assert page.rows[0].record_id == "rec_123"
     assert "provider_extension" not in page.to_wire()
+
+
+def test_record_values_redact_secret_looking_keys() -> None:
+    record = MobileRecord("rec_secret", "rev-1", {"status": "Open", "api_token": "private"})
+
+    assert record.to_wire()["values"] == {"status": "Open"}
