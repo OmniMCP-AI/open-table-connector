@@ -22,7 +22,7 @@ The repository already supplies the concepts that this contract carries forward:
 - Capability discovery for one table.
 - Schema and coordinate inspection.
 - Bounded, cursor-based reads.
-- Mobile list/card browsing with a compact record detail view.
+- Responsive mobile and iPad card/table browsing with a compact record detail view and session-only table column resizing.
 - One-record typed patches with optimistic concurrency.
 - Explicit conflict, unsupported, partial, and unknown states.
 - A shared controller API consumed by H5 and WeChat renderers.
@@ -34,7 +34,7 @@ The repository already supplies the concepts that this contract carries forward:
 - Formulas, formula editing, or formula recalculation controls.
 - Cell or range formatting, charts, images, attachments, or rich objects.
 - Arbitrary provider queries, custom SQL, or client-defined server-side code.
-- Bulk edits, multi-row selection, drag fill, or column operations.
+- Bulk edits, multi-row selection, drag fill, column reorder/hide/show, or column insert/delete.
 - Autosave, offline queues, background synchronization, or silent retries.
 - Automatic conflict resolution or a force-overwrite action.
 - A browser DOM runtime inside WeChat WXML.
@@ -52,6 +52,9 @@ The repository already supplies the concepts that this contract carries forward:
 | Concurrency | Expected table and record revisions are sent with every edit. |
 | Conflict behavior | Preserve the draft, show the current server row, and require an explicit reload/discard decision. |
 | Authentication | Host-managed headers or short-lived session tokens; credentials never belong in a table URI. |
+| Responsive layout | Phones use a single-column card list; iPad uses an auto-fitting multi-column card grid and a wider table viewport. |
+| Browsing controls | Immediately below the table title, place the Card / Table selector on the left, record count in the center, and sync status plus an icon-only refresh action on the right. |
+| Table column widths | Allow bounded drag resizing from visible header boundaries. Apply widths to the header and every row for the current session; do not persist them in v1. |
 | Renderer parity | The same controller fixtures and state transitions must pass through both renderers. |
 | Repository boundary | OTC protocol and reference adapter live here; TypeScript controller and renderers live in the frontend package that consumes this contract. |
 
@@ -78,8 +81,8 @@ H5 renderer       WeChat renderer
 | Mobile HTTP adapter | Validate the mobile envelope, resolve the canonical table URI, call the OTC SDK, and map the SDK result to the mobile wire contract. |
 | `MobileTransport` | Send capabilities, inspect, read, and update requests. It owns authentication headers and host-specific networking. |
 | Headless controller | Own the table state machine, cursors, drafts, request sequencing, typed validation, and OTC result mapping. It has no DOM or WXML dependency. |
-| H5 renderer | Render semantic HTML, responsive cards or a horizontal grid, keyboard behavior, focus management, and host-provided slots. |
-| WeChat renderer | Render native WXML controls, miniapp scrolling/reach-bottom behavior, page lifecycle handling, and host-provided slots. |
+| H5 renderer | Render semantic HTML, the title control row, responsive cards or a horizontal resizable grid, keyboard behavior, focus management, and host-provided slots. |
+| WeChat renderer | Render native WXML controls, the same title control row, miniapp scrolling/reach-bottom behavior, bounded column resizing, page lifecycle handling, and host-provided slots. |
 | OTC connectors | Preserve existing capability, revision, idempotency, receipt, and verification guarantees. A mobile adapter cannot manufacture support. |
 
 The H5 renderer may be exposed as a Web Component and a framework wrapper. The WeChat renderer is a native miniapp component. Both consume the same controller snapshot and action names.
@@ -388,9 +391,9 @@ The controller enforces these rules:
 
 ### 6.1 Browsing
 
-The default narrow-screen layout is a list of compact record cards. Each card shows the stable identity field and the first useful fields in schema order. A record detail sheet exposes every permitted field. Directly below the title, one compact row places the `Card / Table` selector on the left, the record count in the center, and sync status plus an icon-only refresh action on the right. The Table view is for people familiar with Excel who need to scan more rows and columns quickly: it uses compact column headers, horizontal scrolling, and the same field order and values. Each visible column boundary provides a touch-friendly drag handle with bounded minimum and maximum widths; the chosen widths apply to the header and all rows for the current session. Table view is a reading mode, and tapping a row still opens the same record detail sheet for editing.
+The default narrow-screen layout is a list of compact record cards. Each card shows the stable identity field and the first useful fields in schema order. A record detail sheet exposes every permitted field. Directly below the title, one compact row places the `Card / Table` selector on the left, the server-reported record count in the center, and sync status plus an icon-only refresh action on the right. The refresh icon has an accessible name and a touch target that meets the 44 CSS pixel minimum; the sync status may retain a short text label beside its status dot. Do not put the field count in this row. The Table view is for people familiar with Excel who need to scan more rows and columns quickly: it uses compact column headers, horizontal scrolling, and the same field order and values. Each visible column boundary provides a touch-friendly drag handle with bounded minimum and maximum widths; the chosen widths apply to the header and all rows for the current session. Table view is a reading mode, and tapping a row still opens the same record detail sheet for editing.
 
-Table view is available in both H5 and WeChat. H5 may use a horizontal grid directly in a wide or landscape container. WeChat uses a native horizontal scroll surface. On iPad, the renderer uses a wider canvas, an auto-fitting multi-column card grid, and a larger table viewport while preserving the same row tap and column resize behavior. Neither renderer makes cells inline-editable in v1.
+Table view is available in both H5 and WeChat. H5 may use a horizontal grid directly in a wide or landscape container. WeChat uses a native horizontal scroll surface. On iPad, the renderer uses a wider canvas, an auto-fitting multi-column card grid with a practical minimum card width of about 210 CSS pixels, and a larger table viewport while preserving the same row tap and column resize behavior. The grid should use as many columns as the available width allows and fall back to fewer columns only when the minimum card width cannot be met. Neither renderer makes cells inline-editable in v1.
 
 The header shows the table title, read-only/editable status, and sync state. The renderer provides loading, empty, and error slots so the host can apply product branding without changing controller behavior.
 
@@ -482,7 +485,7 @@ Test that the controller:
 
 ### 9.3 Renderer tests
 
-The H5 suite covers semantic labels, keyboard navigation, focus return, screen-reader state announcements, touch target size, responsive card/grid layout, and the intersection-based page trigger. The WeChat suite covers native input controls, reach-bottom paging, page lifecycle refresh, session expiry, and the same visible state mappings.
+The H5 suite covers semantic labels, keyboard navigation, focus return, screen-reader state announcements, touch target size, the title control row (including the icon-only refresh label and record-count placement), responsive single-column phone cards, iPad multi-column cards, resizable grid columns with header/row alignment, and the intersection-based page trigger. The WeChat suite covers native input controls, the same control-row semantics, touch resizing on the horizontal table surface, reach-bottom paging, page lifecycle refresh, session expiry, and the same visible state mappings.
 
 ### 9.4 Release gates
 
