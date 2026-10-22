@@ -1,0 +1,14 @@
+{
+  "name": "@otc/mobile-table-core",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "contract": "otc.mobile.table/1.0",
+  "request_id": "req_read_second",
+  "table_uri": "https://example.invalid/table/123",
+  "mode": "base",
+  "source_revision": "sha256:source-base",
+  "fields": [{"id": "status", "label": "Status", "type": "string", "nullable": true, "editable": true, "read_only_reason": null}],
+  "rows": [{"record_id": "rec_125", "record_revision": "sha256:record-125", "values": {"status": "Done"}}],
+  "next_page_token": null
+}

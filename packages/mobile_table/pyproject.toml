@@ -1,0 +1,28 @@
+[project]
+name = "open-table-connector-mobile-table"
+version = "0.1.0"
+description = "OTC mobile table wire contract and reference adapter"
+requires-python = ">=3.11,<3.15"
+license = { text = "Apache-2.0" }
+readme = "README.md"
+dependencies = [
+  "jsonschema>=4.23,<5",
+  "open-table-connector-contract>=0.1,<0.2",
+  "open-table-connector-sdk>=0.1,<0.2",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv.sources]
+open-table-connector-contract = { workspace = true }
+open-table-connector-sdk = { workspace = true }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["open_table_connector.mobile_table*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+"open_table_connector.mobile_table" = ["py.typed"]

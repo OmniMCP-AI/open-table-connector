@@ -26,6 +26,7 @@ from open_table_connector.contract import (
 from open_table_connector.formulas import FormulaConnectorExtension
 
 from .materialization import MaterializationRequest
+from .mobile_records import RecordUpdater
 from .model import (
     BaseModeDestination,
     BaseModeTableAddress,

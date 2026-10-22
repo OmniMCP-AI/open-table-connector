@@ -70,25 +70,25 @@ The backend work is implemented in this repository. The frontend paths below are
 - `parse_request(payload: Mapping[str, object], allowed_keys: frozenset[str]) -> MobileRequestEnvelope` rejects unknown keys and validates `contract`, `request_id`, and credential-free `table_uri`.
 - Every model has closed `to_wire()` / `from_wire()` methods and preserves JSON scalar distinctions.
 
-- [ ] **Step 1: Write failing schema and round-trip tests**
+- [x] **Step 1: Write failing schema and round-trip tests**
 
   Add tests for all ten fixture families, closed envelopes, supported/unsupported/unknown capability values, exact update outcome vocabularies, and preservation of `null`, `false`, zero, empty string, and numeric-looking strings.
 
-- [ ] **Step 2: Run the contract tests to verify the red phase**
+- [x] **Step 2: Run the contract tests to verify the red phase**
 
   Run `uv run --frozen python -m pytest packages/mobile_table/tests/test_wire.py packages/mobile_table/tests/test_validation.py -q`.
 
   Expected: FAIL because the new package and schemas do not exist.
 
-- [ ] **Step 3: Implement the frozen models and JSON schemas**
+- [x] **Step 3: Implement the frozen models and JSON schemas**
 
   Keep the schemas closed at the envelope boundary, use `additionalProperties: false` where the spec defines a closed object, and make `details` safe JSON only. Keep the page token opaque and do not normalize it. Declare the package's dependencies on the existing contract and SDK packages without importing any renderer code.
 
-- [ ] **Step 4: Run the contract tests to verify the green phase**
+- [x] **Step 4: Run the contract tests to verify the green phase**
 
   Run the same command. Expected: PASS, with every fixture validating against its corresponding schema and every model round-tripping without changing scalar values.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add pyproject.toml packages/mobile_table specification/schemas specification/fixtures/mobile_table
@@ -112,25 +112,25 @@ The backend work is implemented in this repository. The frontend paths below are
 - `RecordUpdater` protocol method `update_record(binding: TableBinding, request: RecordUpdateRequest) -> OperationResult[RecordUpdateValue]`.
 - `Table.update_record(record_id: str, patch: Mapping[str, object], *, expected_table_revision: str, expected_record_revision: str, idempotency_key: str) -> OperationResult[RecordUpdateValue]` delegates only when the bound connector exposes `RecordUpdater`; otherwise it returns `UNSUPPORTED_CAPABILITY` without connector I/O.
 
-- [ ] **Step 1: Write failing SDK tests**
+- [x] **Step 1: Write failing SDK tests**
 
   Cover delegation with both revisions and the idempotency key intact, fail-closed behavior for connectors without `RecordUpdater`, and pass-through of succeeded, conflict, partial, and unknown `OperationResult` states.
 
-- [ ] **Step 2: Run the focused SDK tests to verify the red phase**
+- [x] **Step 2: Run the focused SDK tests to verify the red phase**
 
   Run `uv run --frozen python -m pytest packages/sdk/tests/test_mobile_records.py -q`.
 
   Expected: FAIL because the protocol and `Table.update_record` method are absent.
 
-- [ ] **Step 3: Implement the optional seam**
+- [x] **Step 3: Implement the optional seam**
 
   Do not add a required method to every existing connector. Detect the optional protocol at runtime, preserve existing `TableConnector` implementations, and reuse existing `OperationResult`, `ErrorCode`, receipt, and revision types.
 
-- [ ] **Step 4: Run focused SDK and regression tests**
+- [x] **Step 4: Run focused SDK and regression tests**
 
   Run `uv run --frozen python -m pytest packages/sdk/tests/test_mobile_records.py packages/sdk/tests/test_table.py packages/sdk/tests/test_result.py -q`. Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add packages/sdk/src packages/sdk/tests/test_mobile_records.py
@@ -160,29 +160,29 @@ The backend work is implemented in this repository. The frontend paths below are
 - `MobileTableAdapter(host: MobileTableHost).dispatch(method: str, path: str, payload: Mapping[str, object]) -> MobileHttpResponse`.
 - Normative paths: `/otc/mobile/v1/capabilities`, `/otc/mobile/v1/inspect`, `/otc/mobile/v1/read`, `/otc/mobile/v1/records/update`.
 
-- [ ] **Step 1: Write failing adapter tests**
+- [x] **Step 1: Write failing adapter tests**
 
   Assert exact routing, request ID echo, HTTP 409 for stale revisions, HTTP 4xx for closed-envelope/limit/type failures, HTTP 200 for supported reads, and `unsupported_capability` before `host.update()` when the host has no qualified updater.
 
-- [ ] **Step 2: Run adapter tests to verify the red phase**
+- [x] **Step 2: Run adapter tests to verify the red phase**
 
   Run `uv run --frozen python -m pytest packages/mobile_table/tests/test_adapter_capabilities.py packages/mobile_table/tests/test_adapter_read.py packages/mobile_table/tests/test_adapter_update.py -q`.
 
   Expected: FAIL because the adapter and host protocol are absent.
 
-- [ ] **Step 3: Implement dispatch and validation**
+- [x] **Step 3: Implement dispatch and validation**
 
   Validate contract/request/table URI on every operation; clamp only by rejecting page sizes above `min(100, max_page_size)`; enforce 50-field, 10-patch-field, and 16 KiB limits; map SDK result outcome/commit/verification and receipts without inventing success; redact unsafe error details.
 
-- [ ] **Step 4: Implement the SDK-backed host bridge**
+- [x] **Step 4: Implement the SDK-backed host bridge**
 
   Open tables through the existing SDK registry/client, reuse `capabilities()`, `inspect()`, and `read_page()`, and call `Table.update_record()` only when the optional record updater is available. Convert connector errors to the closed mobile error envelope while retaining request/operation IDs.
 
-- [ ] **Step 5: Run adapter and package tests**
+- [x] **Step 5: Run adapter and package tests**
 
   Run `uv run --frozen python -m pytest packages/mobile_table/tests packages/sdk/tests/test_mobile_records.py -q`. Expected: PASS, including safe read-only behavior for connectors that lack record updates.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
   ```bash
   git add packages/mobile_table packages/sdk/src/open_table_connector/sdk
@@ -207,23 +207,23 @@ The backend work is implemented in this repository. The frontend paths below are
 - `MobileTableController.state: MobileTableState` with `phase`, `capabilities`, `inspection`, `fields`, `rows`, `nextPageToken`, `sourceRevision`, `drafts`, `mutationStates`, and `lastError`.
 - Methods: `load()`, `loadMore()`, `refresh()`, `beginEdit(recordId)`, `setDraftField(recordId, fieldId, value)`, `cancel(recordId)`, `save(recordId)`, and `retry(recordId)`.
 
-- [ ] **Step 1: Write failing controller tests**
+- [x] **Step 1: Write failing controller tests**
 
   Cover capabilities/inspection before first read, page size 25, opaque cursor forwarding, refresh generation invalidation, one-read/one-mutation concurrency, changed-fields-only patches, field validation, draft preservation on conflict, canonical row replacement on success, and idempotency-key reuse only on explicit retry.
 
-- [ ] **Step 2: Run the core tests to verify the red phase**
+- [x] **Step 2: Run the core tests to verify the red phase**
 
   Run `npm --prefix clients/mobile-table/core test -- --run test`. Expected: FAIL because the controller package is absent.
 
-- [ ] **Step 3: Implement the state machine**
+- [x] **Step 3: Implement the state machine**
 
   Keep transport concerns out of rendering. Treat `unknown` and `partial` mutation results as unresolved; never infer saved state from an acknowledgment without canonical readback and verification. Ignore unknown response fields and reject unknown request fields.
 
-- [ ] **Step 4: Run the core tests to verify the green phase**
+- [x] **Step 4: Run the core tests to verify the green phase**
 
   Run `npm --prefix clients/mobile-table/core test -- --run test`. Expected: PASS for all controller state and failure transitions, including one safe-read retry and no automatic mutation retry.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add clients/mobile-table/core
@@ -249,23 +249,23 @@ The backend work is implemented in this repository. The frontend paths below are
 - Card mode is single-column on phone and `repeat(auto-fit, minmax(210px, 1fr))` on iPad-sized content.
 - Table mode uses one shared column-width map for header and rows, horizontal scrolling, and bounded pointer/touch resize handles. Rows open the detail sheet; cells remain non-editable.
 
-- [ ] **Step 1: Write failing DOM and responsive tests**
+- [x] **Step 1: Write failing DOM and responsive tests**
 
   Assert semantic tabs, no field-count text in the control row, accessible refresh labeling, phone single-column cards, iPad multi-column cards, table horizontal overflow, aligned header/row columns after a resize, and row tap opening the same edit sheet.
 
-- [ ] **Step 2: Run the H5 tests to verify the red phase**
+- [x] **Step 2: Run the H5 tests to verify the red phase**
 
   Run `npm --prefix clients/mobile-table/h5 test -- --run test`. Expected: FAIL because the Web Component is absent.
 
-- [ ] **Step 3: Implement the renderer**
+- [x] **Step 3: Implement the renderer**
 
   Use semantic buttons and labels, keyboard focus return after the sheet closes, screen-reader announcements for loading/save/conflict, 44 CSS pixel hit areas, and CSS that keeps the control row usable on narrow phones. Persist column widths only in component session state.
 
-- [ ] **Step 4: Run H5 tests and a browser smoke check**
+- [x] **Step 4: Run H5 tests and a browser smoke check**
 
   Run `npm --prefix clients/mobile-table/h5 test -- --run test`, then load the component in a local fixture page and verify H5 phone, H5 iPad, table resize, refresh, load-more, edit, conflict, and unknown-result states. Expected: PASS and no visible “能力说明” or “左右滚动查看更多列” copy.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add clients/mobile-table/h5
@@ -288,23 +288,23 @@ The backend work is implemented in this repository. The frontend paths below are
 - Use `scroll-view` for Table mode, `bindscrolltolower` for `loadMore()`, native input controls for the detail sheet, and touch gesture events for bounded column resizing.
 - Preserve the same title control row, icon-only refresh accessible label, card/table semantics, and read-only gating.
 
-- [ ] **Step 1: Write failing parity tests**
+- [x] **Step 1: Write failing parity tests**
 
   Feed the shared fixture sequence through the miniapp adapter and assert the same visible state labels, record order, draft preservation, conflict state, unknown outcome, and refresh behavior as the H5 renderer.
 
-- [ ] **Step 2: Run the WeChat tests to verify the red phase**
+- [x] **Step 2: Run the WeChat tests to verify the red phase**
 
   Run `npm --prefix clients/mobile-table/wechat test -- --run test`. Expected: FAIL because the WXML component is absent.
 
-- [ ] **Step 3: Implement WXML/WXSS bindings**
+- [x] **Step 3: Implement WXML/WXSS bindings**
 
   Map lifecycle refresh and reach-bottom paging to controller methods; keep provider credentials in the host session exchange; make unsupported capability visibly read-only.
 
-- [ ] **Step 4: Run WeChat parity tests and the miniapp preview smoke check**
+- [x] **Step 4: Run WeChat parity tests and the miniapp preview smoke check**
 
   Run `npm --prefix clients/mobile-table/wechat test -- --run test`, then open the component in the WeChat developer preview. Expected: PASS with H5 fixture parity and no inline cell editing.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add clients/mobile-table/wechat
@@ -323,19 +323,19 @@ The backend work is implemented in this repository. The frontend paths below are
 - Modify `docs/operations/security.md`
 - Modify `docs/superpowers/specs/2026-10-22-mobile-table-ui-design.md` only when implementation reveals a contract correction.
 
-- [ ] **Step 1: Add fixture parity tests**
+- [x] **Step 1: Add fixture parity tests**
 
   Run every shared fixture through the reference adapter, controller transport mock, H5 renderer, and WeChat renderer. Fail if any renderer changes field order, scalar values, state labels, or outcome semantics.
 
-- [ ] **Step 2: Add package-independence and security checks**
+- [x] **Step 2: Add package-independence and security checks**
 
   Assert the optional mobile package can be absent without changing existing OTC package imports; assert logs and error envelopes contain no credentials, authenticated URLs, patches, or unrelated cell values.
 
-- [ ] **Step 3: Document the endpoint, host integration, read-only gating, and rollout metrics**
+- [x] **Step 3: Document the endpoint, host integration, read-only gating, and rollout metrics**
 
   Document the four POST paths, closed envelopes, page/revision rules, record-update qualification requirements, iPad/card/table behavior, and metrics for load latency, edit success, conflicts, unknown outcomes, and auth failures.
 
-- [ ] **Step 4: Run focused verification**
+- [x] **Step 4: Run focused verification**
 
   ```bash
   uv run --frozen python -m pytest packages/mobile_table/tests packages/sdk/tests/test_mobile_records.py packages/contract/tests/test_schema.py -q
@@ -347,7 +347,7 @@ The backend work is implemented in this repository. The frontend paths below are
 
   Expected: all tests pass and the diff is whitespace-clean.
 
-- [ ] **Step 5: Run repository quality gates**
+- [x] **Step 5: Run repository quality gates**
 
   ```bash
   uv run --frozen ruff check packages/mobile_table packages/sdk/src packages/contract/src
@@ -360,7 +360,7 @@ The backend work is implemented in this repository. The frontend paths below are
 
   Expected: existing OTC package tests remain green with the optional mobile package present and absent where the check supports both modes.
 
-- [ ] **Step 6: Refresh the repository graph and commit the release gate**
+- [x] **Step 6: Refresh the repository graph and commit the release gate**
 
   Run `graft build`, inspect the changed nodes, then commit:
 

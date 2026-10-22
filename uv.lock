@@ -21,6 +21,7 @@ members = [
     "open-table-connector-local-files",
     "open-table-connector-maybe-sheet",
     "open-table-connector-mcp",
+    "open-table-connector-mobile-table",
     "open-table-connector-officecli",
     "open-table-connector-postgres",
     "open-table-connector-process",
@@ -732,6 +733,23 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "mcp", specifier = ">=1,<2" },
+    { name = "open-table-connector-sdk", editable = "packages/sdk" },
+]
+
+[[package]]
+name = "open-table-connector-mobile-table"
+version = "0.1.0"
+source = { editable = "packages/mobile_table" }
+dependencies = [
+    { name = "jsonschema" },
+    { name = "open-table-connector-contract" },
+    { name = "open-table-connector-sdk" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jsonschema", specifier = ">=4.23,<5" },
+    { name = "open-table-connector-contract", editable = "packages/contract" },
     { name = "open-table-connector-sdk", editable = "packages/sdk" },
 ]
 

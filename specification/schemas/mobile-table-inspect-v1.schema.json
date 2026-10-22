@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OTC mobile table inspection v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "request_id", "table_uri", "mode", "schema_fingerprint", "row_count", "source_revision", "coordinate_convention", "fields"],
+  "properties": {
+    "contract": {"const": "otc.mobile.table/1.0"},
+    "request_id": {"type": "string", "minLength": 1},
+    "table_uri": {"type": "string", "minLength": 1},
+    "mode": {"enum": ["base", "sheet"]},
+    "schema_fingerprint": {"type": "string", "minLength": 1},
+    "row_count": {"type": "integer", "minimum": 0},
+    "source_revision": {"type": "string", "minLength": 1},
+    "coordinate_convention": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mode", "record_id_field", "key_fields", "ordinal_snapshot_id"],
+      "properties": {
+        "mode": {"enum": ["base", "sheet"]},
+        "record_id_field": {"type": ["string", "null"]},
+        "key_fields": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "ordinal_snapshot_id": {"type": ["string", "null"]}
+      }
+    },
+    "fields": {"type": "array", "items": {"$ref": "#/$defs/field"}, "maxItems": 50}
+  },
+  "$defs": {
+    "field": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "label", "type", "nullable", "editable", "read_only_reason"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "type": {"enum": ["string", "integer", "number", "boolean", "date", "datetime", "unknown"]},
+        "nullable": {"type": "boolean"},
+        "editable": {"type": "boolean"},
+        "read_only_reason": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

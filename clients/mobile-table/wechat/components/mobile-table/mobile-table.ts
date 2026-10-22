@@ -1,0 +1,73 @@
+import type { MobileTableController } from "../../../core/src/controller";
+import type { MobileField, MobileTableState, MutationState } from "../../../core/src/types";
+
+export interface MobileTableViewModel {
+  tabs: ["Card", "Table"];
+  view: "cards" | "table";
+  recordCount: number;
+  rows: MobileTableState["rows"];
+  fields: MobileField[];
+  refreshLabel: string;
+  inlineEditing: false;
+  mutationStates: Record<string, MutationState>;
+  draftValues: Record<string, Record<string, unknown>>;
+  canRetry: boolean;
+  readOnly: boolean;
+}
+
+export function createMobileTableViewModel(state: MobileTableState, view: "cards" | "table" = "cards"): MobileTableViewModel {
+  return {
+    tabs: ["Card", "Table"],
+    view,
+    recordCount: state.inspection?.row_count ?? state.rows.length,
+    rows: state.rows,
+    fields: state.fields,
+    refreshLabel: "刷新表格",
+    inlineEditing: false,
+    mutationStates: state.mutationStates,
+    draftValues: Object.fromEntries(Object.entries(state.drafts).map(([id, draft]) => [id, draft.values])),
+    canRetry: Object.values(state.mutationStates).some((value) => value === "conflict" || value === "unknown" || value === "error"),
+    readOnly: state.phase === "read_only",
+  };
+}
+
+export class MobileTableMiniView {
+  public view: "cards" | "table" = "cards";
+  private readonly widths = new Map<string, number>();
+
+  public setView(view: "cards" | "table"): void { this.view = view; }
+  public resizeColumn(fieldId: string, width: number): void { this.widths.set(fieldId, Math.min(420, Math.max(120, Math.round(width)))); }
+  public columnWidth(fieldId: string): number { return this.widths.get(fieldId) ?? 180; }
+}
+
+type MiniComponentThis = {
+  properties: { controller?: MobileTableController };
+  data: MobileTableViewModel & { activeRecordId?: string; columnWidths: Record<string, number> };
+  setData: (data: Partial<MiniComponentThis["data"]>) => void;
+};
+
+function sync(this: MiniComponentThis): void {
+  const controller = this.properties.controller;
+  if (!controller) return;
+  this.setData({ ...createMobileTableViewModel(controller.state, this.data.view), columnWidths: this.data.columnWidths });
+}
+
+declare const Component: (options: Record<string, unknown>) => void;
+
+if (typeof Component === "function") {
+  Component({
+    properties: { controller: { type: Object, value: null } },
+    data: { ...createMobileTableViewModel({ phase: "idle", fields: [], rows: [], nextPageToken: null, drafts: {}, mutationStates: {} }), activeRecordId: undefined, columnWidths: {} },
+    lifetimes: { attached(this: MiniComponentThis) { void this.properties.controller?.load().then(() => sync.call(this)); } },
+    methods: {
+      onViewTap(this: MiniComponentThis, event: { currentTarget: { dataset: { view: "cards" | "table" } } }) { this.setData({ view: event.currentTarget.dataset.view }); },
+      onRefresh(this: MiniComponentThis) { void this.properties.controller?.refresh().then(() => sync.call(this)); },
+      onLoadMore(this: MiniComponentThis) { void this.properties.controller?.loadMore().then(() => sync.call(this)); },
+      onRecordTap(this: MiniComponentThis, event: { currentTarget: { dataset: { recordId: string } } }) { const id = event.currentTarget.dataset.recordId; this.properties.controller?.beginEdit(id); this.setData({ activeRecordId: id }); sync.call(this); },
+      onCancel(this: MiniComponentThis) { if (this.data.activeRecordId) this.properties.controller?.cancel(this.data.activeRecordId); this.setData({ activeRecordId: undefined }); sync.call(this); },
+      onSave(this: MiniComponentThis) { if (this.data.activeRecordId) void this.properties.controller?.save(this.data.activeRecordId).then(() => { this.setData({ activeRecordId: undefined }); sync.call(this); }); },
+      onInput(this: MiniComponentThis, event: { currentTarget: { dataset: { fieldId: string } }; detail: { value: unknown } }) { if (this.data.activeRecordId) this.properties.controller?.setDraftField(this.data.activeRecordId, event.currentTarget.dataset.fieldId, event.detail.value); sync.call(this); },
+      onResizeMove(this: MiniComponentThis, event: { currentTarget: { dataset: { fieldId: string } }; changedTouches: Array<{ clientX: number }> }) { const fieldId = event.currentTarget.dataset.fieldId; const width = Math.min(420, Math.max(120, (this.data.columnWidths[fieldId] ?? 180) + (event.changedTouches[0]?.clientX ?? 0))); this.setData({ columnWidths: { ...this.data.columnWidths, [fieldId]: width } }); },
+    },
+  });
+}

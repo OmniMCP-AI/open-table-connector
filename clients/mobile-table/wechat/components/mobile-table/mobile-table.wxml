@@ -1,0 +1,27 @@
+<view class="mobile-table" aria-label="OTC Table">
+  <view class="table-header"><text class="title">{{title}}</text><text wx:if="{{readOnly}}" class="mode-status">只读</text></view>
+  <view class="control-row">
+    <view class="view-tabs" role="tablist">
+      <button size="mini" role="tab" data-view="cards" aria-selected="{{view === 'cards'}}" bindtap="onViewTap">Card</button>
+      <button size="mini" role="tab" data-view="table" aria-selected="{{view === 'table'}}" bindtap="onViewTap">Table</button>
+    </view>
+    <text class="record-count">{{recordCount}} 条记录</text>
+    <view class="sync-actions"><text class="sync-dot" aria-hidden="true">●</text><text>已同步</text><button class="refresh" aria-label="刷新表格" bindtap="onRefresh">↻</button></view>
+  </view>
+
+  <view wx:if="{{view === 'cards'}}" class="card-grid">
+    <button wx:for="{{rows}}" wx:key="recordId" class="record-card" data-record-id="{{item.recordId}}" bindtap="onRecordTap">
+      <text class="record-id">{{item.recordId}}</text>
+      <view wx:for="{{fields}}" wx:for-item="field" wx:key="id" class="card-field"><text>{{field.label}}</text><text>{{item.values[field.id]}}</text></view>
+    </button>
+  </view>
+
+  <scroll-view wx:else class="table-scroll" scroll-x="true" lower-threshold="80" bindscrolltolower="onLoadMore">
+    <view class="data-table">
+      <view class="table-row table-head"><view wx:for="{{fields}}" wx:key="id" class="table-cell" style="width: {{columnWidths[item.id] || 180}}px">{{item.label}}<button class="resize-handle" data-field-id="{{item.id}}" aria-label="调整{{item.label}}列宽" bindtouchstart="onResizeMove" bindtouchmove="onResizeMove"></button></view></view>
+      <view wx:for="{{rows}}" wx:key="recordId" class="table-row" data-record-id="{{item.recordId}}" bindtap="onRecordTap"><view wx:for="{{fields}}" wx:for-item="field" wx:key="id" class="table-cell" style="width: {{columnWidths[field.id] || 180}}px">{{item.values[field.id]}}</view></view>
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{activeRecordId}}" class="sheet-backdrop"><view class="sheet" role="dialog" aria-label="编辑记录"><text class="sheet-title">编辑记录</text><view wx:for="{{fields}}" wx:key="id" class="form-field"><text>{{item.label}}</text><input wx:if="{{item.type !== 'boolean'}}" name="{{item.id}}" value="{{draftValues[activeRecordId][item.id]}}" disabled="{{!item.editable}}" bindinput="onInput" data-field-id="{{item.id}}"/><switch wx:else checked="{{draftValues[activeRecordId][item.id]}}" disabled="{{!item.editable}}" bindchange="onInput" data-field-id="{{item.id}}"/></view><view class="sheet-actions"><button bindtap="onCancel">取消</button><button class="save" bindtap="onSave">保存</button></view></view></view>
+</view>

@@ -60,6 +60,7 @@ from .materialization import (
     PORTABLE_TABLE_PROFILE_V1,
     MaterializationRequest,
 )
+from .mobile_records import RecordUpdateRequest, RecordUpdateValue, RecordUpdater
 from .layout import TableLayoutSession
 from .model import (
     BaseModeDestination,
@@ -220,6 +221,9 @@ __all__ = [
     "QualifiedTableName",
     "RecalculationObservation",
     "Receipt",
+    "RecordUpdateRequest",
+    "RecordUpdateValue",
+    "RecordUpdater",
     "ReconciliationReference",
     "RevisionEnforcement",
     "SchemaPolicy",
